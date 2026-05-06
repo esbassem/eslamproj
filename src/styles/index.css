@@ -1,0 +1,212 @@
+/* Import Google Fonts: Cairo */
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 20% 98%;
+  --foreground: 222 32% 14%;
+  --card: 0 0% 100%;
+  --border: 214 24% 89%;
+  --muted: 210 30% 95%;
+  --muted-foreground: 215 16% 46%;
+  --primary: 221 78% 56%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 33% 97%;
+  --accent: 214 100% 92%;
+  --success: 154 45% 36%;
+  --warning: 34 89% 55%;
+  --danger: 0 72% 57%;
+  --shadow-soft: 0 18px 40px -28px rgba(15, 23, 42, 0.16);
+}
+
+* {
+  @apply border-border;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 249, 252, 1) 100%);
+  font-family: 'Cairo', sans-serif;
+  min-height: 100vh;
+  text-align: right;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+#root > * {
+  min-height: 100vh;
+}
+
+a {
+  @apply text-inherit no-underline;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+input,
+textarea,
+select {
+  text-align: right;
+}
+
+::selection {
+  background: rgba(15, 23, 42, 0.12);
+}
+
+.app-shell-grid {
+  grid-template-columns: 310px minmax(0, 1fr);
+}
+
+.shadow-soft {
+  box-shadow: var(--shadow-soft);
+}
+
+.sheet-overlay[data-state='open'] {
+  animation: sheet-overlay-in 90ms ease-out both;
+}
+
+.sheet-overlay[data-state='closed'] {
+  animation: sheet-overlay-out 80ms ease-in both;
+}
+
+.sheet-content-right[data-state='open'] {
+  animation: sheet-right-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sheet-content-right[data-state='closed'] {
+  animation: sheet-right-out 95ms ease-in both;
+}
+
+.sheet-content-left[data-state='open'] {
+  animation: sheet-left-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sheet-content-left[data-state='closed'] {
+  animation: sheet-left-out 110ms ease-in both;
+}
+
+.sheet-content-bottom[data-state='open'] {
+  animation: sheet-bottom-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sheet-content-bottom[data-state='closed'] {
+  animation: sheet-bottom-out 95ms ease-in both;
+}
+
+@keyframes sheet-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-right-in {
+  from {
+    opacity: 0;
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes sheet-right-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@keyframes sheet-left-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-100%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes sheet-left-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(-100%, 0, 0);
+  }
+}
+
+@keyframes sheet-bottom-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes sheet-bottom-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+[dir='rtl'] .rtl-flip {
+  transform: scaleX(-1);
+}
+
+[dir='rtl'] .ltr-content {
+  direction: ltr;
+  text-align: left;
+}
+
+[dir='ltr'] .ltr-content {
+  direction: ltr;
+  text-align: left;
+}
+
+@media (max-width: 1024px) {
+  .app-shell-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

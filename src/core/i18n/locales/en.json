@@ -1,0 +1,563 @@
+{
+  "brand": {
+    "name": "BusinessHub",
+    "tagline": "Multi-tenant business platform"
+  },
+  "common": {
+    "actions": {
+      "login": "Login",
+      "startTrial": "Start free trial",
+      "create": "Create",
+      "import": "Import",
+      "export": "Export",
+      "saveChanges": "Save changes",
+      "viewReports": "View reports",
+      "renewals": "Renewals",
+      "connectGateway": "Connect gateway",
+      "add": "Add",
+      "continue": "Continue",
+      "backToHome": "Back to home",
+      "backToLogin": "Back to login",
+      "signOut": "Sign out",
+      "filters": "Filters",
+      "newAction": "New action",
+      "viewChecklist": "View setup checklist",
+      "switchToEnglish": "English",
+      "switchToArabic": "العربية"
+    },
+    "labels": {
+      "workspace": "Workspace",
+      "branch": "Branch",
+      "currency": "Currency",
+      "businessType": "Business type",
+      "workspaceName": "Workspace name",
+      "email": "Email",
+      "password": "Password",
+      "fullName": "Full name",
+      "workEmail": "Work email"
+    },
+    "placeholders": {
+      "searchRecords": "Search records...",
+      "companyEmail": "name@company.com",
+      "password": "Enter your password",
+      "fullName": "Your name",
+      "workspaceName": "Example: Horizon Trading"
+    },
+    "status": {
+      "active": "Active",
+      "livePreview": "Live preview",
+      "checkingSession": "Checking session and workspace state..."
+    },
+    "empty": {
+      "noData": "No data yet"
+    },
+    "plans": {
+      "starter": "Starter",
+      "growth": "Growth"
+    },
+    "roles": {
+      "owner": "Owner",
+      "member": "Member",
+      "admin": "Admin",
+      "cashier": "Cashier",
+      "sales": "Sales",
+      "accountant": "Accountant",
+      "staff": "Staff"
+    },
+    "currencies": {
+      "USD": "USD",
+      "EUR": "EUR",
+      "SAR": "SAR",
+      "AED": "AED",
+      "EGP": "EGP"
+    },
+    "businessTypes": {
+      "retail": "Retail",
+      "distribution": "Distribution",
+      "services": "Services",
+      "manufacturing": "Manufacturing",
+      "agency": "Agency",
+      "other": "Other"
+    }
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "partners": "Partners",
+    "products": "Products",
+    "inventory": "Inventory",
+    "pos": "POS",
+    "invoices": "Sales Invoices",
+    "payments": "Payments",
+    "contracts": "Contracts",
+    "team": "Team",
+    "settings": "Settings"
+  },
+  "layout": {
+    "authBadge": "Multi-tenant foundation",
+    "authTitle": "A clean operational layer for sales, products, payments, and contracts.",
+    "authDescription": "Built to feel like a real SaaS product from day one, with onboarding, workspace awareness, and room to grow."
+  },
+  "landing": {
+    "heroBadge": "Modern business SaaS foundation",
+    "title": "Run sales, clients, products, payments, and contracts from one elegant workspace.",
+    "description": "BusinessHub gives growing companies a flat, clean, multi-tenant foundation designed for real SaaS expansion from day one.",
+    "previewCompany": "Northstar Trading",
+    "previewSubtitle": "Growth plan workspace",
+    "previewNote": "Workspace-aware routing, onboarding placeholders, and clean modular screens are already wired.",
+    "featureTenantTitle": "Tenant-aware operations",
+    "featureTenantDescription": "Keep each workspace cleanly separated and ready for multi-branch growth.",
+    "featureRevenueTitle": "Sales and revenue flow",
+    "featureRevenueDescription": "Lay the groundwork for invoices, payments, and customer lifecycle management.",
+    "featureVisibilityTitle": "Decision-ready visibility",
+    "featureVisibilityDescription": "Use structured dashboards and activity streams to support daily execution.",
+    "featureSecurityTitle": "Secure foundation",
+    "featureSecurityDescription": "Prepare for role-based access, workspace onboarding, and protected app routes.",
+    "stats": {
+      "revenue": "Revenue",
+      "openInvoices": "Open invoices",
+      "collected": "Collected",
+      "contracts": "Contracts"
+    },
+    "footerPrimary": "BusinessHub SaaS foundation for business operations.",
+    "footerSecondary": "Responsive, flat, and ready for Supabase integration."
+  },
+  "auth": {
+    "loginTitle": "Welcome back",
+    "loginDescription": "Sign in to continue managing your workspace, team access, and daily operations.",
+    "loginHelper": "Sign in with your Supabase email/password account to continue into your workspace.",
+    "loginIdentifierLabel": "Email or username",
+    "loginIdentifierPlaceholder": "name or name@company.com",
+    "loginSubmit": "Login to workspace",
+    "loginSubmitting": "Signing in...",
+    "noAccount": "No account yet?",
+    "createAccount": "Create one",
+    "forgotPassword": "Forgot password?",
+    "signupTitle": "Create your workspace account",
+    "signupDescription": "Start with a clean SaaS-ready foundation and set up your company in a few simple steps.",
+    "signupSubmit": "Start free trial",
+    "signupSubmitting": "Creating account...",
+    "existingAccount": "Already have an account?",
+    "forgotTitle": "Reset your password",
+    "forgotDescription": "This screen is ready for Supabase recovery flow wiring when backend auth is enabled.",
+    "forgotSubmit": "Send reset link",
+    "forgotSubmitting": "Sending link...",
+    "forgotRemembered": "Remembered it?",
+    "messages": {
+      "loginError": "Unable to sign in with those credentials.",
+      "signupError": "Unable to create your account right now.",
+      "signupSuccess": "Account created. Check your email to confirm your address before signing in.",
+      "forgotError": "Unable to send a reset link right now.",
+      "forgotSuccess": "Password reset instructions were sent if that email exists in the system."
+    }
+  },
+  "onboarding": {
+    "sideTitle": "Set up your first workspace",
+    "sideDescription": "Add the essentials now so the app can route users into the right tenant context later.",
+    "formTitle": "Workspace onboarding",
+    "formDescription": "Simple now, extensible later for branches, tax profiles, and team invites.",
+    "submit": "Continue to dashboard",
+    "submitting": "Creating workspace...",
+    "messages": {
+      "error": "Unable to create your workspace right now."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "description": "A calm operational overview for your workspace with room for future KPIs, cash flow, and team-specific insights.",
+    "primaryAction": "Create invoice",
+    "secondaryAction": "Export summary",
+    "heroBadge": "Workspace active",
+    "heroTitle": "Your workspace {name} is ready for structured growth.",
+    "heroDescription": "This dashboard is prepared for real SaaS expansion with workspace-aware routing, activity streams, and modular feature areas.",
+    "quickActionsTitle": "Quick actions",
+    "recentActivityTitle": "Recent activity",
+    "checklistTitle": "SaaS foundation checklist",
+    "checklistItems": {
+      "auth": "Auth context and session loading wired",
+      "onboarding": "Workspace onboarding flow routed",
+      "shell": "Protected application shell in place"
+    },
+    "stats": {
+      "monthlyRevenue": "Monthly Revenue",
+      "openInvoices": "Open Invoices",
+      "collectedPayments": "Collected Payments",
+      "activeContracts": "Active Contracts",
+      "revenueChange": "+12.4%",
+      "openInvoicesChange": "+8 this week",
+      "collectedPaymentsChange": "74% settled",
+      "activeContractsChange": "5 expiring soon"
+    },
+    "recentActivity": {
+      "invoiceCreatedTitle": "Invoice INV-1042 created",
+      "invoiceCreatedDescription": "Created for Horizon Retail Group",
+      "paymentReceivedTitle": "Payment received",
+      "paymentReceivedDescription": "4,500 EGP settled via bank transfer",
+      "partnerAddedTitle": "New partner added",
+      "partnerAddedDescription": "Added Delta Supplies to partners",
+      "contractDueTitle": "Contract renewal due",
+      "contractDueDescription": "Maintenance contract expiring in 3 days",
+      "time5m": "5 min ago",
+      "time18m": "18 min ago",
+      "time1h": "1 hour ago",
+      "today": "Today"
+    },
+    "quickActions": {
+      "createInvoiceTitle": "Create invoice",
+      "createInvoiceDescription": "Issue a new sales invoice for a client.",
+      "addProductTitle": "Add product",
+      "addProductDescription": "Register a sellable item with pricing.",
+      "inviteTeammateTitle": "Invite teammate",
+      "inviteTeammateDescription": "Prepare multi-user workspace access."
+    },
+    "launcher": {
+      "eyebrow": "Welcome,",
+      "sectionsTitle": "Sections",
+      "tileDescription": "Open this section and continue working.",
+      "welcomeTitle": "Start working inside {name}",
+      "welcomeDescription": "Your main sections are ready in a calm, focused surface that helps you get started without visual noise.",
+      "primaryTile": "Open the main workspace and start from the central area.",
+      "secondaryTile": "Jump straight into the section and continue working.",
+      "searchTitle": "Quick search",
+      "searchDescription": "A future-ready area for searching clients, invoices, and products.",
+      "languageTitle": "Language",
+      "settingsTitle": "Settings",
+      "settingsDescription": "Fast access to preferences and general configuration."
+    }
+  },
+  "resources": {
+    "partners": {
+      "title": "Partners",
+      "description": "Manage customers, suppliers, and strategic partners across your workspace with clean segmentation placeholders.",
+      "primaryAction": "Add partner",
+      "secondaryAction": "Import",
+      "searchPlaceholder": "Search partners...",
+      "emptyTitle": "No partners yet",
+      "emptyDescription": "Start building your relationship graph with clients, suppliers, or external business partners.",
+      "emptyAction": "Create first partner"
+    },
+    "products": {
+      "title": "Products",
+      "description": "Prepare your catalog foundation with product placeholders, pricing structure, and searchable listings.",
+      "primaryAction": "Add product",
+      "secondaryAction": "Export",
+      "searchPlaceholder": "Search products...",
+      "emptyTitle": "Catalog is empty",
+      "emptyDescription": "Add your first product so invoicing, pricing, and sales workflows have a clean data starting point.",
+      "emptyAction": "Create first product",
+      "menu": {
+        "allProducts": "All products",
+        "categories": "Categories",
+        "units": "Units",
+        "barcodes": "Barcodes"
+      },
+      "workspacePlaceholder": "Choose an area from the menu to start managing product data.",
+      "categories": {
+        "title": "Product categories",
+        "description": "Manage categories connected to the current workspace.",
+        "count": "{count} categories",
+        "sortOrder": "Sort order: {order}",
+        "active": "Active",
+        "inactive": "Inactive",
+        "emptyTitle": "No categories yet",
+        "emptyDescription": "Categories added to the product table will appear here automatically.",
+        "loadError": "Could not load product categories."
+      }
+    },
+    "pos": {
+      "title": "Point of Sale",
+      "description": "A fast daily sales surface, ready to connect products, customers, and instant payments later.",
+      "primaryAction": "Add POS",
+      "secondaryAction": "Open shift",
+      "searchPlaceholder": "Search POS...",
+      "emptyTitle": "POS is ready",
+      "emptyDescription": "Prepare products and categories so the live selling experience can appear here.",
+      "emptyAction": "Prepare POS"
+    },
+    "invoices": {
+      "title": "Sales Invoices",
+      "description": "Keep invoice workflows structured with clean states for creation, review, and collection.",
+      "primaryAction": "New invoice",
+      "secondaryAction": "View reports",
+      "searchPlaceholder": "Search invoices...",
+      "emptyTitle": "No invoices created",
+      "emptyDescription": "Issue your first sales invoice to begin tracking billing activity inside the workspace.",
+      "emptyAction": "Create invoice"
+    },
+    "payments": {
+      "title": "Payments",
+      "description": "Track settlements, outstanding balances, and incoming cash flow with an extensible payments surface.",
+      "primaryAction": "Record payment",
+      "secondaryAction": "Connect gateway",
+      "searchPlaceholder": "Search payments...",
+      "emptyTitle": "No payments tracked",
+      "emptyDescription": "Once invoices start getting settled, recorded payments will appear here for reconciliation flows later.",
+      "emptyAction": "Add payment"
+    },
+    "contracts": {
+      "title": "Contracts",
+      "description": "Organize client agreements, renewals, and commercial commitments in one extendable contract area.",
+      "primaryAction": "New contract",
+      "secondaryAction": "Renewals",
+      "searchPlaceholder": "Search contracts...",
+      "emptyTitle": "No contracts available",
+      "emptyDescription": "Prepare long-term customer or supplier relationships by storing the first contract entry here.",
+      "emptyAction": "Create contract"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "description": "A dedicated place for workspace-level preferences, access control, and future business configuration.",
+    "workspaceName": "Workspace name",
+    "businessType": "Business type",
+    "defaultCurrency": "Default currency",
+    "panels": {
+      "profileTitle": "Workspace profile",
+      "profileDescription": "Branding, legal business details, and operational defaults.",
+      "profileBadge": "Profile",
+      "accessTitle": "Access & roles",
+      "accessDescription": "Permission modeling placeholder for teams, branches, and roles.",
+      "accessBadge": "Security",
+      "teamTitle": "Team management",
+      "teamDescription": "Create employee accounts, assign roles, and track access status for the current company.",
+      "teamBadge": "People",
+      "openTeam": "Open team management",
+      "placeholder": "Configuration placeholder ready for deeper workspace settings."
+    }
+  },
+  "team": {
+    "title": "Team Management",
+    "description": "Manage company users, create employee accounts, and assign operational roles from one place.",
+    "listTitle": "Company users",
+    "listDescription": "All accounts linked to the current tenant appear here with role and status.",
+    "emptyTitle": "No team members yet",
+    "emptyDescription": "Add the first employee to provision a login inside the current company.",
+    "membersCount": "{count} users",
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "table": {
+      "name": "Name",
+      "email": "Email",
+      "role": "Role",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "actions": {
+      "addEmployee": "Add employee",
+      "backToSettings": "Back to settings",
+      "comingSoon": "More actions soon"
+    },
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "cashier": "Cashier",
+      "sales": "Sales",
+      "accountant": "Accountant",
+      "staff": "Staff"
+    },
+    "form": {
+      "title": "Add new employee",
+      "description": "Create an employee account inside the current company and assign the initial password and role.",
+      "fullName": "Full name",
+      "email": "Email",
+      "password": "Password",
+      "role": "Role",
+      "phone": "Phone",
+      "fullNamePlaceholder": "Example: Ahmed Khaled",
+      "passwordPlaceholder": "Enter an initial password",
+      "phonePlaceholder": "01000000000",
+      "cancel": "Cancel",
+      "submit": "Save employee",
+      "submitting": "Creating employee...",
+      "validation": {
+        "required": "Please fill in all required fields.",
+        "passwordLength": "Password must be at least 8 characters."
+      }
+    },
+    "messages": {
+      "loadError": "Unable to load team members.",
+      "createError": "Unable to create the employee right now.",
+      "createSuccess": "Employee created successfully and the account is now active.",
+      "ownerOnly": "Only the company owner can add employees in this phase."
+    }
+  },
+  "pos": {
+    "status": {
+      "open": "Open",
+      "closed": "Closed"
+    },
+    "actions": {
+      "openSession": "Open session",
+      "enterSale": "Enter sale",
+      "viewSession": "View session",
+      "closeSession": "Close session",
+      "sessionsHistory": "Sessions history",
+      "confirmOpen": "Confirm open session",
+      "confirmClose": "Confirm close session",
+      "cancel": "Cancel",
+      "backToList": "Back to POS"
+    },
+    "locations": {
+      "title": "POS locations",
+      "description": "Manage POS configurations connected to this workspace.",
+      "count": "{count} POS locations",
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "sessions": {
+      "backToLocations": "POS locations",
+      "emptyTitle": "No sessions yet",
+      "emptyDescription": "When a shift or session is opened for this POS, it will appear here.",
+      "noDate": "No date",
+      "status": {
+        "open": "Open session",
+        "closing": "Closing",
+        "closed": "Closed",
+        "cancelled": "Cancelled"
+      }
+    },
+    "sessionForm": {
+      "openTitle": "Open session",
+      "openDescription": "Open a new work session for {name}.",
+      "openDescriptionFallback": "Open a new work session for this POS.",
+      "closeTitle": "Close session",
+      "closeDescription": "Enter the actual closing balance to calculate the difference before closing.",
+      "openingBalance": "Opening balance",
+      "closingBalance": "Closing balance",
+      "difference": "Difference",
+      "note": "Note",
+      "notePlaceholder": "Add an optional note for the start of the shift",
+      "opening": "Opening session...",
+      "closing": "Closing session...",
+      "validation": {
+        "openingBalance": "Enter a valid opening balance.",
+        "closingBalance": "Enter a valid closing balance."
+      }
+    },
+    "details": {
+      "title": "Session details",
+      "openingBalance": "Opening balance",
+      "closingBalance": "Closing balance",
+      "status": "Status",
+      "openedAt": "Opened at",
+      "closedAt": "Closed at",
+      "difference": "Difference"
+    },
+    "history": {
+      "title": "Sessions history",
+      "date": "Date",
+      "user": "User",
+      "status": "Status",
+      "openingBalance": "Opening balance",
+      "closingBalance": "Closing balance"
+    },
+    "sale": {
+      "title": "Sales screen",
+      "description": "This is the selling area for the current session. Actual selling will be implemented in the next phase."
+    },
+    "sell": {
+      "title": "Sales screen",
+      "sessionLabel": "Session: {session}",
+      "searchPlaceholder": "Search products...",
+      "noCode": "No code",
+      "productsCount": "Products",
+      "tapToAdd": "Tap to add",
+      "total": "Order total",
+      "pay": "Pay",
+      "emptyProductsTitle": "No products found",
+      "emptyProductsDescription": "Add products to product_templates or change the current search.",
+      "closedTitle": "Session is not available for selling",
+      "closedDescription": "Sales can only be processed on an open session.",
+      "cart": {
+        "title": "Current order",
+        "items": "items",
+        "clear": "Clear",
+        "empty": "Choose products to start the order."
+      },
+      "operations": {
+        "title": "Operations log",
+        "description": "Latest session sales",
+        "order": "Order",
+        "paid": "Paid",
+        "partial": "Partial",
+        "lines": "Items",
+        "total": "Total",
+        "empty": "No sales operations have been recorded in this session yet."
+      },
+      "payment": {
+        "title": "Payment",
+        "description": "Choose a payment method and confirm the amount to collect this order.",
+        "method": "Payment method",
+        "amount": "Amount",
+        "confirm": "Confirm payment",
+        "submitting": "Recording payment...",
+        "validation": {
+          "method": "Choose a payment method.",
+          "amount": "Enter a valid amount that covers the order total."
+        }
+      },
+      "messages": {
+        "loadError": "Unable to load the sales screen.",
+        "productsLoadError": "Unable to load products.",
+        "sessionClosed": "This session is closed or not valid for selling.",
+        "emptyCart": "Add at least one product before payment.",
+        "noPaymentMethods": "No payment methods are available for this POS.",
+        "paymentError": "Unable to record payment.",
+        "paymentSuccess": "Order and payment recorded successfully."
+      }
+    },
+    "form": {
+      "title": "Add POS location",
+      "description": "Create a new selling point for daily sales operations.",
+      "name": "POS name",
+      "namePlaceholder": "Example: Main branch cashier",
+      "code": "Code",
+      "codePlaceholder": "POS-01",
+      "cancel": "Cancel",
+      "submit": "Add POS",
+      "submitting": "Adding...",
+      "validation": {
+        "required": "Enter the POS name first."
+      }
+    },
+    "messages": {
+      "loadError": "Unable to load POS locations.",
+      "sessionsLoadError": "Unable to load POS sessions.",
+      "createError": "Unable to add the POS location.",
+      "createSuccess": "POS location added successfully.",
+      "openError": "Unable to open the session.",
+      "openSuccess": "Session opened successfully.",
+      "openSessionExists": "This POS already has an open session.",
+      "closeError": "Unable to close the session.",
+      "closeSuccess": "Session closed successfully.",
+      "userMissing": "Unable to identify the current user."
+    }
+  },
+  "sidebar": {
+    "workspaceFallback": "Setup required",
+    "branchFallback": "Main Branch",
+    "planLabel": "{plan} plan",
+    "foundationTitle": "SaaS-ready foundation",
+    "foundationDescription": "Auth, onboarding, workspace awareness, and modular screens are ready for backend wiring."
+  },
+  "topbar": {
+    "workspaceFallback": "Workspace placeholder",
+    "branchFallback": "Branch placeholder",
+    "workspaceSettings": "Workspace settings"
+  },
+  "system": {
+    "notFoundTitle": "This page is not part of the workspace.",
+    "notFoundDescription": "The route may have moved, or it may not exist yet in this SaaS foundation.",
+    "checkingTitle": "Loading"
+  },
+  "errors": {
+    "workspaceLoad": "Unable to load your tenant bootstrap.",
+    "workspaceAuthMissing": "No authenticated user found for workspace bootstrap.",
+    "authSessionCheck": "Unable to check your current session.",
+    "authSignIn": "Unable to sign in right now.",
+    "authSignUp": "Unable to create your account right now.",
+    "supabaseConfig": "Missing or invalid Supabase environment variables: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.",
+    "teamCreate": "Unable to create the employee right now."
+  }
+}

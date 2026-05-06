@@ -1,0 +1,563 @@
+{
+  "brand": {
+    "name": "بيزنس هب",
+    "tagline": "منصة أعمال متعددة الشركات"
+  },
+  "common": {
+    "actions": {
+      "login": "تسجيل الدخول",
+      "startTrial": "ابدأ التجربة",
+      "create": "إنشاء",
+      "import": "استيراد",
+      "export": "تصدير",
+      "saveChanges": "حفظ التغييرات",
+      "viewReports": "عرض التقارير",
+      "renewals": "التجديدات",
+      "connectGateway": "ربط بوابة الدفع",
+      "add": "إضافة",
+      "continue": "متابعة",
+      "backToHome": "العودة للرئيسية",
+      "backToLogin": "العودة لتسجيل الدخول",
+      "signOut": "تسجيل الخروج",
+      "filters": "عوامل التصفية",
+      "newAction": "إجراء جديد",
+      "viewChecklist": "عرض قائمة التجهيز",
+      "switchToEnglish": "English",
+      "switchToArabic": "العربية"
+    },
+    "labels": {
+      "workspace": "مساحة العمل",
+      "branch": "الفرع",
+      "currency": "العملة",
+      "businessType": "نوع النشاط",
+      "workspaceName": "اسم مساحة العمل",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "fullName": "الاسم الكامل",
+      "workEmail": "البريد الإلكتروني للعمل"
+    },
+    "placeholders": {
+      "searchRecords": "ابحث في السجلات...",
+      "companyEmail": "name@company.com",
+      "password": "أدخل كلمة المرور",
+      "fullName": "اكتب الاسم الكامل",
+      "workspaceName": "مثال: مؤسسة الأفق التجارية"
+    },
+    "status": {
+      "active": "نشطة",
+      "livePreview": "معاينة مباشرة",
+      "checkingSession": "جارٍ التحقق من الجلسة وبيانات مساحة العمل..."
+    },
+    "empty": {
+      "noData": "لا توجد بيانات حتى الآن"
+    },
+    "plans": {
+      "starter": "الأساسية",
+      "growth": "النمو"
+    },
+    "roles": {
+      "owner": "المالك",
+      "member": "عضو",
+      "admin": "مدير النظام",
+      "cashier": "كاشير",
+      "sales": "مبيعات",
+      "accountant": "محاسب",
+      "staff": "موظف"
+    },
+    "currencies": {
+      "USD": "دولار",
+      "EUR": "يورو",
+      "SAR": "ريال",
+      "AED": "درهم",
+      "EGP": "جنيه"
+    },
+    "businessTypes": {
+      "retail": "تجزئة",
+      "distribution": "توزيع",
+      "services": "خدمات",
+      "manufacturing": "تصنيع",
+      "agency": "وكالة",
+      "other": "أخرى"
+    }
+  },
+  "navigation": {
+    "dashboard": "لوحة التحكم",
+    "partners": "العملاء والشركاء",
+    "products": "المنتجات",
+    "inventory": "المخزون",
+    "pos": "نقاط البيع",
+    "invoices": "الفواتير",
+    "payments": "الدفعات",
+    "contracts": "العقود",
+    "team": "فريق العمل",
+    "settings": "الإعدادات"
+  },
+  "layout": {
+    "authBadge": "منصة أعمال متعددة الفروع",
+    "authTitle": "إدارة المبيعات والعملاء والمنتجات والتحصيل من مساحة عمل عربية متكاملة.",
+    "authDescription": "تجربة مصممة لبيئات الأعمال الحديثة، مع تهيئة أولية سلسة، ووعي بمساحات العمل، وقابلية واضحة للتوسع."
+  },
+  "landing": {
+    "heroBadge": "منصة تشغيل أعمال جاهزة للنمو",
+    "title": "أدر المبيعات والعملاء والمنتجات والدفعات والعقود من مساحة عمل واحدة منظمة.",
+    "description": "بيزنس هب يمنح الشركات بيئة تشغيل عربية واضحة، مع هيكل متعدد الشركات وتجربة يومية مهيأة للتوسع من اليوم الأول.",
+    "previewCompany": "مؤسسة نور الأفق",
+    "previewSubtitle": "مساحة عمل على باقة النمو",
+    "previewNote": "البنية الأساسية للمسارات، التهيئة الأولية، والشاشات المعيارية جاهزة للربط مع الخدمات الخلفية.",
+    "featureTenantTitle": "تشغيل منظم بحسب الشركة",
+    "featureTenantDescription": "اعزل بيانات كل مساحة عمل بوضوح مع جاهزية للتوسع إلى فروع متعددة.",
+    "featureRevenueTitle": "رحلة مبيعات متكاملة",
+    "featureRevenueDescription": "هيئ الفواتير والتحصيل وعلاقة العميل ضمن تجربة تشغيل موحدة.",
+    "featureVisibilityTitle": "رؤية تنفيذية يومية",
+    "featureVisibilityDescription": "لوحات معلومات وأنشطة حديثة تساعد فرق العمل على متابعة الأداء بثقة.",
+    "featureSecurityTitle": "أساس آمن وقابل للتدرج",
+    "featureSecurityDescription": "بنية جاهزة للأدوار والصلاحيات ومسارات الدخول المحمية.",
+    "stats": {
+      "revenue": "الإيرادات",
+      "openInvoices": "الفواتير المفتوحة",
+      "collected": "المبالغ المحصلة",
+      "contracts": "العقود"
+    },
+    "footerPrimary": "منصة عربية لإدارة العمليات التجارية اليومية.",
+    "footerSecondary": "متجاوبة بالكامل ومهيأة للربط مع Supabase."
+  },
+  "auth": {
+    "loginTitle": "مرحبًا بعودتك",
+    "loginDescription": "سجّل الدخول لمتابعة إدارة مساحة العمل، وصول الفريق، والعمليات اليومية.",
+    "loginHelper": "استخدم حساب البريد الإلكتروني وكلمة المرور المرتبط بـ Supabase للوصول إلى مساحة العمل.",
+    "loginIdentifierLabel": "البريد الإلكتروني أو اسم المستخدم",
+    "loginIdentifierPlaceholder": "name أو name@company.com",
+    "loginSubmit": "الدخول إلى النظام",
+    "loginSubmitting": "جارٍ تسجيل الدخول...",
+    "noAccount": "ليس لديك حساب؟",
+    "createAccount": "أنشئ حسابًا",
+    "forgotPassword": "نسيت كلمة المرور؟",
+    "signupTitle": "أنشئ حساب شركتك",
+    "signupDescription": "ابدأ ببيئة تشغيل عربية جاهزة للنمو، ثم فعّل شركتك في خطوات بسيطة.",
+    "signupSubmit": "ابدأ التجربة",
+    "signupSubmitting": "جارٍ إنشاء الحساب...",
+    "existingAccount": "لديك حساب بالفعل؟",
+    "forgotTitle": "استعادة كلمة المرور",
+    "forgotDescription": "هذه الشاشة جاهزة لربط مسار الاستعادة عبر Supabase عند تفعيل المصادقة الخلفية.",
+    "forgotSubmit": "إرسال رابط الاستعادة",
+    "forgotSubmitting": "جارٍ إرسال الرابط...",
+    "forgotRemembered": "تذكرت كلمة المرور؟",
+    "messages": {
+      "loginError": "تعذر تسجيل الدخول بهذه البيانات.",
+      "signupError": "تعذر إنشاء الحساب حاليًا.",
+      "signupSuccess": "تم إنشاء الحساب. راجع بريدك الإلكتروني لتأكيد العنوان قبل تسجيل الدخول.",
+      "forgotError": "تعذر إرسال رابط الاستعادة حاليًا.",
+      "forgotSuccess": "إذا كان البريد الإلكتروني مسجلًا لدينا، فستصلك تعليمات استعادة كلمة المرور."
+    }
+  },
+  "onboarding": {
+    "sideTitle": "ابدأ بإعداد مساحة العمل الأولى",
+    "sideDescription": "أدخل البيانات الأساسية الآن حتى يتم توجيه المستخدمين لاحقًا إلى الشركة والفرع الصحيحين.",
+    "formTitle": "تهيئة مساحة العمل",
+    "formDescription": "بداية خفيفة اليوم، وقابلة للتوسعة لاحقًا للفروع، الملفات الضريبية، ودعوات الفريق.",
+    "submit": "الانتقال إلى لوحة التحكم",
+    "submitting": "جارٍ إنشاء مساحة العمل...",
+    "messages": {
+      "error": "تعذر إنشاء مساحة العمل حاليًا."
+    }
+  },
+  "dashboard": {
+    "title": "لوحة التحكم",
+    "description": "نظرة تشغيلية هادئة على مساحة العمل، مع مساحة جاهزة للمؤشرات المالية والتشغيلية لاحقًا.",
+    "primaryAction": "إنشاء فاتورة",
+    "secondaryAction": "تصدير الملخص",
+    "heroBadge": "مساحة العمل نشطة",
+    "heroTitle": "مساحة العمل {name} جاهزة لنمو أكثر تنظيمًا.",
+    "heroDescription": "الواجهة مهيأة للتوسع الفعلي في بيئة SaaS مع مسارات واعية بالشركة، وسجل أنشطة، ومناطق وظيفية معيارية.",
+    "quickActionsTitle": "إجراءات سريعة",
+    "recentActivityTitle": "آخر الأنشطة",
+    "checklistTitle": "قائمة جاهزية المنصة",
+    "checklistItems": {
+      "auth": "ربط سياق المصادقة والتحقق من الجلسة",
+      "onboarding": "تفعيل مسار تهيئة مساحة العمل",
+      "shell": "إعداد غلاف التطبيق المحمي"
+    },
+    "stats": {
+      "monthlyRevenue": "الإيرادات الشهرية",
+      "openInvoices": "الفواتير المفتوحة",
+      "collectedPayments": "الدفعات المحصلة",
+      "activeContracts": "العقود النشطة",
+      "revenueChange": "+12.4%",
+      "openInvoicesChange": "+8 هذا الأسبوع",
+      "collectedPaymentsChange": "74% تم تحصيلها",
+      "activeContractsChange": "5 تنتهي قريبًا"
+    },
+    "recentActivity": {
+      "invoiceCreatedTitle": "تم إنشاء الفاتورة INV-1042",
+      "invoiceCreatedDescription": "أُنشئت لصالح مجموعة هورايزن للتجزئة",
+      "paymentReceivedTitle": "تم استلام دفعة",
+      "paymentReceivedDescription": "تم تحصيل 4,500 جنيه عبر تحويل بنكي",
+      "partnerAddedTitle": "إضافة شريك جديد",
+      "partnerAddedDescription": "تمت إضافة دلتا للتوريدات إلى قائمة الشركاء",
+      "contractDueTitle": "موعد تجديد عقد",
+      "contractDueDescription": "ينتهي عقد الصيانة خلال 3 أيام",
+      "time5m": "منذ 5 دقائق",
+      "time18m": "منذ 18 دقيقة",
+      "time1h": "منذ ساعة",
+      "today": "اليوم"
+    },
+    "quickActions": {
+      "createInvoiceTitle": "إنشاء فاتورة",
+      "createInvoiceDescription": "إصدار فاتورة مبيعات جديدة لأحد العملاء.",
+      "addProductTitle": "إضافة منتج",
+      "addProductDescription": "تسجيل صنف قابل للبيع مع التسعير.",
+      "inviteTeammateTitle": "دعوة مستخدم",
+      "inviteTeammateDescription": "تهيئة وصول متعدد المستخدمين داخل مساحة العمل."
+    },
+    "launcher": {
+      "eyebrow": "مرحبًا بك،",
+      "sectionsTitle": "الأقسام",
+      "tileDescription": "الدخول إلى هذا القسم ومتابعة العمل.",
+      "welcomeTitle": "ابدأ العمل داخل {name}",
+      "welcomeDescription": "كل الأقسام الأساسية جاهزة أمامك في واجهة هادئة وواضحة تساعدك تبدأ بسرعة بدون تشتيت.",
+      "primaryTile": "ابدأ من هنا وافتح المساحة الأساسية للعمل.",
+      "secondaryTile": "ادخل مباشرة إلى القسم وابدأ التنفيذ.",
+      "searchTitle": "بحث سريع",
+      "searchDescription": "واجهة جاهزة لاحقًا للبحث بين العملاء والفواتير والمنتجات.",
+      "languageTitle": "تبديل اللغة",
+      "settingsTitle": "الإعدادات",
+      "settingsDescription": "الوصول السريع إلى التفضيلات والتهيئة العامة."
+    }
+  },
+  "resources": {
+    "partners": {
+      "title": "العملاء والشركاء",
+      "description": "أدر العملاء والموردين والشركاء التجاريين ضمن مساحة العمل مع هيكل واضح وقابل للتوسع.",
+      "primaryAction": "إضافة شريك",
+      "secondaryAction": "استيراد",
+      "searchPlaceholder": "ابحث عن عميل أو شريك...",
+      "emptyTitle": "لا يوجد شركاء بعد",
+      "emptyDescription": "ابدأ ببناء قاعدة العلاقات بإضافة عميل أو مورد أو شريك تجاري.",
+      "emptyAction": "إنشاء أول شريك"
+    },
+    "products": {
+      "title": "المنتجات",
+      "description": "جهّز بنية الكتالوج عبر أصناف أولية وتسعير واضح وقائمة قابلة للبحث.",
+      "primaryAction": "إضافة منتج",
+      "secondaryAction": "تصدير",
+      "searchPlaceholder": "ابحث عن منتج...",
+      "emptyTitle": "الكتالوج فارغ",
+      "emptyDescription": "أضف أول منتج لتبدأ دورة التسعير والفوترة والبيع على أساس بيانات منظم.",
+      "emptyAction": "إنشاء أول منتج",
+      "menu": {
+        "allProducts": "كل المنتجات",
+        "categories": "التصنيفات",
+        "units": "وحدات القياس",
+        "barcodes": "الباركود"
+      },
+      "workspacePlaceholder": "اختر جزءًا من القائمة لبدء إدارة بيانات المنتجات.",
+      "categories": {
+        "title": "تصنيفات المنتجات",
+        "description": "إدارة التصنيفات المرتبطة بمساحة العمل الحالية.",
+        "count": "{count} تصنيف",
+        "sortOrder": "الترتيب: {order}",
+        "active": "نشط",
+        "inactive": "غير نشط",
+        "emptyTitle": "لا توجد تصنيفات بعد",
+        "emptyDescription": "عند إضافة تصنيفات في جدول المنتجات ستظهر هنا مباشرة.",
+        "loadError": "تعذر تحميل تصنيفات المنتجات."
+      }
+    },
+    "pos": {
+      "title": "نقاط البيع",
+      "description": "شاشة تشغيل سريعة للمبيعات اليومية، جاهزة لاحقًا لربط المنتجات، العملاء، والدفع الفوري.",
+      "primaryAction": "إضافة نقطة بيع",
+      "secondaryAction": "فتح الوردية",
+      "searchPlaceholder": "ابحث داخل نقطة البيع...",
+      "emptyTitle": "نقطة البيع جاهزة",
+      "emptyDescription": "ابدأ بتجهيز المنتجات والتصنيفات حتى تظهر هنا تجربة بيع مباشرة.",
+      "emptyAction": "تجهيز نقطة البيع"
+    },
+    "invoices": {
+      "title": "الفواتير",
+      "description": "نظّم دورة الفواتير عبر حالات واضحة للإنشاء والمراجعة والتحصيل.",
+      "primaryAction": "فاتورة جديدة",
+      "secondaryAction": "عرض التقارير",
+      "searchPlaceholder": "ابحث عن فاتورة...",
+      "emptyTitle": "لا توجد فواتير",
+      "emptyDescription": "أصدر أول فاتورة مبيعات لبدء تتبع نشاط الفوترة داخل مساحة العمل.",
+      "emptyAction": "إنشاء فاتورة"
+    },
+    "payments": {
+      "title": "الدفعات",
+      "description": "تابع التحصيلات والأرصدة القائمة والتدفقات النقدية الواردة عبر واجهة قابلة للتطوير.",
+      "primaryAction": "تسجيل دفعة",
+      "secondaryAction": "ربط بوابة الدفع",
+      "searchPlaceholder": "ابحث عن دفعة...",
+      "emptyTitle": "لا توجد دفعات مسجلة",
+      "emptyDescription": "عند بدء تحصيل الفواتير، ستظهر هنا الدفعات المسجلة لعمليات المطابقة لاحقًا.",
+      "emptyAction": "إضافة دفعة"
+    },
+    "contracts": {
+      "title": "العقود",
+      "description": "نظّم اتفاقيات العملاء والتجديدات والالتزامات التجارية في مساحة عقود قابلة للتوسع.",
+      "primaryAction": "عقد جديد",
+      "secondaryAction": "التجديدات",
+      "searchPlaceholder": "ابحث عن عقد...",
+      "emptyTitle": "لا توجد عقود",
+      "emptyDescription": "ابدأ بحفظ أول عقد لتنظيم العلاقات طويلة الأجل مع العملاء أو الموردين.",
+      "emptyAction": "إنشاء عقد"
+    }
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "description": "مساحة مخصصة لتفضيلات الشركة، والصلاحيات، وإعدادات الأعمال القابلة للتوسع.",
+    "workspaceName": "اسم مساحة العمل",
+    "businessType": "نوع النشاط",
+    "defaultCurrency": "العملة الافتراضية",
+    "panels": {
+      "profileTitle": "ملف الشركة",
+      "profileDescription": "الهوية التجارية، البيانات القانونية، والإعدادات التشغيلية الافتراضية.",
+      "profileBadge": "الملف",
+      "accessTitle": "الصلاحيات والأدوار",
+      "accessDescription": "تهيئة أولية لنمذجة الصلاحيات على مستوى الفريق والفروع والأدوار.",
+      "accessBadge": "الأمان",
+      "teamTitle": "إدارة الفريق",
+      "teamDescription": "إضافة الموظفين وتحديد الأدوار ومتابعة حالة الحسابات داخل الشركة.",
+      "teamBadge": "الفريق",
+      "openTeam": "فتح إدارة الفريق",
+      "placeholder": "منطقة إعدادات جاهزة للتوسع في تهيئة مساحة العمل."
+    }
+  },
+  "team": {
+    "title": "إدارة الفريق",
+    "description": "أدر مستخدمي الشركة، أنشئ حسابات جديدة للموظفين، ووزّع الأدوار التشغيلية من مكان واحد.",
+    "listTitle": "مستخدمو الشركة",
+    "listDescription": "جميع الحسابات المرتبطة بالشركة الحالية تظهر هنا مع الدور والحالة.",
+    "emptyTitle": "لا يوجد موظفون بعد",
+    "emptyDescription": "ابدأ بإضافة أول موظف ليحصل على حساب جاهز للدخول ضمن نفس الشركة.",
+    "membersCount": "{count} مستخدم",
+    "status": {
+      "active": "نشط",
+      "inactive": "غير نشط"
+    },
+    "table": {
+      "name": "الاسم",
+      "email": "البريد الإلكتروني",
+      "role": "الدور",
+      "status": "الحالة",
+      "actions": "الإجراءات"
+    },
+    "actions": {
+      "addEmployee": "إضافة موظف",
+      "backToSettings": "العودة إلى الإعدادات",
+      "comingSoon": "إجراءات إضافية قريبًا"
+    },
+    "roles": {
+      "owner": "المالك",
+      "admin": "مدير النظام",
+      "cashier": "كاشير",
+      "sales": "مبيعات",
+      "accountant": "محاسب",
+      "staff": "موظف"
+    },
+    "form": {
+      "title": "إضافة موظف جديد",
+      "description": "أنشئ حساب الموظف من داخل الشركة وحدّد له كلمة المرور والدور مباشرة.",
+      "fullName": "الاسم الكامل",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "role": "الدور",
+      "phone": "رقم الهاتف",
+      "fullNamePlaceholder": "مثال: أحمد خالد",
+      "passwordPlaceholder": "أدخل كلمة مرور أولية",
+      "phonePlaceholder": "01000000000",
+      "cancel": "إلغاء",
+      "submit": "حفظ الموظف",
+      "submitting": "جارٍ إنشاء الموظف...",
+      "validation": {
+        "required": "يرجى تعبئة الحقول المطلوبة.",
+        "passwordLength": "يجب ألا تقل كلمة المرور عن 8 أحرف."
+      }
+    },
+    "messages": {
+      "loadError": "تعذر تحميل قائمة الموظفين.",
+      "createError": "تعذر إنشاء الموظف حاليًا.",
+      "createSuccess": "تمت إضافة الموظف بنجاح وتفعيل حسابه.",
+      "ownerOnly": "إضافة الموظفين متاحة فقط لمالك الشركة في هذه المرحلة."
+    }
+  },
+  "pos": {
+    "status": {
+      "open": "مفتوحة",
+      "closed": "مغلقة"
+    },
+    "actions": {
+      "openSession": "فتح جلسة",
+      "enterSale": "دخول للبيع",
+      "viewSession": "عرض الجلسة",
+      "closeSession": "إغلاق الجلسة",
+      "sessionsHistory": "سجل الجلسات",
+      "confirmOpen": "تأكيد فتح الجلسة",
+      "confirmClose": "تأكيد إغلاق الجلسة",
+      "cancel": "إلغاء",
+      "backToList": "العودة لنقاط البيع"
+    },
+    "locations": {
+      "title": "نقاط البيع",
+      "description": "إدارة إعدادات نقاط البيع المرتبطة بمساحة العمل.",
+      "count": "{count} نقطة بيع",
+      "active": "نشطة",
+      "inactive": "متوقفة"
+    },
+    "sessions": {
+      "backToLocations": "نقاط البيع",
+      "emptyTitle": "لا توجد سيشنات بعد",
+      "emptyDescription": "عند فتح وردية أو سيشن لهذه النقطة ستظهر هنا مباشرة.",
+      "noDate": "بدون تاريخ",
+      "status": {
+        "open": "سيشن مفتوح",
+        "closing": "قيد الإغلاق",
+        "closed": "مغلق",
+        "cancelled": "ملغي"
+      }
+    },
+    "sessionForm": {
+      "openTitle": "فتح جلسة",
+      "openDescription": "افتح جلسة عمل جديدة لنقطة البيع {name}.",
+      "openDescriptionFallback": "افتح جلسة عمل جديدة لنقطة البيع.",
+      "closeTitle": "إغلاق الجلسة",
+      "closeDescription": "أدخل رصيد الإغلاق الفعلي لحساب الفرق قبل الإغلاق.",
+      "openingBalance": "رصيد الافتتاح",
+      "closingBalance": "رصيد الإغلاق",
+      "difference": "الفرق",
+      "note": "ملاحظة",
+      "notePlaceholder": "اكتب ملاحظة اختيارية عن بداية الوردية",
+      "opening": "جارٍ فتح الجلسة...",
+      "closing": "جارٍ إغلاق الجلسة...",
+      "validation": {
+        "openingBalance": "أدخل رصيد افتتاح صحيح.",
+        "closingBalance": "أدخل رصيد إغلاق صحيح."
+      }
+    },
+    "details": {
+      "title": "تفاصيل الجلسة",
+      "openingBalance": "رصيد الافتتاح",
+      "closingBalance": "رصيد الإغلاق",
+      "status": "الحالة",
+      "openedAt": "وقت الفتح",
+      "closedAt": "وقت الإغلاق",
+      "difference": "الفرق"
+    },
+    "history": {
+      "title": "سجل الجلسات",
+      "date": "التاريخ",
+      "user": "المستخدم",
+      "status": "الحالة",
+      "openingBalance": "رصيد الافتتاح",
+      "closingBalance": "رصيد الإغلاق"
+    },
+    "sale": {
+      "title": "شاشة البيع",
+      "description": "هذه مساحة البيع الخاصة بالجلسة الحالية. تنفيذ البيع الفعلي سيتم في المرحلة القادمة."
+    },
+    "sell": {
+      "title": "شاشة البيع",
+      "sessionLabel": "الجلسة: {session}",
+      "searchPlaceholder": "ابحث عن منتج...",
+      "noCode": "بدون كود",
+      "productsCount": "المنتجات",
+      "tapToAdd": "اضغط للإضافة",
+      "total": "إجمالي الطلب",
+      "pay": "دفع",
+      "emptyProductsTitle": "لا توجد منتجات",
+      "emptyProductsDescription": "أضف منتجات في جدول product_templates أو غيّر البحث الحالي.",
+      "closedTitle": "الجلسة غير متاحة للبيع",
+      "closedDescription": "لا يمكن تنفيذ عمليات بيع إلا على جلسة مفتوحة.",
+      "cart": {
+        "title": "الطلب الحالي",
+        "items": "عنصر",
+        "clear": "تفريغ",
+        "empty": "اختر المنتجات لبدء تكوين الطلب."
+      },
+      "operations": {
+        "title": "سجل العمليات",
+        "description": "آخر مبيعات الجلسة",
+        "order": "عملية",
+        "paid": "مدفوعة",
+        "partial": "جزئية",
+        "lines": "الأصناف",
+        "total": "الإجمالي",
+        "empty": "لم يتم تسجيل أي عمليات بيع في هذه الجلسة بعد."
+      },
+      "payment": {
+        "title": "الدفع",
+        "description": "اختر طريقة الدفع وأكد المبلغ لتحصيل الطلب.",
+        "method": "طريقة الدفع",
+        "amount": "المبلغ",
+        "confirm": "تأكيد الدفع",
+        "submitting": "جارٍ تسجيل الدفع...",
+        "validation": {
+          "method": "اختر طريقة الدفع.",
+          "amount": "أدخل مبلغًا صحيحًا لا يقل عن إجمالي الطلب."
+        }
+      },
+      "messages": {
+        "loadError": "تعذر تحميل شاشة البيع.",
+        "productsLoadError": "تعذر تحميل المنتجات.",
+        "sessionClosed": "هذه الجلسة مغلقة أو غير صالحة للبيع.",
+        "emptyCart": "أضف منتجًا واحدًا على الأقل قبل الدفع.",
+        "noPaymentMethods": "لا توجد طرق دفع متاحة لنقطة البيع.",
+        "paymentError": "تعذر تسجيل الدفع.",
+        "paymentSuccess": "تم تسجيل الطلب والدفع بنجاح."
+      }
+    },
+    "form": {
+      "title": "إضافة نقطة بيع",
+      "description": "أضف نقطة بيع جديدة ليتم استخدامها لاحقًا في عمليات البيع اليومية.",
+      "name": "اسم نقطة البيع",
+      "namePlaceholder": "مثال: كاشير الفرع الرئيسي",
+      "code": "الكود",
+      "codePlaceholder": "POS-01",
+      "cancel": "إلغاء",
+      "submit": "إضافة نقطة البيع",
+      "submitting": "جارٍ الإضافة...",
+      "validation": {
+        "required": "اكتب اسم نقطة البيع أولًا."
+      }
+    },
+    "messages": {
+      "loadError": "تعذر تحميل نقاط البيع.",
+      "sessionsLoadError": "تعذر تحميل سيشنات نقطة البيع.",
+      "createError": "تعذر إضافة نقطة البيع.",
+      "createSuccess": "تمت إضافة نقطة البيع بنجاح.",
+      "openError": "تعذر فتح الجلسة.",
+      "openSuccess": "تم فتح الجلسة بنجاح.",
+      "openSessionExists": "توجد جلسة مفتوحة بالفعل لنقطة البيع هذه.",
+      "closeError": "تعذر إغلاق الجلسة.",
+      "closeSuccess": "تم إغلاق الجلسة بنجاح.",
+      "userMissing": "تعذر تحديد المستخدم الحالي."
+    }
+  },
+  "sidebar": {
+    "workspaceFallback": "يلزم استكمال التهيئة",
+    "branchFallback": "الفرع الرئيسي",
+    "planLabel": "باقة {plan}",
+    "foundationTitle": "بنية تشغيل جاهزة",
+    "foundationDescription": "المصادقة، والتهيئة الأولية، ووعي مساحة العمل، والشاشات المعيارية جاهزة للربط بالخدمات الخلفية."
+  },
+  "topbar": {
+    "workspaceFallback": "مساحة عمل تجريبية",
+    "branchFallback": "فرع تجريبي",
+    "workspaceSettings": "إعدادات مساحة العمل"
+  },
+  "system": {
+    "notFoundTitle": "هذه الصفحة غير متاحة داخل النظام.",
+    "notFoundDescription": "قد يكون المسار قد تغيّر، أو لم تتم إضافته بعد ضمن هذه النسخة من التطبيق.",
+    "checkingTitle": "جارٍ التحميل"
+  },
+  "errors": {
+    "workspaceLoad": "تعذر تحميل بيانات مساحة العمل.",
+    "workspaceAuthMissing": "لا يوجد مستخدم موثّق لإتمام إنشاء مساحة العمل.",
+    "authSessionCheck": "تعذر التحقق من الجلسة الحالية.",
+    "authSignIn": "تعذر تسجيل الدخول حاليًا.",
+    "authSignUp": "تعذر إنشاء الحساب حاليًا.",
+    "supabaseConfig": "إعدادات Supabase غير مكتملة أو غير صحيحة. يرجى مراجعة VITE_SUPABASE_URL وVITE_SUPABASE_ANON_KEY.",
+    "teamCreate": "تعذر إنشاء الموظف حاليًا."
+  }
+}
