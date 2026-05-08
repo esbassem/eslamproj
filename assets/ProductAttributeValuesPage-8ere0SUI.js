@@ -1,0 +1,1 @@
+import{j as t}from"./index-C9rnTKTO.js";import{P as r,a as i}from"./ProductsOverview-B3lSAAzB.js";import"./badge-xsBkbPdu.js";import"./products.api-BO9YMxRV.js";import"./input-Df4Hp4lE.js";import"./label-D3ZmSSdK.js";function u(){return t.jsx(r,{initialView:i.values})}export{u as ProductAttributeValuesPage};

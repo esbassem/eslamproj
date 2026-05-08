@@ -1,0 +1,1 @@
+import{j as r}from"./index-C9rnTKTO.js";import{P as t}from"./PartnerList-Dk5G_MKf.js";import"./badge-xsBkbPdu.js";import"./input-Df4Hp4lE.js";import"./partners.service-CG8kuZFA.js";import"./label-D3ZmSSdK.js";function n(){return r.jsx(t,{filterType:"supplier"})}export{n as SuppliersPage};

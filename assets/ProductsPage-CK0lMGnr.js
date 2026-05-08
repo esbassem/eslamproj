@@ -1,0 +1,1 @@
+import{j as r}from"./index-C9rnTKTO.js";import{P as t,a as o}from"./ProductsOverview-B3lSAAzB.js";import"./badge-xsBkbPdu.js";import"./products.api-BO9YMxRV.js";import"./input-Df4Hp4lE.js";import"./label-D3ZmSSdK.js";function u(){return r.jsx(t,{initialView:o.products})}export{u as ProductsPage};

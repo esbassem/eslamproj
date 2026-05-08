@@ -1,0 +1,1 @@
+import{j as t}from"./index-C9rnTKTO.js";import{P as r}from"./PartnerList-Dk5G_MKf.js";import"./badge-xsBkbPdu.js";import"./input-Df4Hp4lE.js";import"./partners.service-CG8kuZFA.js";import"./label-D3ZmSSdK.js";function a(){return t.jsx(r,{filterType:"all"})}export{a as ContactsPage};
