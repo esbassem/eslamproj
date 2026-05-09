@@ -211,7 +211,7 @@ export function DashboardPage() {
 
   if (uiExperiments.homeLauncherNavigation) {
     return (
-      <div className="relative flex min-h-[calc(100vh-9rem)] w-full flex-col items-center overflow-hidden px-6 pb-2 pt-4 text-slate-700 sm:px-10 sm:pt-5 lg:px-16 lg:pt-6">
+      <div className="relative flex min-h-[calc(100dvh-5.5rem)] w-full flex-col items-center overflow-hidden px-4 pb-6 pt-3 text-slate-700 sm:min-h-[calc(100vh-9rem)] sm:px-10 sm:pb-2 sm:pt-5 lg:px-16 lg:pt-6">
         <style>{`
           @keyframes fadeUp {
             from { opacity: 0; transform: translateY(12px); }
@@ -221,7 +221,7 @@ export function DashboardPage() {
           .app-launching { transform: scale(0.985); filter: brightness(1.04); }
         `}</style>
 
-        <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-none absolute inset-0 hidden sm:block">
           <span className="absolute left-[8%] top-[18%] h-7 w-7 rounded-md bg-slate-200/60 shadow-[7px_34px_0_rgba(226,232,240,0.75),14px_68px_0_rgba(226,232,240,0.55)]" />
           <span className="absolute right-[9%] top-[28%] h-12 w-12 rounded-lg bg-slate-200/70 shadow-[-34px_92px_0_rgba(148,163,184,0.42),28px_224px_0_rgba(226,232,240,0.55)]" />
           <span className="absolute bottom-[12%] left-[14%] h-5 w-5 rounded bg-slate-200/70 shadow-[270px_-6px_0_rgba(226,232,240,0.75),288px_18px_0_rgba(226,232,240,0.55)]" />
@@ -237,22 +237,22 @@ export function DashboardPage() {
           <span className="absolute right-[13%] bottom-[11%] h-3 w-3 rounded-sm bg-slate-300/65 shadow-[18px_0_0_rgba(226,232,240,0.75),36px_0_0_rgba(226,232,240,0.55),0_-18px_0_rgba(226,232,240,0.65),18px_-18px_0_rgba(248,113,113,0.18)]" />
         </div>
 
-        <section className="relative z-10 grid w-full max-w-6xl gap-4 lg:grid-cols-[minmax(0,0.82fr)_minmax(30rem,38rem)] lg:items-start">
+        <section className="relative z-10 grid w-full max-w-6xl gap-5 sm:gap-4 lg:grid-cols-[minmax(0,0.82fr)_minmax(30rem,38rem)] lg:items-start">
           <div className="fade-up text-right lg:pt-2" dir="rtl" style={{ animationDelay: '0s' }}>
-            <p className="mb-4 text-sm font-semibold text-slate-500">{dateStr}</p>
-            <h1 className="max-w-xl text-5xl font-bold leading-tight text-slate-900 sm:text-6xl">
+            <p className="mb-2 text-xs font-semibold text-slate-500 sm:mb-4 sm:text-sm">{dateStr}</p>
+            <h1 className="max-w-xl text-3xl font-bold leading-tight text-slate-900 sm:text-6xl">
               {greeting}
               {firstName ? `، ${firstName}` : ''}
             </h1>
-            <p className="mt-5 max-w-lg text-xl font-semibold leading-8 text-slate-700">
+            <p className="mt-2 max-w-lg text-sm font-semibold leading-6 text-slate-700 sm:mt-5 sm:text-xl sm:leading-8">
               يوم جديد لتنظيم عملك واتخاذ قرارات أوضح.
             </p>
-            <p className="mt-3 max-w-md text-base font-medium leading-7 text-slate-500">
+            <p className="mt-1 max-w-md text-xs font-medium leading-6 text-slate-500 sm:mt-3 sm:text-base sm:leading-7">
               {tenant?.name ? `مساحة عمل ${tenant.name}` : 'اختر التطبيق الذي تريد العمل عليه.'}
             </p>
           </div>
 
-          <div className="fade-up lg:mt-16" dir="rtl" style={{ animationDelay: '0.06s' }}>
+          <div className="fade-up w-full lg:mt-16" dir="rtl" style={{ animationDelay: '0.06s' }}>
             {appsStatus === 'loading' || appsStatus === 'idle' ? (
               <div className="rounded-2xl border border-white/75 bg-white/55 py-16 shadow-[0_18px_45px_rgba(15,23,42,0.10)] backdrop-blur-md">
                 <LoadingSpinner title="جاري التحميل…" />
@@ -263,10 +263,10 @@ export function DashboardPage() {
               </div>
             ) : launcherApps.length ? (
               <div>
-                <div className="mb-2 inline-flex items-center border-r-2 border-red-500 pr-2 text-xs font-extrabold text-slate-700">
+                <div className="mb-4 inline-flex items-center border-r-2 border-red-500 pr-2 text-xs font-extrabold text-slate-700 sm:mb-2">
                   تطبيقاتي المثبتة
                 </div>
-                <div className="grid w-full grid-cols-4 gap-3">
+                <div className="grid w-full grid-cols-3 gap-x-4 gap-y-5 sm:grid-cols-4 sm:gap-3">
                   {launcherApps.map((item, i) => {
                     const Icon = resolveModuleIcon(item.icon);
                     const title = item.title ?? item.name ?? t(item.titleKey);
@@ -279,20 +279,20 @@ export function DashboardPage() {
                     return (
                       <div
                         key={item.href}
-                        className="fade-up group relative min-h-28"
+                        className="fade-up group relative min-h-0 sm:min-h-28"
                         style={{ animationDelay: isLaunching ? '0s' : `${0.06 + i * 0.035}s` }}
                       >
                         <Link
                           to={item.href}
                           onClick={(event) => handleLaunchApp(event, { ...item, title, Icon })}
-                          className={`relative flex min-h-28 flex-col justify-between overflow-hidden rounded-2xl p-4 text-white shadow-lg ring-1 ring-white/10 transition-all duration-150 ease-out hover:shadow-[0_12px_24px_rgba(15,23,42,0.14)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 ${isLaunching ? 'app-launching z-20 ring-2 ring-white/60' : ''}`}
+                          className={`relative flex aspect-square min-h-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[1.65rem] p-3 text-white shadow-lg ring-1 ring-white/10 transition-all duration-150 ease-out hover:shadow-[0_12px_24px_rgba(15,23,42,0.14)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 sm:aspect-auto sm:min-h-28 sm:items-stretch sm:justify-between sm:gap-0 sm:rounded-2xl sm:p-4 ${isLaunching ? 'app-launching z-20 ring-2 ring-white/60' : ''}`}
                           style={{ backgroundColor: item.iconColor || DEFAULT_APP_ICON_COLOR }}
                         >
                           <span className={`pointer-events-none absolute inset-0 bg-white/14 transition-opacity duration-200 ${isLaunching ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
-                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] backdrop-blur-sm transition group-hover:bg-white/24">
-                            <Icon className="h-5 w-5 stroke-[2.1]" />
+                          <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] bg-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] backdrop-blur-sm transition group-hover:bg-white/24 sm:h-11 sm:w-11 sm:rounded-xl">
+                            <Icon className="h-6 w-6 stroke-[2.1] sm:h-5 sm:w-5" />
                           </div>
-                          <span className="block truncate text-right text-sm font-bold leading-tight text-white drop-shadow-sm">{title}</span>
+                          <span className="block max-w-full break-words text-center text-xs font-bold leading-tight text-white drop-shadow-sm sm:truncate sm:text-right sm:text-sm">{title}</span>
                         </Link>
                         {canUninstall ? (
                           <div className="absolute left-2 top-2 z-30">
@@ -326,7 +326,7 @@ export function DashboardPage() {
               </div>
             ) : (
               <div>
-                <div className="mb-2 inline-flex items-center border-r-2 border-red-500 pr-2 text-xs font-extrabold text-slate-700">
+                <div className="mb-4 inline-flex items-center border-r-2 border-red-500 pr-2 text-xs font-extrabold text-slate-700 sm:mb-2">
                   تطبيقاتي المثبتة
                 </div>
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 p-8 text-center text-sm text-slate-400 shadow-[0_20px_55px_rgba(15,23,42,0.08)]">
@@ -411,16 +411,16 @@ function AppCatalogSection({ apps, status, error, installingAppId, selectedApp, 
   }
 
   return (
-    <section className="relative z-10 mt-6 w-full max-w-6xl text-right" dir="rtl">
-      <div className="mb-3 flex items-end justify-between gap-4">
+    <section className="relative z-10 mt-7 w-full max-w-6xl text-right sm:mt-6" dir="rtl">
+      <div className="mb-4 flex items-end justify-between gap-4 sm:mb-3">
         <div>
-          <h2 className="inline-flex items-center rounded-lg border border-slate-200 bg-white/75 px-3 py-1.5 text-sm font-extrabold text-slate-900 shadow-[0_10px_28px_rgba(15,23,42,0.07)] backdrop-blur-sm">
+          <h2 className="inline-flex items-center border-r-2 border-red-500 pr-2 text-xs font-extrabold text-slate-700 sm:rounded-lg sm:border sm:border-r sm:border-slate-200 sm:bg-white/75 sm:px-3 sm:py-1.5 sm:text-sm sm:text-slate-900 sm:shadow-[0_10px_28px_rgba(15,23,42,0.07)] sm:backdrop-blur-sm">
             تطبيقات المنصة المقترحة
           </h2>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {suggestedApps.map((app) => (
           <CatalogAppCard
             key={app.id}
@@ -450,22 +450,22 @@ function CatalogAppCard({ app, onOpen }) {
     <button
       type="button"
       onClick={onOpen}
-      className={`group flex min-h-20 w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-right shadow-[0_14px_34px_rgba(15,23,42,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_42px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200 ${stateMeta.cardClass}`}
+      className={`group flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-[1.35rem] border px-3 py-4 text-center shadow-[0_14px_34px_rgba(15,23,42,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_42px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200 sm:min-h-20 sm:flex-row sm:justify-between sm:gap-3 sm:rounded-2xl sm:px-4 sm:py-3 sm:text-right ${stateMeta.cardClass}`}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-col items-center gap-2 sm:flex-row sm:gap-3">
         <div
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] sm:h-10 sm:w-10 sm:rounded-xl"
           style={{ backgroundColor: appColor }}
         >
-          <Icon className="h-5 w-5 stroke-[2.1]" />
+          <Icon className="h-6 w-6 stroke-[2.1] sm:h-5 sm:w-5" />
         </div>
         <div className="min-w-0">
-          <div className="truncate text-sm font-extrabold text-slate-900">{app.name}</div>
-          <div className="mt-0.5 truncate text-xs font-semibold text-slate-500">{app.description || app.code}</div>
+          <div className="break-words text-xs font-extrabold leading-5 text-slate-900 sm:truncate sm:text-sm">{app.name}</div>
+          <div className="mt-0.5 hidden truncate text-xs font-semibold text-slate-500 sm:block">{app.description || app.code}</div>
         </div>
       </div>
       {stateMeta.label ? (
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-extrabold ${stateMeta.badgeClass}`}>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-extrabold sm:text-xs ${stateMeta.badgeClass}`}>
           {stateMeta.label}
         </span>
       ) : null}
@@ -501,7 +501,7 @@ function CatalogAppDetailsSheet({ app, open, isInstalling, onOpenChange, onInsta
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="max-w-[560px] overflow-hidden border-r border-slate-200 bg-white p-0" dir="rtl">
+      <SheetContent side="left" className="w-full max-w-full overflow-hidden border-r border-slate-200 bg-white p-0 sm:max-w-[560px]" dir="rtl">
         <SheetDismissButton
           className="left-auto right-4 top-4 z-20 border-transparent shadow-none"
           style={{
@@ -512,8 +512,8 @@ function CatalogAppDetailsSheet({ app, open, isInstalling, onOpenChange, onInsta
         />
         {app ? (
           <div className="grid h-full min-h-0 grid-rows-[auto_1fr]">
-            <div className="px-7 pb-7 pt-12" style={{ backgroundColor: appColor, color: headerTextColor }}>
-              <div className="mb-8 flex items-center justify-between gap-4">
+            <div className="px-5 pb-5 pt-12 sm:px-7 sm:pb-7" style={{ backgroundColor: appColor, color: headerTextColor }}>
+              <div className="mb-6 flex items-center justify-between gap-4 sm:mb-8">
                 <div
                   className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black"
                   style={{ backgroundColor: surfaceColor, border: `1px solid ${surfaceBorderColor}` }}
@@ -523,17 +523,17 @@ function CatalogAppDetailsSheet({ app, open, isInstalling, onOpenChange, onInsta
                 </div>
               </div>
 
-              <div className="flex items-start gap-5">
+              <div className="flex items-start gap-4 sm:gap-5">
                 <div className="shrink-0">
                   <div
-                    className="flex h-24 w-24 items-center justify-center rounded-[1.45rem]"
+                    className="flex h-20 w-20 items-center justify-center rounded-[1.35rem] sm:h-24 sm:w-24 sm:rounded-[1.45rem]"
                     style={{
                       backgroundColor: surfaceColor,
                       border: `1px solid ${surfaceBorderColor}`,
                       color: headerTextColor,
                     }}
                   >
-                    <Icon className="h-12 w-12 stroke-[2.05]" />
+                    <Icon className="h-10 w-10 stroke-[2.05] sm:h-12 sm:w-12" />
                   </div>
                 </div>
 
@@ -541,17 +541,17 @@ function CatalogAppDetailsSheet({ app, open, isInstalling, onOpenChange, onInsta
                   <div className="text-xs font-black uppercase tracking-wide" style={{ color: mutedHeaderTextColor }}>
                     {app.code}
                   </div>
-                  <SheetTitle className="mt-1 text-3xl font-black leading-tight tracking-tight" style={{ color: headerTextColor }}>
+                  <SheetTitle className="mt-1 text-2xl font-black leading-tight tracking-tight sm:text-3xl" style={{ color: headerTextColor }}>
                     {app.name}
                   </SheetTitle>
-                  <p className="mt-3 text-sm font-bold leading-7" style={{ color: mutedHeaderTextColor }}>
+                  <p className="mt-2 text-xs font-bold leading-6 sm:mt-3 sm:text-sm sm:leading-7" style={{ color: mutedHeaderTextColor }}>
                     {description}
                   </p>
                 </div>
               </div>
 
               <div
-                className="mt-7 flex items-center justify-between gap-4 rounded-2xl p-4"
+                className="mt-6 flex items-center justify-between gap-3 rounded-2xl p-3 sm:mt-7 sm:gap-4 sm:p-4"
                 style={{ backgroundColor: surfaceColor, border: `1px solid ${surfaceBorderColor}` }}
               >
                 <div className="min-w-0">
@@ -566,7 +566,7 @@ function CatalogAppDetailsSheet({ app, open, isInstalling, onOpenChange, onInsta
                   type="button"
                   disabled={!canInstall || isInstalling}
                   onClick={handleInstall}
-                  className="h-10 shrink-0 rounded-xl px-5 text-sm font-black shadow-none"
+                  className="h-10 shrink-0 rounded-xl px-4 text-sm font-black shadow-none sm:px-5"
                   style={{ backgroundColor: installButtonBg, color: installButtonText }}
                 >
                   {isInstalling ? 'جار التثبيت…' : 'تثبيت'}
@@ -574,7 +574,7 @@ function CatalogAppDetailsSheet({ app, open, isInstalling, onOpenChange, onInsta
               </div>
             </div>
 
-            <SheetBody className="border-t border-slate-200 px-7 py-6">
+            <SheetBody className="border-t border-slate-200 px-5 py-5 sm:px-7 sm:py-6">
               <section>
                 <h3 className="text-sm font-black text-slate-950">عن التطبيق</h3>
                 <p className="mt-3 text-sm font-semibold leading-7 text-slate-600">
