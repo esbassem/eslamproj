@@ -35,7 +35,6 @@ export const modulesApi = {
       .from('ir_ui_menus')
       .select(MENU_COLUMNS)
       .in('module_id', normalizedModuleIds)
-      .eq('active', true)
       .order('sequence', { ascending: true })
       .order('name', { ascending: true });
 

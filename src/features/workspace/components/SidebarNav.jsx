@@ -21,6 +21,7 @@ function getMenuNavigationItem(menu) {
     icon: resolveModuleIcon(menu.icon),
     permissionKey: menu.permissionKey,
     sortOrder: menu.sortOrder,
+    active: menu.active !== false,
     children: children.map(getMenuNavigationItem).filter(Boolean),
   };
 }
@@ -36,6 +37,46 @@ function SidebarLink({ item, depth = 0, appColor }) {
   const Icon = item.icon;
   const label = item.title || (item.titleKey ? t(item.titleKey) : '');
   const isActive = normalizeActivePath(location.pathname) === normalizeActivePath(item.href);
+  const isDisabled = item.active === false;
+  const content = (
+    <>
+      <span className="flex min-w-0 flex-1 items-center gap-3">
+        <span
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-md',
+            depth > 0 && 'h-7 w-7',
+            isActive ? 'bg-white text-white' : 'bg-white/10 text-white',
+            isDisabled && 'bg-white/6 text-white/55',
+          )}
+          style={isActive && !isDisabled ? { backgroundColor: appColor, color: 'white' } : {}}
+        >
+          <Icon className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 truncate">{label}</span>
+      </span>
+      {isDisabled ? (
+        <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[0.68rem] font-black text-white/70">
+          قريبًا
+        </span>
+      ) : null}
+    </>
+  );
+
+  if (isDisabled) {
+    return (
+      <div
+        data-permission-key={item.permissionKey || undefined}
+        className={cn(
+          'flex w-full cursor-not-allowed items-center gap-3 rounded-lg bg-white/6 px-3 py-3 text-right text-sm font-bold text-white/60 opacity-55',
+          depth > 0 && 'py-2.5 text-sm',
+        )}
+        aria-disabled="true"
+        dir="rtl"
+      >
+        {content}
+      </div>
+    );
+  }
 
   return (
     <NavLink
@@ -54,19 +95,7 @@ function SidebarLink({ item, depth = 0, appColor }) {
       style={isActive ? { color: appColor } : {}}
       dir="rtl"
     >
-      <span className="flex w-full items-center gap-3">
-        <span
-          className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-md',
-            depth > 0 && 'h-7 w-7',
-            isActive ? 'bg-white text-white' : 'bg-white/10 text-white',
-          )}
-          style={isActive ? { backgroundColor: appColor, color: 'white' } : {}}
-        >
-          <Icon className="h-4 w-4" />
-        </span>
-        <span>{label}</span>
-      </span>
+      {content}
     </NavLink>
   );
 }

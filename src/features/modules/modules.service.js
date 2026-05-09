@@ -21,7 +21,7 @@ function normalizeModule(row) {
 }
 
 function normalizeMenu(menu, moduleById) {
-  if (!menu || menu.active === false) {
+  if (!menu) {
     return null;
   }
 

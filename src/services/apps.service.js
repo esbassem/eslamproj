@@ -104,7 +104,7 @@ function normalizeCatalogApp(module, tenantModule = null) {
 }
 
 function normalizeMenu(menu, app) {
-  if (!menu || menu.active === false) {
+  if (!menu) {
     return null;
   }
 
@@ -261,7 +261,6 @@ export async function getAppMenus(appCode, options = {}) {
     .from('ir_ui_menus')
     .select(MENU_COLUMNS)
     .eq('module_id', app.id)
-    .eq('active', true)
     .order('sequence', { ascending: true })
     .order('name', { ascending: true });
 
