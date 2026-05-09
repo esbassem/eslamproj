@@ -61,6 +61,7 @@ export function AppRouter() {
               <Route path="/products/tracking-identifiers" element={<Navigate to="/app/products/tracking-identifiers" replace />} />
               <Route path="/app" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/dashboard" element={<Navigate to={ROUTES.admin} replace />} />
+              <Route path="/app/team" element={<Navigate to={ROUTES.settingsTeam} replace />} />
               <Route path="/app/showroom_point" element={<ShowroomWorkspaceLayout />}>
                 <Route index element={<ShowroomSellPage />} />
                 <Route path="new" element={<ShowroomSellPage />} />

@@ -35,5 +35,6 @@ export const MENU_COMPONENTS = {
   '/app/showroom_point/settings': lazyNamed(() => import('@/features/showroom/pages/ShowroomSellPage'), 'ShowroomSellPage'),
   '/app/contracts': lazyNamed(() => import('@/features/contracts/pages/ContractsPage'), 'ContractsPage'),
   '/app/settings': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
-  '/app/team': lazyNamed(() => import('@/features/team/pages/TeamManagementPage'), 'TeamManagementPage'),
+  '/app/settings/team': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
+  '/app/team': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
 };

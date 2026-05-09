@@ -1,28 +1,37 @@
 import { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { ROUTES } from '@/core/config/routes.config';
 import { useI18n } from '@/core/i18n/useI18n';
 import { SettingsLayout } from '@/features/settings/components/SettingsLayout';
 import { AccountingSettings } from '@/features/settings/sections/accounting/AccountingSettings';
 import { CompanySettings } from '@/features/settings/sections/general/CompanySettings';
 import { PosSettings } from '@/features/settings/sections/pos/PosSettings';
+import { TeamManagementPage } from '@/features/team/pages/TeamManagementPage';
 
-const validSections = new Set(['general', 'accounting', 'pos', 'payments']);
+const validSections = new Set(['general', 'accounting', 'pos', 'payments', 'team']);
 const validAccountingTabs = new Set(['methods', 'rules', 'journals', 'journal-methods']);
 
 export function SettingsPage() {
   const { t } = useI18n();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isTeamPath = location.pathname.replace(/\/+$/, '') === ROUTES.settingsTeam;
   const requestedSection = searchParams.get('section');
   const requestedTab = searchParams.get('tab');
   const normalizedRequestedSection = requestedSection === 'payments' ? 'accounting' : requestedSection;
-  const activeSection = validSections.has(requestedSection) ? normalizedRequestedSection : 'general';
+  const activeSection = isTeamPath ? 'team' : validSections.has(requestedSection) ? normalizedRequestedSection : 'general';
   const activeAccountingTab = validAccountingTabs.has(requestedTab) ? requestedTab : 'methods';
 
   useEffect(() => {
     const nextParams = new URLSearchParams(searchParams);
     let shouldReplace = false;
 
-    if (requestedSection && !validSections.has(requestedSection)) {
+    if (isTeamPath && (requestedSection || requestedTab)) {
+      nextParams.delete('section');
+      nextParams.delete('tab');
+      shouldReplace = true;
+    } else if (requestedSection && !validSections.has(requestedSection)) {
       nextParams.set('section', 'general');
       nextParams.delete('tab');
       shouldReplace = true;
@@ -47,10 +56,15 @@ export function SettingsPage() {
     if (shouldReplace) {
       setSearchParams(nextParams, { replace: true });
     }
-  }, [activeSection, requestedSection, requestedTab, searchParams, setSearchParams]);
+  }, [activeSection, isTeamPath, requestedSection, requestedTab, searchParams, setSearchParams]);
 
   const handleSectionChange = (section) => {
-    if (!['general', 'accounting', 'pos'].includes(section)) return;
+    if (!['general', 'accounting', 'pos', 'team'].includes(section)) return;
+
+    if (section === 'team') {
+      navigate(ROUTES.settingsTeam);
+      return;
+    }
 
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('section', section);
@@ -62,7 +76,11 @@ export function SettingsPage() {
       nextParams.delete('tab');
     }
 
-    setSearchParams(nextParams);
+    if (isTeamPath) {
+      navigate(`${ROUTES.settings}?${nextParams.toString()}`);
+    } else {
+      setSearchParams(nextParams);
+    }
   };
 
   const handleAccountingTabChange = (tab) => {
@@ -75,13 +93,21 @@ export function SettingsPage() {
   };
 
   const pageTitle =
-    activeSection === 'accounting' ? 'إعدادات المحاسبة' : activeSection === 'pos' ? 'إعدادات نقاط البيع' : t('settings.title');
+    activeSection === 'accounting'
+      ? 'إعدادات المحاسبة'
+      : activeSection === 'pos'
+        ? 'إعدادات نقاط البيع'
+        : activeSection === 'team'
+          ? 'المستخدمون والفريق'
+          : t('settings.title');
   const pageDescription =
     activeSection === 'accounting'
       ? 'إعدادات الدفع المحاسبية داخل settings كمصدر واحد.'
       : activeSection === 'pos'
         ? 'إعدادات نقاط البيع منفصلة عن المحاسبة.'
-        : t('settings.description');
+        : activeSection === 'team'
+          ? 'إدارة المستخدمين وأعضاء الفريق داخل تطبيق الإعدادات.'
+          : t('settings.description');
 
   return (
     <SettingsLayout
@@ -94,6 +120,7 @@ export function SettingsPage() {
     >
       {activeSection === 'accounting' ? <AccountingSettings activeTab={activeAccountingTab} onTabChange={handleAccountingTabChange} /> : null}
       {activeSection === 'pos' ? <PosSettings /> : null}
+      {activeSection === 'team' ? <TeamManagementPage embedded /> : null}
       {activeSection === 'general' ? <CompanySettings /> : null}
     </SettingsLayout>
   );

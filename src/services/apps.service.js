@@ -7,6 +7,7 @@ import { getAppBasePath, normalizeAppCode } from '@/utils/appResolver';
 const APP_COLUMNS = 'id, technical_name, name, description, icon, icon_color, route_path, application, technical, installable, is_removable, active, sequence';
 const MENU_COLUMNS = 'id, module_id, parent_id, name, code, route_path, icon, sequence, active';
 const PRODUCT_MENU_ROUTES = new Set(['/app/products', '/app/products/attributes', '/app/products/attribute-values', '/app/products/tracking-identifiers']);
+const EMBEDDED_APP_CODES = new Set(['team']);
 
 const FALLBACK_APP_CODES_BY_HREF = {
   [ROUTES.dashboard]: 'dashboard',
@@ -139,6 +140,10 @@ function compareBySortOrder(first, second) {
   return first.sortOrder - second.sortOrder || first.name.localeCompare(second.name, 'ar');
 }
 
+function isStandaloneApp(app) {
+  return app?.code && !EMBEDDED_APP_CODES.has(normalizeAppCode(app.code));
+}
+
 function buildMenuTree(rows) {
   const map = new Map();
   const roots = [];
@@ -181,7 +186,7 @@ function fallbackApps() {
         active: true,
       };
     })
-    .filter((app) => app.code && app.code !== 'dashboard');
+    .filter((app) => app.code && app.code !== 'dashboard' && isStandaloneApp(app));
 }
 
 function fallbackMenus(appCode) {
@@ -233,7 +238,7 @@ async function getInstalledApplicationRows(tenantId) {
 
 export async function getApps(options = {}) {
   const rows = await getInstalledApplicationRows(options.tenantId);
-  const apps = rows.map(normalizeApp).filter(Boolean).sort(compareBySortOrder);
+  const apps = rows.map(normalizeApp).filter((app) => app && isStandaloneApp(app)).sort(compareBySortOrder);
   return apps;
 }
 
@@ -285,7 +290,7 @@ export async function getAllApplicationModules() {
     return [];
   }
 
-  return (data ?? []).map(normalizeApp).filter(Boolean).sort(compareBySortOrder);
+  return (data ?? []).map(normalizeApp).filter((app) => app && isStandaloneApp(app)).sort(compareBySortOrder);
 }
 
 export async function getApplicationModulesWithTenantState(tenantId) {
@@ -318,7 +323,7 @@ export async function getApplicationModulesWithTenantState(tenantId) {
 
   return (modules ?? [])
     .map((module) => normalizeCatalogApp(module, tenantModuleByModuleId.get(module.id)))
-    .filter(Boolean)
+    .filter((app) => app && isStandaloneApp(app))
     .sort(compareBySortOrder);
 }
 

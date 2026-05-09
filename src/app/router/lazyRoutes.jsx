@@ -63,7 +63,7 @@ const protectedRoutePreloaders = {
   [ROUTES.payments]: loadPaymentsPage,
   [ROUTES.contracts]: loadContractsPage,
   [ROUTES.settings]: loadSettingsPage,
-  [ROUTES.team]: loadTeamManagementPage,
+  [ROUTES.settingsTeam]: loadSettingsPage,
 };
 
 export function preloadProtectedRoute(pathname) {

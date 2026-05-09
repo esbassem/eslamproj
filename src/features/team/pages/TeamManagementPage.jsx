@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Users2 } from 'lucide-react';
 import { Badge } from '@/core/ui/badge';
-import { Card, CardContent } from '@/core/ui/card';
+import { Button } from '@/core/ui/button';
 import { EmptyState } from '@/core/ui/empty-state';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
 import { ResourcePageShell } from '@/core/ui/resource-page-shell';
@@ -11,7 +11,7 @@ import { CreateTeamMemberSheet } from '@/features/team/components/CreateTeamMemb
 import { TeamMembersTable } from '@/features/team/components/TeamMembersTable';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
-export function TeamManagementPage() {
+export function TeamManagementPage({ embedded = false }) {
   const { t } = useI18n();
   const { tenant, tenantUser } = useWorkspace();
   const [members, setMembers] = useState([]);
@@ -103,69 +103,78 @@ export function TeamManagementPage() {
     }
   };
 
-  return (
-    <>
-      <ResourcePageShell
-        title={t('team.title')}
-        description={t('team.description')}
-        icon={Users2}
-        showSearch={false}
-        showEmptyState={false}
-        primaryAction={isOwner ? t('team.actions.addEmployee') : null}
-        onPrimaryAction={() => setIsSheetOpen(true)}
-      >
-        <div className="space-y-6">
-          {successMessage ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div>
-          ) : null}
+  const content = (
+    <div className="space-y-6">
+      {successMessage ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div>
+      ) : null}
 
-          {pageError ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{pageError}</div>
-          ) : null}
+      {pageError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{pageError}</div>
+      ) : null}
 
-          <Card className="bg-white/90">
-            <CardContent className="space-y-6 p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="text-lg font-semibold text-slate-950">{t('team.listTitle')}</div>
-                  <div className="text-sm text-muted-foreground">{t('team.listDescription')}</div>
-                </div>
-                <Badge variant="accent">{t('team.membersCount', { count: String(members.length) })}</Badge>
-              </div>
-
-              {!isOwner ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  {t('team.messages.ownerOnly')}
-                </div>
-              ) : null}
-
-              {isLoading ? (
-                <LoadingSpinner title="جاري تحميل الفريق" />
-              ) : members.length ? (
-                <TeamMembersTable members={members} />
-              ) : (
-                <EmptyState
-                  icon={Users2}
-                  title={t('team.emptyTitle')}
-                  description={t('team.emptyDescription')}
-                  actionLabel={t('team.actions.addEmployee')}
-                  onAction={() => setIsSheetOpen(true)}
-                  actionDisabled={!isOwner}
-                />
-              )}
-            </CardContent>
-          </Card>
-
-          {isOwner ? (
-            <CreateTeamMemberSheet
-              open={isSheetOpen}
-              onOpenChange={setIsSheetOpen}
-              onSubmit={handleCreateMember}
-              isSubmitting={isSubmitting}
-            />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div className="text-lg font-semibold text-slate-950">{t('team.listTitle')}</div>
+          <div className="text-sm text-muted-foreground">{t('team.listDescription')}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="accent">{t('team.membersCount', { count: String(members.length) })}</Badge>
+          {embedded && isOwner ? (
+            <Button type="button" size="sm" onClick={() => setIsSheetOpen(true)}>
+              {t('team.actions.addEmployee')}
+            </Button>
           ) : null}
         </div>
-      </ResourcePageShell>
-    </>
+      </div>
+
+      {!isOwner ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {t('team.messages.ownerOnly')}
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <LoadingSpinner title="جاري تحميل الفريق" />
+      ) : members.length ? (
+        <TeamMembersTable members={members} />
+      ) : (
+        <EmptyState
+          icon={Users2}
+          title={t('team.emptyTitle')}
+          description={t('team.emptyDescription')}
+          actionLabel={t('team.actions.addEmployee')}
+          onAction={() => setIsSheetOpen(true)}
+          actionDisabled={!isOwner}
+        />
+      )}
+
+      {isOwner ? (
+        <CreateTeamMemberSheet
+          open={isSheetOpen}
+          onOpenChange={setIsSheetOpen}
+          onSubmit={handleCreateMember}
+          isSubmitting={isSubmitting}
+        />
+      ) : null}
+    </div>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <ResourcePageShell
+      title={t('team.title')}
+      description={t('team.description')}
+      icon={Users2}
+      showSearch={false}
+      showEmptyState={false}
+      primaryAction={isOwner ? t('team.actions.addEmployee') : null}
+      onPrimaryAction={() => setIsSheetOpen(true)}
+    >
+      {content}
+    </ResourcePageShell>
   );
 }

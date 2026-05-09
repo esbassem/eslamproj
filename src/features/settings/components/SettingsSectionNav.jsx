@@ -1,10 +1,11 @@
-import { Building2, Landmark, Store, WalletCards } from 'lucide-react';
+import { Building2, Landmark, Store, Users2, WalletCards } from 'lucide-react';
 import { cn } from '@/core/utils/cn';
 
 const sections = [
   { key: 'general', title: 'عام', icon: Building2 },
   { key: 'accounting', title: 'المحاسبة', icon: Landmark },
   { key: 'pos', title: 'نقاط البيع', icon: Store },
+  { key: 'team', title: 'المستخدمون والفريق', icon: Users2 },
 ];
 
 const accountingTabs = [
