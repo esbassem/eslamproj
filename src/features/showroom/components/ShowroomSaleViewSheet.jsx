@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Package, Printer, User } from 'lucide-react';
+import { AlertCircle, Banknote, CheckCircle2, Package, Printer, User } from 'lucide-react';
 import { ShowroomContractPreview } from '@/features/showroom/components/ShowroomContractPreview';
+import { useShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
 import { showroomService } from '@/features/showroom/services/showroom.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
@@ -21,12 +22,13 @@ function SaleSheetSkeleton() {
   );
 }
 
-function SaleSheetContent({ sale, onContractOpen }) {
+function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemaining }) {
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
-  const paymentsTotal = Array.isArray(sale?.payments)
-    ? sale.payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
+  const payments = Array.isArray(sale?.payments) ? sale.payments : [];
+  const paymentsTotal = payments.length
+    ? payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : 0;
-  const paidAmount = Number(sale?.paid_amount ?? sale?.paidAmount ?? paymentsTotal);
+  const paidAmount = payments.length ? paymentsTotal : Number(sale?.paid_amount ?? sale?.paidAmount ?? 0);
   const remainingAmount = Number(sale?.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
   const items = Array.isArray(sale?.items) && sale.items.length > 0
     ? sale.items
@@ -66,65 +68,131 @@ function SaleSheetContent({ sale, onContractOpen }) {
           </div>
         </div>
 
-        {items.length > 0 && (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
-              <Package className="h-5 w-5 text-slate-400" />
-              <h3 className="text-sm font-bold text-slate-700">المنتجات</h3>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {items.map((item, index) => {
-                const itemName = item?.displayName || item?.name || item?.description || `منتج ${index + 1}`;
-                const itemPrice = Number(item?.price ?? item?.unit_price ?? 0);
-                const itemQty = Number(item?.quantity ?? 1);
-                const itemTotal = Number(item?.total ?? item?.line_total ?? itemPrice * itemQty);
-
-                return (
-                  <div key={item?.lineId || item?.lineUuid || item?.id || index} className="flex items-start justify-between gap-3 px-5 py-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-slate-800 truncate">{itemName}</p>
-                      {itemQty > 1 && (
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          {itemQty} × {formatMoney(itemPrice)}
-                        </p>
-                      )}
-                      {item?.serialNumber && !(Array.isArray(item?.trackingIdentifiers) && item.trackingIdentifiers.length) && (
-                        <p className="mt-0.5 text-xs text-slate-400">رقم تسلسلي: {item.serialNumber}</p>
-                      )}
-                      {Array.isArray(item?.trackingIdentifiers) && item.trackingIdentifiers.length ? (
-                        <p className="mt-0.5 truncate text-xs text-slate-400">
-                          {item.trackingIdentifiers.map((identifier) => `${identifier.label}: ${identifier.value}`).join(' - ')}
-                        </p>
-                      ) : null}
-                      {item?.ownership_name && (
-                        <p className="mt-0.5 text-xs text-slate-400">نقل ملكية: {item.ownership_name}</p>
-                      )}
-                    </div>
-                    <p className="shrink-0 font-mono text-sm font-bold text-slate-800">{formatMoney(itemTotal)}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="divide-y divide-slate-100">
-            <div className="flex items-center justify-between px-5 py-4">
-              <span className="text-sm font-bold text-slate-600">الإجمالي</span>
-              <span className="font-mono text-base font-black text-slate-800">{formatMoney(totalAmount)}</span>
+          {items.length > 0 && (
+            <section className="border-b border-slate-100">
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
+                    <Package className="h-4 w-4 text-slate-500" />
+                  </span>
+                  <div>
+                    <h3 className="text-base font-black text-slate-950">الإجمالي</h3>
+                    <p className="mt-0.5 text-[0.7rem] font-semibold text-slate-400">تفاصيل المنتجات</p>
+                  </div>
+                </div>
+                <span className="shrink-0 font-mono text-base font-black text-slate-950">{formatMoney(totalAmount)}</span>
+              </div>
+              <div className="px-4 pb-3">
+                <div className="mr-10 divide-y divide-slate-100 rounded-lg bg-slate-50 ring-1 ring-slate-100">
+                  {items.map((item, index) => {
+                    const itemName = item?.displayName || item?.name || item?.description || `منتج ${index + 1}`;
+                    const itemPrice = Number(item?.price ?? item?.unit_price ?? 0);
+                    const itemQty = Number(item?.quantity ?? 1);
+                    const itemTotal = Number(item?.total ?? item?.line_total ?? itemPrice * itemQty);
+
+                    return (
+                      <div key={item?.lineId || item?.lineUuid || item?.id || index} className="flex items-start justify-between gap-3 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-bold text-slate-700">{itemName}</p>
+                          {itemQty > 1 && (
+                            <p className="mt-0.5 text-[0.7rem] text-slate-400">
+                              {itemQty} × {formatMoney(itemPrice)}
+                            </p>
+                          )}
+                          {item?.serialNumber && !(Array.isArray(item?.trackingIdentifiers) && item.trackingIdentifiers.length) && (
+                            <p className="mt-0.5 text-[0.7rem] text-slate-400">رقم تسلسلي: {item.serialNumber}</p>
+                          )}
+                          {Array.isArray(item?.trackingIdentifiers) && item.trackingIdentifiers.length ? (
+                            <p className="mt-0.5 truncate text-[0.7rem] text-slate-400">
+                              {item.trackingIdentifiers.map((identifier) => `${identifier.label}: ${identifier.value}`).join(' - ')}
+                            </p>
+                          ) : null}
+                          {item?.ownership_name && (
+                            <p className="mt-0.5 text-[0.7rem] text-slate-400">نقل ملكية: {item.ownership_name}</p>
+                          )}
+                        </div>
+                        <p className="shrink-0 font-mono text-xs font-bold text-slate-600">{formatMoney(itemTotal)}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {paidAmount > 0 && (
+            <section className="border-b border-slate-100">
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
+                    <Banknote className="h-4 w-4 text-slate-500" />
+                  </span>
+                  <h3 className="text-base font-black text-slate-950">المدفوع</h3>
+                </div>
+                <span className="shrink-0 font-mono text-base font-black text-slate-950">{formatMoney(paidAmount)}</span>
+              </div>
+              {payments.length ? (
+                <div className="px-4 pb-3">
+                  <div className="mr-10 divide-y divide-slate-100 rounded-lg bg-slate-50 ring-1 ring-slate-100">
+                  {payments.map((payment, index) => {
+                    const paymentDate = payment?.payment_date || payment?.created_at;
+                    const statement = payment?.notes || 'دفعة';
+
+                    return (
+                      <div key={payment?.id || index} className="flex items-start justify-between gap-3 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <p className="truncate text-xs font-bold text-slate-700">{statement}</p>
+                            {paymentDate ? (
+                              <span className="shrink-0 text-[0.7rem] font-semibold text-slate-400">
+                              {new Intl.DateTimeFormat('ar-EG', { dateStyle: 'medium' }).format(new Date(paymentDate))}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <span className="shrink-0 font-mono text-xs font-bold text-slate-600">{formatMoney(payment?.amount)}</span>
+                      </div>
+                    );
+                  })}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          )}
+
+          <div className={`flex items-center justify-between gap-3 px-4 py-3 ${
+            remainingAmount > 0 ? 'bg-red-50/65 text-red-700' : 'bg-emerald-50/70 text-emerald-700'
+          }`}>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                remainingAmount > 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {remainingAmount > 0 ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-black">{remainingAmount > 0 ? 'على الفاتورة متبقي' : 'مدفوعة بالكامل'}</p>
+                <p className="mt-0.5 text-[0.7rem] font-bold opacity-70">
+                  {remainingAmount > 0 ? 'يمكن تسجيل دفع المتبقي الآن' : 'لا توجد مبالغ مستحقة على هذه الفاتورة'}
+                </p>
+              </div>
             </div>
-            {paidAmount > 0 && (
-              <div className="flex items-center justify-between px-5 py-4">
-                <span className="text-sm font-bold text-emerald-700">المدفوع</span>
-                <span className="font-mono text-base font-black text-emerald-700">{formatMoney(paidAmount)}</span>
+            {remainingAmount > 0 ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-sm font-black">{formatMoney(remainingAmount)}</span>
+                <button
+                  type="button"
+                  onClick={onPayRemaining}
+                  disabled={isPayingRemaining}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+                >
+                  {isPayingRemaining ? 'جار التسجيل...' : 'تسجيل دفعة'}
+                </button>
               </div>
-            )}
-            {remainingAmount > 0 && (
-              <div className="flex items-center justify-between px-5 py-4">
-                <span className="text-sm font-bold text-red-600">المتبقي</span>
-                <span className="font-mono text-base font-black text-red-700">{formatMoney(remainingAmount)}</span>
-              </div>
+            ) : (
+              <span className="shrink-0 rounded-full bg-white/80 px-3 py-1 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">
+                مكتملة
+              </span>
             )}
           </div>
         </div>
@@ -133,25 +201,155 @@ function SaleSheetContent({ sale, onContractOpen }) {
   );
 }
 
+function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitError }) {
+  const payments = Array.isArray(sale?.payments) ? sale.payments : [];
+  const paymentsTotal = payments.length
+    ? payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
+    : 0;
+  const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
+  const paidAmount = payments.length ? paymentsTotal : Number(sale?.paid_amount ?? sale?.paidAmount ?? 0);
+  const remainingAmount = Math.max(Number(sale?.remaining_amount ?? totalAmount - paidAmount), 0);
+  const [amount, setAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [formError, setFormError] = useState('');
+
+  useEffect(() => {
+    setAmount('');
+    setNotes('');
+    setFormError('');
+  }, [remainingAmount, sale?.id]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    const paymentAmount = Number(amount);
+
+    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+      setFormError('اكتب مبلغ صحيح للدفعة.');
+      return;
+    }
+
+    if (paymentAmount > remainingAmount) {
+      setFormError('مبلغ الدفعة أكبر من المتبقي على الفاتورة.');
+      return;
+    }
+
+    setFormError('');
+    const result = await onSubmit({ amount: paymentAmount, notes });
+
+    if (result?.error) {
+      setFormError(result.error);
+    }
+  };
+
+  return (
+    <div className="h-full overflow-y-auto bg-slate-50 p-4" dir="rtl">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 ring-1 ring-red-100">
+                <Banknote className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="truncate text-xl font-black text-slate-900">تسجيل دفعة</h2>
+                <p className="mt-0.5 text-xs font-bold text-slate-400">
+                  {sale?.customer?.name || 'عميل غير محدد'}
+                </p>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={isSubmitting}
+            className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            رجوع
+          </button>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div>
+              <p className="text-xs font-black text-slate-500">المتبقي على الفاتورة</p>
+            </div>
+            <span className="shrink-0 font-mono text-lg font-black text-red-600">{formatMoney(remainingAmount)}</span>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-black text-slate-600">مبلغ الدفعة</span>
+              <input
+                type="number"
+                min="0"
+                max={remainingAmount}
+                step="0.01"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                disabled={isSubmitting}
+                className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-right font-mono text-sm font-black text-slate-900 outline-none transition focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                inputMode="decimal"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-black text-slate-600">البيان</span>
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                disabled={isSubmitting}
+                rows={3}
+                placeholder="مثال: دفعة نقدية أو تحويل بنكي"
+                className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-bold text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </label>
+
+          </div>
+
+          {(formError || submitError) && (
+            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
+              {formError || submitError}
+            </p>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={isSubmitting || remainingAmount <= 0}
+          className="h-11 w-full rounded-xl bg-red-600 text-sm font-black text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+        >
+          {isSubmitting ? 'جار تسجيل الدفعة...' : 'تسجيل الدفعة'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
   const { tenant } = useWorkspace();
+  const { currentShowroomConfigId } = useShowroomConfig();
   const [fullSale, setFullSale] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');
   const [isContractOpen, setIsContractOpen] = useState(false);
+  const [isPayingRemaining, setIsPayingRemaining] = useState(false);
+  const [sheetMode, setSheetMode] = useState('details');
 
   const fetchDetails = useCallback(async () => {
     if (!sale?.id) return;
 
-    if (
+    const hasLineDetails =
       (Array.isArray(sale.items) && sale.items.length > 0) ||
-      (Array.isArray(sale.lines) && sale.lines.length > 0)
-    ) {
+      (Array.isArray(sale.lines) && sale.lines.length > 0);
+    const hasPaymentDetails = Array.isArray(sale.payments);
+
+    if (hasLineDetails && hasPaymentDetails) {
       setFullSale(sale);
       return;
     }
 
-    if (!tenant?.id) {
+    if (!tenant?.id || !currentShowroomConfigId) {
       setFullSale(sale);
       return;
     }
@@ -159,7 +357,11 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
     setIsLoading(true);
     setFetchError('');
     try {
-      const data = await showroomService.getSaleDetails({ tenantId: tenant.id, saleId: sale.id });
+      const data = await showroomService.getSaleDetails({
+        tenantId: tenant.id,
+        saleId: sale.id,
+        showroomConfigId: currentShowroomConfigId,
+      });
       setFullSale(data);
     } catch (err) {
       setFetchError(err.message || 'تعذر تحميل تفاصيل العملية');
@@ -167,7 +369,7 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
     } finally {
       setIsLoading(false);
     }
-  }, [sale, tenant?.id]);
+  }, [currentShowroomConfigId, sale, tenant?.id]);
 
   useEffect(() => {
     if (isOpen) {
@@ -176,8 +378,45 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
       setFullSale(null);
       setFetchError('');
       setIsContractOpen(false);
+      setIsPayingRemaining(false);
+      setSheetMode('details');
     }
   }, [isOpen, fetchDetails]);
+
+  const handleOpenPaymentStep = useCallback(() => {
+    setFetchError('');
+    setSheetMode('payment');
+  }, []);
+
+  const handleSubmitPayment = useCallback(async ({ amount, notes }) => {
+    const targetSale = fullSale ?? sale;
+
+    if (!tenant?.id || !currentShowroomConfigId || !targetSale?.id || isPayingRemaining) {
+      return { error: 'تعذر تحديد بيانات الفاتورة.' };
+    }
+
+    setIsPayingRemaining(true);
+    setFetchError('');
+
+    try {
+      const updatedSale = await showroomService.paySaleRemaining({
+        tenantId: tenant.id,
+        saleId: targetSale.id,
+        showroomConfigId: currentShowroomConfigId,
+        amount,
+        notes,
+      });
+      setFullSale(updatedSale);
+      setSheetMode('details');
+      return { ok: true };
+    } catch (err) {
+      const message = err.message || 'تعذر تسجيل الدفعة';
+      setFetchError(message);
+      return { error: message };
+    } finally {
+      setIsPayingRemaining(false);
+    }
+  }, [currentShowroomConfigId, fullSale, isPayingRemaining, sale, tenant?.id]);
 
   if (typeof document === 'undefined') {
     return null;
@@ -222,8 +461,24 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
                   </button>
                 </div>
               </div>
+            ) : sheetMode === 'payment' ? (
+              <PaymentRegistrationStep
+                sale={fullSale ?? sale}
+                onBack={() => {
+                  setFetchError('');
+                  setSheetMode('details');
+                }}
+                onSubmit={handleSubmitPayment}
+                isSubmitting={isPayingRemaining}
+                submitError={fetchError}
+              />
             ) : (
-              <SaleSheetContent sale={fullSale ?? sale} onContractOpen={() => setIsContractOpen(true)} />
+              <SaleSheetContent
+                sale={fullSale ?? sale}
+                onContractOpen={() => setIsContractOpen(true)}
+                onPayRemaining={handleOpenPaymentStep}
+                isPayingRemaining={isPayingRemaining}
+              />
             )}
           </motion.div>
           <ShowroomContractWindow

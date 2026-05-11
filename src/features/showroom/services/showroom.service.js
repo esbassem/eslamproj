@@ -6,6 +6,7 @@ const SALE_SELECT = `
   tenant_id,
   branch_id,
   customer_id,
+  showroom_config_id,
   sale_number,
   sale_date,
   status,
@@ -19,6 +20,8 @@ const SALE_SELECT = `
   updated_at
 `;
 
+const SHOWROOM_CONFIG_COLUMNS = 'id, tenant_id, branch_id, name, code, is_active, journal_id';
+
 function todayISODate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -26,6 +29,67 @@ function todayISODate() {
 function toMoney(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function normalizeConfigCode(value) {
+  return String(value ?? '').trim().toUpperCase();
+}
+
+function requireTenantId(tenantId) {
+  if (!tenantId) {
+    throw new Error('لا توجد شركة نشطة.');
+  }
+}
+
+function requireShowroomConfigId(showroomConfigId) {
+  if (!showroomConfigId) {
+    throw new Error('اختر نقطة معرض أولاً.');
+  }
+}
+
+function buildConfigPayload({ tenantId, branchId, branch_id, name, code, isActive, is_active, journalId, journal_id } = {}) {
+  const payload = {};
+
+  if (tenantId) payload.tenant_id = tenantId;
+  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'branchId') || Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'branch_id')) {
+    payload.branch_id = branchId ?? branch_id ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'name')) {
+    payload.name = String(name ?? '').trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'code')) {
+    payload.code = normalizeConfigCode(code);
+  }
+  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'isActive') || Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'is_active')) {
+    payload.is_active = Boolean(isActive ?? is_active);
+  }
+  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'journalId') || Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'journal_id')) {
+    payload.journal_id = journalId ?? journal_id ?? null;
+  }
+
+  return payload;
+}
+
+async function ensureConfigCodeUnique(client, tenantId, code, excludeId) {
+  const normalizedCode = normalizeConfigCode(code);
+  if (!normalizedCode) return;
+
+  let query = client
+    .from('showroom_configs')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('code', normalizedCode)
+    .limit(1);
+
+  if (excludeId) {
+    query = query.neq('id', excludeId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  if ((data || []).length) {
+    throw new Error('كود نقطة المعرض مستخدم بالفعل داخل نفس الشركة.');
+  }
 }
 
 function getProductProductId(item) {
@@ -62,13 +126,14 @@ function getLineAttributes(item) {
     .filter((attribute) => attribute.attributeValueId || attribute.valueText);
 }
 
-function buildSaleLine({ tenantId, saleId, item }) {
+function buildSaleLine({ tenantId, saleId, showroomConfigId, item }) {
   const quantity = Math.max(toMoney(item?.quantity) || 1, 1);
   const unitPrice = Math.max(toMoney(item?.price), 0);
 
   return {
     tenant_id: tenantId,
     sale_id: saleId,
+    showroom_config_id: showroomConfigId,
     product_product_id: getProductProductId(item),
     tracking_unit_id: null,
     ownership_name: item?.ownershipTransferName?.trim() || null,
@@ -138,7 +203,7 @@ async function attachLineAttributes(client, tenantId, lines) {
   }));
 }
 
-async function attachSaleLines(client, tenantId, sales) {
+async function attachSaleLines(client, tenantId, sales, showroomConfigId) {
   const saleRows = Array.isArray(sales) ? sales : [sales].filter(Boolean);
   const saleIds = saleRows.map((sale) => sale.id).filter(Boolean);
 
@@ -204,12 +269,174 @@ async function attachCustomers(client, tenantId, sales) {
 }
 
 export const showroomService = {
-  async getSales({ tenantId, limit = 20, status } = {}) {
+  async listConfigs({ tenantId } = {}) {
+    requireTenantId(tenantId);
+    const client = requireSupabase();
+    const { data, error } = await client
+      .from('showroom_configs')
+      .select(SHOWROOM_CONFIG_COLUMNS)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async listBranches({ tenantId } = {}) {
+    requireTenantId(tenantId);
+    const client = requireSupabase();
+    const { data, error } = await client
+      .from('branches')
+      .select('id, name')
+      .eq('tenant_id', tenantId)
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async listPaymentJournals({ tenantId } = {}) {
+    requireTenantId(tenantId);
+    const client = requireSupabase();
+    const { data, error } = await client
+      .from('account_journals')
+      .select('id, name, code, type, is_active')
+      .eq('tenant_id', tenantId)
+      .in('type', ['cash', 'bank'])
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createConfig(data = {}) {
+    const tenantId = data.tenantId ?? data.tenant_id;
+    requireTenantId(tenantId);
+
+    const payload = buildConfigPayload({ ...data, tenantId, isActive: data.isActive ?? data.is_active ?? true });
+    if (!payload.name) throw new Error('اكتب اسم نقطة المعرض.');
+    if (!payload.code) throw new Error('اكتب كود نقطة المعرض.');
+
+    const client = requireSupabase();
+    await ensureConfigCodeUnique(client, tenantId, payload.code);
+
+    const { data: createdConfig, error } = await client
+      .from('showroom_configs')
+      .insert(payload)
+      .select(SHOWROOM_CONFIG_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return createdConfig;
+  },
+
+  async updateConfig(id, data = {}) {
+    const tenantId = data.tenantId ?? data.tenant_id;
+    requireTenantId(tenantId);
+    if (!id) throw new Error('تعذر تحديد نقطة المعرض.');
+
+    const client = requireSupabase();
+    const { data: current, error: currentError } = await client
+      .from('showroom_configs')
+      .select(SHOWROOM_CONFIG_COLUMNS)
+      .eq('tenant_id', tenantId)
+      .eq('id', id)
+      .single();
+
+    if (currentError) throw currentError;
+
+    const payload = buildConfigPayload(data);
+    const nextName = Object.prototype.hasOwnProperty.call(payload, 'name') ? payload.name : current.name;
+    const nextCode = Object.prototype.hasOwnProperty.call(payload, 'code') ? payload.code : current.code;
+
+    if (!nextName) throw new Error('اكتب اسم نقطة المعرض.');
+    if (!nextCode) throw new Error('اكتب كود نقطة المعرض.');
+    await ensureConfigCodeUnique(client, tenantId, nextCode, id);
+
+    delete payload.tenant_id;
+
+    const { data: updatedConfig, error } = await client
+      .from('showroom_configs')
+      .update(payload)
+      .eq('tenant_id', tenantId)
+      .eq('id', id)
+      .select(SHOWROOM_CONFIG_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return updatedConfig;
+  },
+
+  async toggleConfigActive({ tenantId, id, isActive } = {}) {
+    return showroomService.updateConfig(id, { tenantId, isActive });
+  },
+
+  async listConfigActivity({ tenantId, configIds } = {}) {
+    requireTenantId(tenantId);
+    const scopedConfigIds = Array.isArray(configIds) ? configIds.filter(Boolean) : [];
+
+    if (!scopedConfigIds.length) {
+      return {};
+    }
+
+    const client = requireSupabase();
+    const { data, error } = await client
+      .from('showroom_sales')
+      .select('showroom_config_id')
+      .eq('tenant_id', tenantId)
+      .in('showroom_config_id', scopedConfigIds);
+
+    if (error) throw error;
+
+    return (data || []).reduce((accumulator, row) => {
+      if (row?.showroom_config_id) {
+        accumulator[row.showroom_config_id] = true;
+      }
+      return accumulator;
+    }, {});
+  },
+
+  async deleteConfig({ tenantId, id } = {}) {
+    requireTenantId(tenantId);
+    if (!id) throw new Error('تعذر تحديد نقطة المعرض.');
+
+    const client = requireSupabase();
+    const { data: linkedSales, error: linkedSalesError } = await client
+      .from('showroom_sales')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('showroom_config_id', id)
+      .limit(1);
+
+    if (linkedSalesError) throw linkedSalesError;
+
+    if ((linkedSales || []).length) {
+      throw new Error('لا يمكن حذف النقطة بعد تسجيل عمليات عليها. يمكنك تعطيلها فقط.');
+    }
+
+    const { error } = await client
+      .from('showroom_configs')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('id', id);
+
+    if (error) throw error;
+    return true;
+  },
+
+  async softDeleteConfig({ tenantId, id } = {}) {
+    return showroomService.deleteConfig({ tenantId, id });
+  },
+
+  async getSales({ tenantId, limit = 20, status, showroomConfigId } = {}) {
+    requireTenantId(tenantId);
+    requireShowroomConfigId(showroomConfigId);
     const client = requireSupabase();
     let query = client
       .from('showroom_sales')
       .select(SALE_SELECT)
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .eq('showroom_config_id', showroomConfigId);
 
     if (status) {
       query = query.eq('status', status);
@@ -221,7 +448,7 @@ export const showroomService = {
 
     if (error) throw error;
     const salesWithCustomers = await attachCustomers(client, tenantId, data || []);
-    return attachSaleLines(client, tenantId, salesWithCustomers);
+    return attachSaleLines(client, tenantId, salesWithCustomers, showroomConfigId);
   },
 
   async getInvoices(params = {}) {
@@ -238,19 +465,32 @@ export const showroomService = {
     contractNote,
     notes,
     userId,
+    showroomConfigId,
   }) {
+    requireTenantId(tenantId);
+    requireShowroomConfigId(showroomConfigId);
     const client = requireSupabase();
     const saleItems = Array.isArray(items) ? items : [];
     const safeTotalAmount = Math.max(toMoney(totalAmount), 0);
     const safePaidAmount = Math.min(Math.max(toMoney(paidAmount), 0), safeTotalAmount);
     const remainingAmount = Math.max(safeTotalAmount - safePaidAmount, 0);
     const saleDate = todayISODate();
+    const { data: showroomConfig, error: configError } = await client
+      .from('showroom_configs')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('id', showroomConfigId)
+      .eq('is_active', true)
+      .single();
+
+    if (configError) throw configError;
 
     const { data: sale, error: saleError } = await client
       .from('showroom_sales')
       .insert([{
         tenant_id: tenantId,
         customer_id: customerId || null,
+        showroom_config_id: showroomConfig.id,
         sale_date: saleDate,
         status: 'confirmed',
         total_amount: safeTotalAmount,
@@ -264,7 +504,12 @@ export const showroomService = {
 
     if (saleError) throw saleError;
 
-    const lineRows = saleItems.map((item) => buildSaleLine({ tenantId, saleId: sale.id, item }));
+    const lineRows = saleItems.map((item) => buildSaleLine({
+      tenantId,
+      saleId: sale.id,
+      showroomConfigId: showroomConfig.id,
+      item,
+    }));
 
     let lines = [];
     if (lineRows.length) {
@@ -310,6 +555,7 @@ export const showroomService = {
         .insert([{
           tenant_id: tenantId,
           sale_id: sale.id,
+          showroom_config_id: showroomConfig.id,
           amount: safePaidAmount,
           payment_date: saleDate,
           payment_method: paymentMethodId || null,
@@ -375,12 +621,15 @@ export const showroomService = {
     };
   },
 
-  async getSaleDetails({ tenantId, saleId }) {
+  async getSaleDetails({ tenantId, saleId, showroomConfigId }) {
+    requireTenantId(tenantId);
+    requireShowroomConfigId(showroomConfigId);
     const client = requireSupabase();
     const { data: sale, error: saleError } = await client
       .from('showroom_sales')
       .select('*')
       .eq('tenant_id', tenantId)
+      .eq('showroom_config_id', showroomConfigId)
       .eq('id', saleId)
       .single();
 
@@ -397,6 +646,7 @@ export const showroomService = {
         .from('showroom_sale_payments')
         .select('*')
         .eq('tenant_id', tenantId)
+        .eq('showroom_config_id', showroomConfigId)
         .eq('sale_id', saleId)
         .order('created_at', { ascending: true }),
     ]);
@@ -414,8 +664,65 @@ export const showroomService = {
     };
   },
 
-  async getInvoiceDetails({ tenantId, invoiceId }) {
-    return showroomService.getSaleDetails({ tenantId, saleId: invoiceId });
+  async paySaleRemaining({ tenantId, saleId, showroomConfigId, amount, notes, paymentMethod = 'دفعة' }) {
+    requireTenantId(tenantId);
+    requireShowroomConfigId(showroomConfigId);
+    const client = requireSupabase();
+    const { data: sale, error: saleError } = await client
+      .from('showroom_sales')
+      .select('id, tenant_id, total_amount, paid_amount, remaining_amount')
+      .eq('tenant_id', tenantId)
+      .eq('showroom_config_id', showroomConfigId)
+      .eq('id', saleId)
+      .single();
+
+    if (saleError) throw saleError;
+
+    const totalAmount = Math.max(toMoney(sale?.total_amount), 0);
+    const paidAmount = Math.max(toMoney(sale?.paid_amount), 0);
+    const remainingAmount = Math.max(toMoney(sale?.remaining_amount ?? totalAmount - paidAmount), 0);
+    const paymentAmount = Math.min(Math.max(toMoney(amount), 0), remainingAmount);
+
+    if (remainingAmount <= 0 || paymentAmount <= 0) {
+      return showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });
+    }
+
+    const paymentDate = todayISODate();
+    const { error: paymentError } = await client
+      .from('showroom_sale_payments')
+      .insert([{
+        tenant_id: tenantId,
+        sale_id: saleId,
+        showroom_config_id: showroomConfigId,
+        amount: paymentAmount,
+        payment_date: paymentDate,
+        payment_method: paymentMethod,
+        notes: notes?.trim() || null,
+      }]);
+
+    if (paymentError) throw paymentError;
+
+    const nextPaidAmount = Math.min(paidAmount + paymentAmount, totalAmount);
+    const nextRemainingAmount = Math.max(totalAmount - nextPaidAmount, 0);
+
+    const { error: updateError } = await client
+      .from('showroom_sales')
+      .update({
+        paid_amount: nextPaidAmount,
+        remaining_amount: nextRemainingAmount,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tenant_id', tenantId)
+      .eq('showroom_config_id', showroomConfigId)
+      .eq('id', saleId);
+
+    if (updateError) throw updateError;
+
+    return showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });
+  },
+
+  async getInvoiceDetails({ tenantId, invoiceId, showroomConfigId }) {
+    return showroomService.getSaleDetails({ tenantId, saleId: invoiceId, showroomConfigId });
   },
 
   async createInvoiceFromSale() {

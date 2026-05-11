@@ -40,9 +40,7 @@ function sanitizeIdentifierValue(definition, value) {
   const rawCharacters = Array.from(String(value ?? ''));
 
   if (!slots.length) {
-    return definition.dataType === 'numeric'
-      ? String(value ?? '').replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1')
-      : String(value ?? '');
+    return String(value ?? '');
   }
 
   const nextCharacters = [];
@@ -364,10 +362,6 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
             setError(`أدخل قيمة "${definition.name}" للوحدة ${serial}.`);
             return;
           }
-          if (value && definition.dataType === 'numeric' && !/^\d+(\.\d+)?$/.test(value)) {
-            setError(`قيمة "${definition.name}" يجب أن تكون رقمية.`);
-            return;
-          }
           const schemaValidation = validateIdentifierValueAgainstSchema(definition, value);
           if (schemaValidation !== true) {
             setError(schemaValidation);
@@ -556,28 +550,26 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                             <div key={serial} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
                               <div className="mb-3 text-xs font-extrabold text-slate-600" dir="ltr">{serial}</div>
                               <div className="grid gap-3 md:grid-cols-2">
-                                {trackingIdentifierDefinitions.map((definition) => (
-                                  <div key={`${serial}-${definition.identifierTypeId}`} className="space-y-2">
-                                    <Label htmlFor={`tracking-identifier-${serial}-${definition.identifierTypeId}`}>
-                                      {definition.name}
-                                      {definition.isRequired ? <span className="text-red-600"> *</span> : null}
-                                    </Label>
-                                    <Input
-                                      id={`tracking-identifier-${serial}-${definition.identifierTypeId}`}
-                                      type="text"
-                                      inputMode={
-                                        definition.dataType === 'numeric' ||
-                                        (getIdentifierSlots(definition).length > 0 && getIdentifierSlots(definition).every((slot) => slot.type === 'numeric'))
-                                          ? 'numeric'
-                                          : 'text'
-                                      }
-                                      maxLength={getIdentifierSlots(definition).length || undefined}
-                                      value={trackingIdentifierValues[serial]?.[definition.identifierTypeId] ?? ''}
-                                      onChange={(event) => handleTrackingIdentifierValueChange(serial, definition, event.target.value)}
-                                      dir={definition.dataType === 'numeric' || getIdentifierSlots(definition).length > 0 ? 'ltr' : 'rtl'}
-                                    />
-                                  </div>
-                                ))}
+                                {trackingIdentifierDefinitions.map((definition) => {
+                                  const slots = getIdentifierSlots(definition);
+                                  return (
+                                    <div key={`${serial}-${definition.identifierTypeId}`} className="space-y-2">
+                                      <Label htmlFor={`tracking-identifier-${serial}-${definition.identifierTypeId}`}>
+                                        {definition.name}
+                                        {definition.isRequired ? <span className="text-red-600"> *</span> : null}
+                                      </Label>
+                                      <Input
+                                        id={`tracking-identifier-${serial}-${definition.identifierTypeId}`}
+                                        type="text"
+                                        inputMode={slots.length > 0 && slots.every((slot) => slot.type === 'numeric') ? 'numeric' : 'text'}
+                                        maxLength={slots.length || undefined}
+                                        value={trackingIdentifierValues[serial]?.[definition.identifierTypeId] ?? ''}
+                                        onChange={(event) => handleTrackingIdentifierValueChange(serial, definition, event.target.value)}
+                                        dir={slots.length > 0 ? 'ltr' : 'rtl'}
+                                      />
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           ))}

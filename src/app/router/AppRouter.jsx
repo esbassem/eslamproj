@@ -66,7 +66,7 @@ export function AppRouter() {
                 <Route index element={<ShowroomSellPage />} />
                 <Route path="new" element={<ShowroomSellPage />} />
                 <Route path="customers" element={<ShowroomSellPage />} />
-                <Route path="settings" element={<ShowroomSellPage />} />
+                <Route path="settings" element={<Navigate to="/app/showroom_point" replace />} />
                 <Route path="sale/:saleId" element={<ShowroomSaleDetailsPage />} />
               </Route>
               <Route path="/app/pos/:posId/session/:sessionId/sell" element={<PosPage />} />

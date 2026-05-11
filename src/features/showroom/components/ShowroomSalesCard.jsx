@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Minus, Plus, Search, Trash2, User, UserPlus } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Minus, PackageSearch, Plus, PlusCircle, Search, Trash2, User, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetFooter, SheetHeader, SheetTitle } from '@/core/ui/sheet';
 import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { posService } from '@/features/pos/api/pos.api';
-import { productCategoryTrackingIdentifierService } from '@/features/products/api/products.api';
+import { productAttributeService, productCategoryAttributeService, productCategoryService, productCategoryTrackingIdentifierService, productsService } from '@/features/products/api/products.api';
+import { ProductFormSheet } from '@/features/products/components/ProductFormSheet';
 import { ShowroomContractPreview } from '@/features/showroom/components/ShowroomContractPreview';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
@@ -82,9 +83,7 @@ function sanitizeIdentifierValue(definition, value) {
   const rawCharacters = Array.from(String(value ?? ''));
 
   if (!slots.length) {
-    return definition.dataType === 'numeric'
-      ? String(value ?? '').replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1')
-      : String(value ?? '');
+    return String(value ?? '');
   }
 
   const nextCharacters = [];
@@ -109,10 +108,6 @@ function validateIdentifierValue(definition, value) {
 
   if (!safeValue) return true;
 
-  if (!slots.length && definition.dataType === 'numeric' && !/^\d+(\.\d+)?$/.test(safeValue)) {
-    return `قيمة "${definition.name}" يجب أن تكون رقمية.`;
-  }
-
   if (slots.length && Array.from(safeValue).length !== slots.length) {
     return `قيمة "${definition.name}" يجب أن تكون ${slots.length} خانة.`;
   }
@@ -125,7 +120,12 @@ function validateIdentifierValue(definition, value) {
   return true;
 }
 
-export function ShowroomSalesCard({ onSaleCreated }) {
+function isEmptyIdentifierFetchError(error) {
+  const message = String(error?.message ?? '').toLowerCase();
+  return message.includes('json object requested') || message.includes('multiple (or no) rows returned');
+}
+
+export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
   const { tenant } = useWorkspace();
   const [step, setStep] = useState(0);
   const [customerName, setCustomerName] = useState('');
@@ -137,8 +137,12 @@ export function ShowroomSalesCard({ onSaleCreated }) {
   const [isCustomerSubmitting, setIsCustomerSubmitting] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [products, setProducts] = useState([]);
+  const [productCategories, setProductCategories] = useState([]);
   const [isProductsLoading, setIsProductsLoading] = useState(false);
+  const [isProductCategoriesLoading, setIsProductCategoriesLoading] = useState(false);
   const [productsError, setProductsError] = useState('');
+  const [isProductCreateSheetOpen, setIsProductCreateSheetOpen] = useState(false);
+  const [isProductSubmitting, setIsProductSubmitting] = useState(false);
   const [cart, setCart] = useState([]);
   const [message, setMessage] = useState('');
   const [productSheetOpen, setProductSheetOpen] = useState(false);
@@ -211,10 +215,82 @@ export function ShowroomSalesCard({ onSaleCreated }) {
     loadProducts();
   }, [loadProducts]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    if (!tenant?.id) {
+      setProductCategories([]);
+      setIsProductCategoriesLoading(false);
+      return undefined;
+    }
+
+    setIsProductCategoriesLoading(true);
+
+    Promise.all([
+      productCategoryService.listCategories(tenant.id),
+      productAttributeService.listAttributes(tenant.id),
+      productCategoryAttributeService.listLinks(tenant.id),
+    ])
+      .then(([categories, attributes, links]) => {
+        if (!mounted) return;
+
+        const attributesById = new Map(attributes.map((attribute) => [attribute.id, attribute]));
+        const normalizedLinks = [...links].sort((left, right) => {
+          const orderDiff = (left.displayOrder ?? 0) - (right.displayOrder ?? 0);
+          if (orderDiff !== 0) return orderDiff;
+          return String(attributesById.get(left.attributeId)?.name ?? '').localeCompare(
+            String(attributesById.get(right.attributeId)?.name ?? ''),
+          );
+        });
+
+        const linksByCategoryId = normalizedLinks.reduce((map, link) => {
+          const current = map.get(link.categoryId) ?? [];
+          current.push({
+            ...link,
+            attribute: attributesById.get(link.attributeId) ?? null,
+            attributeName: attributesById.get(link.attributeId)?.name ?? '',
+          });
+          map.set(link.categoryId, current);
+          return map;
+        }, new Map());
+
+        const enrichedCategories = categories.map((category) => ({
+          ...category,
+          attributeLinks: linksByCategoryId.get(category.id) ?? [],
+        }));
+
+        setProductCategories(enrichedCategories);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setProductCategories([]);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setIsProductCategoriesLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [tenant?.id]);
+
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase();
     if (!query) return products;
     return products.filter((product) => `${product.name} ${product.displayName ?? ''} ${product.code} ${product.barcode ?? ''}`.toLowerCase().includes(query));
+  }, [productSearch, products]);
+
+  const hasExactProductMatch = useMemo(() => {
+    const query = productSearch.trim().toLowerCase();
+    if (!query) return false;
+
+    return products.some((product) => {
+      const terms = [product.name, product.displayName, product.templateName, product.code, product.barcode]
+        .filter(Boolean)
+        .map((value) => String(value).trim().toLowerCase());
+      return terms.includes(query);
+    });
   }, [productSearch, products]);
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
@@ -249,7 +325,9 @@ export function ShowroomSalesCard({ onSaleCreated }) {
       .catch((error) => {
         if (!mounted) return;
         setTrackingIdentifierDefinitions([]);
-        setProductSheetError(error.message || 'تعذر تحميل تعريفات التتبع.');
+        if (!isEmptyIdentifierFetchError(error)) {
+          setProductSheetError(error.message || 'تعذر تحميل تعريفات التتبع.');
+        }
       })
       .finally(() => {
         if (!mounted) return;
@@ -319,6 +397,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
     setPendingProduct(product);
     setProductDraft({
       price: String(product.price ?? 0),
+      serialNumber: '',
       trackingIdentifiers: {},
       ownershipTransferName: '',
       attributes,
@@ -330,11 +409,46 @@ export function ShowroomSalesCard({ onSaleCreated }) {
     setProductSheetOpen(true);
   };
 
+  const closeCreateProductSheet = (open) => {
+    setIsProductCreateSheetOpen(open);
+  };
+
+  const handleProductCreate = async (payload) => {
+    if (!tenant?.id) {
+      return { error: 'لا توجد شركة نشطة.' };
+    }
+
+    setIsProductSubmitting(true);
+
+    try {
+      const createdProduct = await productsService.createProduct({ tenantId: tenant.id, payload });
+      const nextProducts = await posService.listSellProducts({ tenantId: tenant.id });
+      const createdProductId = createdProduct.defaultProductProductId || createdProduct.id;
+      const sellableProduct =
+        nextProducts.find((product) => product.id === createdProductId)
+        ?? nextProducts.find((product) => product.productTemplateId === createdProduct.id)
+        ?? null;
+
+      setProducts(nextProducts);
+      setProductSearch(createdProduct.name);
+      setIsProductCreateSheetOpen(false);
+
+      if (sellableProduct) {
+        openProductSheet(sellableProduct);
+      }
+      return null;
+    } catch (error) {
+      return { error: error.message || 'تعذر حفظ المنتج.' };
+    } finally {
+      setIsProductSubmitting(false);
+    }
+  };
+
   const closeProductSheet = (open) => {
     setProductSheetOpen(open);
     if (!open) {
       setPendingProduct(null);
-      setProductDraft({ price: '', trackingIdentifiers: {}, ownershipTransferName: '', attributes: {} });
+      setProductDraft({ price: '', serialNumber: '', trackingIdentifiers: {}, ownershipTransferName: '', attributes: {} });
       setTrackingIdentifierDefinitions([]);
       setIsTrackingIdentifiersLoading(false);
       setProductSheetError('');
@@ -407,13 +521,18 @@ export function ShowroomSalesCard({ onSaleCreated }) {
         value: String(productDraft.trackingIdentifiers?.[definition.identifierTypeId] ?? '').trim(),
       }))
       .filter((identifier) => identifier.value);
+    const fallbackSerialNumber = pendingProduct.tracking === 'serial' && !trackingIdentifiers.length
+      ? String(productDraft.serialNumber ?? '').trim()
+      : '';
 
     addProduct({
       ...pendingProduct,
       name: getProductTitle(pendingProduct),
       code: getProductCode(pendingProduct),
       price,
-      serialNumber: trackingIdentifiers.map((identifier) => identifier.value).join(' - '),
+      serialNumber: trackingIdentifiers.length
+        ? trackingIdentifiers.map((identifier) => identifier.value).join(' - ')
+        : fallbackSerialNumber,
       trackingIdentifiers,
       ownershipTransferName: productDraft.ownershipTransferName.trim(),
       configuredAttributes,
@@ -515,11 +634,14 @@ export function ShowroomSalesCard({ onSaleCreated }) {
 
   return (
     <section className="flex h-[min(620px,calc(100vh-9rem))] flex-col bg-white text-[#173653]">
-      <header className="border-b border-[#c5ddef] bg-[#edf5fc] px-5 py-4 sm:px-7">
+      <header className="border-b border-slate-200 bg-slate-50 px-5 py-4 sm:px-7">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-wide text-[#2f86cf]">Showroom POS</p>
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Showroom POS</p>
             <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">عملية بيع</h1>
+            <p className="mt-1 text-xs font-black text-[#668097]">
+              {showroomConfig?.name || 'كل نقاط المعرض'}
+            </p>
           </div>
         </div>
       </header>
@@ -545,13 +667,13 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                       setMessage('');
                     }}
                     placeholder="ابحث عن عميل"
-                    className="h-[52px] rounded-xl border border-[#c5ddef] bg-[#f7fbff] px-5 pr-11 text-base font-bold text-[#173653] placeholder:text-[#668097] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
+                    className="h-[52px] rounded-xl border border-slate-200 bg-white px-5 pr-11 text-base font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-200"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsCustomerSheetOpen(true)}
-                  className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border border-[#c5ddef] bg-white text-[#2f86cf] transition hover:bg-[#eef6fc] focus:outline-none focus:ring-4 focus:ring-[#d8ecfb]"
+                  className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
                   aria-label="إضافة عميل جديد"
                   title="إضافة عميل جديد"
                 >
@@ -566,25 +688,25 @@ export function ShowroomSalesCard({ onSaleCreated }) {
               ) : null}
 
               {isCustomersLoading ? (
-                <div className="mt-4 rounded-xl border border-[#c5ddef] bg-[#f7fbff] px-5 py-4 text-sm font-bold text-[#668097]">
+                <div className="mt-4 rounded-xl border border-[#e6c8cf] bg-[#fcf6f7] px-5 py-4 text-sm font-bold text-[#8e6f76]">
                   جاري تحميل العملاء...
                 </div>
               ) : customers.length > 0 ? (
-                <div className="mt-4 max-h-[260px] overflow-y-auto rounded-xl border border-[#c5ddef] bg-white shadow-[0_18px_34px_-30px_rgba(23,54,83,0.45)]">
+                <div className="mt-4 max-h-[260px] overflow-y-auto rounded-xl border border-[#e6c8cf] bg-white shadow-[0_18px_34px_-30px_rgba(78,24,35,0.28)]">
                   {customers.map((result) => (
                     <button
                       key={result.id}
                       type="button"
                       onClick={() => selectCustomer(result)}
-                      className={`grid w-full grid-cols-[1fr_auto] items-center gap-4 border-b border-[#e3edf6] px-4 py-3 text-right transition last:border-b-0 hover:bg-[#f7fbff] ${
-                        selectedCustomer?.id === result.id ? 'bg-[#eef6fc] text-[#173653]' : 'text-[#173653]'
+                      className={`grid w-full grid-cols-[1fr_auto] items-center gap-4 border-b border-[#f1dde1] px-4 py-3 text-right transition last:border-b-0 hover:bg-[#fcf6f7] ${
+                        selectedCustomer?.id === result.id ? 'bg-slate-100 text-slate-900' : 'text-slate-900'
                       }`}
                     >
                       <span className="min-w-0">
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="truncate text-sm font-black">{result.name}</span>
                           {selectedCustomer?.id === result.id ? (
-                            <span className="rounded-full bg-[#2f86cf] px-2 py-0.5 text-[10px] font-black text-white">مختار</span>
+                            <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black text-white">مختار</span>
                           ) : null}
                         </span>
                         <span className="mt-1 grid grid-cols-[76px_1fr] gap-2 text-xs font-bold text-[#668097]">
@@ -600,7 +722,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                       </span>
                       <span
                         className={`flex h-8 w-8 items-center justify-center rounded-full border ${
-                          selectedCustomer?.id === result.id ? 'border-[#2f86cf] bg-[#2f86cf] text-white' : 'border-[#d8e8f5] bg-[#f7fbff] text-transparent'
+                          selectedCustomer?.id === result.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-transparent'
                         }`}
                       >
                         <Check className="h-4 w-4" />
@@ -621,8 +743,8 @@ export function ShowroomSalesCard({ onSaleCreated }) {
               <div className="grid h-full md:grid-cols-[1fr_300px]" dir="ltr">
                 <SelectedProductsPanel cart={cart} onUpdateQuantity={updateQuantity} customer={customer} />
 
-                <div className="flex min-h-0 flex-col overflow-hidden border-l border-[#c5ddef] bg-[#f7fbff]" dir="rtl">
-                  <div className="relative border-b border-[#c5ddef] bg-[#f7fbff]">
+                <div className="flex min-h-0 flex-col overflow-hidden border-l border-slate-200 bg-slate-50" dir="rtl">
+                  <div className="relative border-b border-slate-200 bg-slate-50">
                     <Search className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#668097]" />
                     <Input
                       value={productSearch}
@@ -634,7 +756,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
 
                   <div className="min-h-0 flex-1 overflow-y-auto">
                     {isProductsLoading ? (
-                      <div className="m-4 rounded-xl border border-[#c5ddef] bg-[#f7fbff] px-5 py-4 text-sm font-bold text-[#668097]">
+                      <div className="m-4 rounded-xl border border-[#e6c8cf] bg-[#fcf6f7] px-5 py-4 text-sm font-bold text-[#8e6f76]">
                         جاري تحميل المنتجات...
                       </div>
                     ) : productsError ? (
@@ -649,20 +771,35 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                             key={product.id}
                             type="button"
                             onClick={() => openProductSheet(product)}
-                            className="grid w-full grid-cols-[1fr_auto] items-center gap-4 border-b border-[#cfe0ee] px-4 py-3 text-right transition last:border-b-0 hover:bg-[#f7fbff]"
+                            className="grid w-full grid-cols-[1fr_auto] items-center gap-4 border-b border-slate-200 px-4 py-3 text-right transition last:border-b-0 hover:bg-white"
                           >
                             <span className="min-w-0">
                               <span className="block truncate text-sm font-black text-[#173653]">{getProductTitle(product)}</span>
                               <span className="mt-0.5 block truncate text-xs font-bold text-[#8aa0b3]">{productCode}</span>
                               {product.tracking === 'serial' ? <span className="mt-1 block text-[11px] font-black text-[#668097]">سيتم إدخال تعريفات التتبع عند البيع</span> : null}
                             </span>
-                            <span className="rounded-lg bg-[#eef6fc] px-3 py-1.5 text-sm font-black text-[#2f86cf]">{formatMoney(product.price)}</span>
+                            <span className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-black text-white">{formatMoney(product.price)}</span>
                           </button>
                         );
                       })
                     ) : (
-                      <div className="m-4 rounded-xl border border-dashed border-[#c5ddef] bg-[#f7fbff] px-5 py-6 text-center text-sm font-bold text-[#668097]">
-                        لا توجد منتجات مطابقة.
+                      <div className="m-4 rounded-2xl border border-dashed border-[#e6c8cf] bg-[#fcf6f7] px-5 py-7 text-center shadow-[0_22px_50px_-36px_rgba(78,24,35,0.35)]">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#edd5da] bg-white text-[#9b3645] shadow-sm">
+                          <PackageSearch className="h-6 w-6" />
+                        </div>
+                        <p className="mt-4 text-sm font-black text-[#6f4e56]">لا توجد منتجات مطابقة.</p>
+                        <p className="mt-2 text-xs font-bold leading-6 text-[#9a7a82]">
+                          {productSearch.trim() ? `يمكنك إضافة "${productSearch.trim()}" مباشرة ثم متابعة البيع.` : 'أضف منتجًا جديدًا ثم ارجع لإكمال عملية البيع.'}
+                        </p>
+                        <Button
+                          type="button"
+                          onClick={() => setIsProductCreateSheetOpen(true)}
+                          disabled={isProductCategoriesLoading}
+                          className="mt-5 h-11 rounded-xl bg-[#7f2d3b] px-5 font-black text-white shadow-[0_18px_30px_-18px_rgba(91,24,37,0.8)] hover:bg-[#69232f] disabled:cursor-not-allowed disabled:bg-[#c79aa3]"
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                          {productSearch.trim() && !hasExactProductMatch ? `إضافة المنتج "${productSearch.trim()}"` : 'إضافة منتج جديد'}
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -691,7 +828,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                       step="0.01"
                       value={paidAmount}
                       onChange={(e) => updatePaidAmount(e.target.value)}
-                      className="h-14 rounded-2xl border-2 border-[#c5ddef] bg-white text-xl font-black text-[#173653] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
+                      className="h-14 rounded-2xl border-2 border-[#e6c8cf] bg-white text-xl font-black text-[#4d1f28] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
                     />
                   </div>
                   <div>
@@ -699,7 +836,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                     <Input
                       value={paymentMethod}
                       onChange={(event) => setPaymentMethod(event.target.value)}
-                      className="h-14 rounded-2xl border-2 border-[#c5ddef] bg-white text-base font-black text-[#173653] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
+                      className="h-14 rounded-2xl border-2 border-[#e6c8cf] bg-white text-base font-black text-[#4d1f28] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
                     />
                   </div>
                 </div>
@@ -714,7 +851,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                   <Input
                     disabled={!hasPaidAmount || hasNoRemainingAmount}
                     placeholder={hasNoRemainingAmount ? 'لا يوجد متبقي' : 'ملاحظة دفع المتبقي'}
-                    className="h-14 rounded-2xl border-2 border-[#c5ddef] bg-white text-xl font-black text-[#173653] disabled:cursor-not-allowed disabled:bg-[#f7fbff] disabled:text-[#8aa0b3] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
+                    className="h-14 rounded-2xl border-2 border-[#e6c8cf] bg-white text-xl font-black text-[#4d1f28] disabled:cursor-not-allowed disabled:bg-[#fcf6f7] disabled:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
                   />
                 </div>
 
@@ -724,7 +861,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                     value={contractNote}
                     onChange={(event) => setContractNote(event.target.value)}
                     placeholder="ستظهر هذه الملاحظة داخل العقد"
-                    className="h-12 rounded-2xl border border-[#c5ddef] bg-white text-sm font-bold text-[#173653] placeholder:text-[#8aa0b3] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
+                    className="h-12 rounded-2xl border border-[#e6c8cf] bg-white text-sm font-bold text-[#4d1f28] placeholder:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
                   />
                 </div>
 
@@ -734,30 +871,30 @@ export function ShowroomSalesCard({ onSaleCreated }) {
         </div>
       </div>
 
-      <footer className="border-t border-[#c5ddef] bg-[#edf5fc] px-5 py-4 sm:px-7">
+      <footer className="border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-7">
         <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={reset} disabled={isCompleting} className="h-11 rounded-xl border-[#c5ddef] bg-white px-5 font-black text-[#173653] hover:bg-[#eef6fc]">
+            <Button variant="secondary" onClick={reset} disabled={isCompleting} className="h-11 rounded-xl border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
               مسح
             </Button>
             {step > 0 && (
-              <Button variant="secondary" onClick={back} disabled={isCompleting} className="h-11 rounded-xl border-[#c5ddef] bg-white px-5 font-black text-[#173653] hover:bg-[#eef6fc]">
+              <Button variant="secondary" onClick={back} disabled={isCompleting} className="h-11 rounded-xl border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
                 <ChevronRight className="h-4 w-4" />
                 السابق
               </Button>
             )}
             {step < 2 ? (
-              <Button onClick={next} className="h-11 rounded-xl bg-[#2f86cf] px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(47,134,207,0.95)] hover:bg-[#2878bb]">
+              <Button onClick={next} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
                 التالي
                 <ChevronLeft className="h-4 w-4" />
               </Button>
             ) : step === 2 ? (
-              <Button onClick={openContractPreview} className="h-11 rounded-xl bg-[#2f86cf] px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(47,134,207,0.95)] hover:bg-[#2878bb]">
+              <Button onClick={openContractPreview} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
                 عرض العقد
                 <ChevronLeft className="h-4 w-4" />
               </Button>
             ) : (
-              <Button onClick={complete} disabled={isCompleting} className="h-11 rounded-xl bg-[#2f86cf] px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(47,134,207,0.95)] hover:bg-[#2878bb]">
+              <Button onClick={complete} disabled={isCompleting} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
                 {isCompleting ? 'جار الحفظ...' : 'إتمام'}
               </Button>
             )}
@@ -767,14 +904,14 @@ export function ShowroomSalesCard({ onSaleCreated }) {
 
       <Sheet open={productSheetOpen} onOpenChange={closeProductSheet}>
         <SheetContent side="bottom" className="mx-auto max-h-[98vh] min-h-[70vh] w-full max-w-2xl rounded-t-[26px] border-0" dir="rtl">
-          <SheetHeader className="rounded-t-[26px] bg-[#2f86cf] px-5 py-5 text-right sm:px-7">
+          <SheetHeader className="rounded-t-[26px] bg-slate-900 px-5 py-5 text-right sm:px-7">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <SheetTitle className="text-xl font-black tracking-tight text-white">{getProductTitle(pendingProduct)}</SheetTitle>
                 <p className="mt-0.5 text-xs font-bold text-white/70">{getProductCode(pendingProduct)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button onClick={confirmProductSelection} className="h-9 rounded-xl bg-white px-5 font-black text-[#2f86cf] hover:bg-white/90">
+                <Button onClick={confirmProductSelection} className="h-9 rounded-xl bg-white px-5 font-black text-slate-900 hover:bg-white/90">
                   إضافة
                 </Button>
               </div>
@@ -800,55 +937,48 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                     setProductDraft((current) => ({ ...current, price: event.target.value }));
                     setProductSheetError('');
                   }}
-                  className="h-12 rounded-xl border-[#c5ddef] bg-[#f7fbff] text-base font-black text-[#173653] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
+                  className="h-12 rounded-xl border-[#e6c8cf] bg-[#fcf6f7] text-base font-black text-[#4d1f28] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
                 />
               </label>
             </div>
 
             {pendingProduct?.tracking === 'serial' ? (
-              <div className="space-y-3 rounded-2xl border border-[#c5ddef] bg-[#f7fbff] p-4">
-                <div>
-                  <p className="text-sm font-black text-[#173653]">تعريفات التتبع</p>
-                  <p className="mt-1 text-xs font-bold text-[#668097]">تظهر حسب تعريفات تصنيف المنتج.</p>
+              isTrackingIdentifiersLoading ? (
+                <div className="rounded-xl border border-[#c5ddef] bg-white px-4 py-3 text-sm font-bold text-[#668097]">
+                  جاري تحميل تعريفات التتبع...
                 </div>
-
-                {isTrackingIdentifiersLoading ? (
-                  <div className="rounded-xl border border-[#c5ddef] bg-white px-4 py-3 text-sm font-bold text-[#668097]">
-                    جاري تحميل تعريفات التتبع...
-                  </div>
-                ) : trackingIdentifierDefinitions.length ? (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {trackingIdentifierDefinitions.map((definition) => {
-                      const slots = getIdentifierSlots(definition);
-                      return (
-                        <label key={definition.identifierTypeId} className="block">
-                          <span className="mb-2 block text-xs font-black text-[#668097]">
-                            {definition.name}
-                            {definition.isRequired ? <span className="text-red-500"> *</span> : null}
-                          </span>
-                          <Input
-                            value={productDraft.trackingIdentifiers?.[definition.identifierTypeId] ?? ''}
-                            inputMode={
-                              definition.dataType === 'numeric' || (slots.length > 0 && slots.every((slot) => slot.type === 'numeric'))
-                                ? 'numeric'
-                                : 'text'
-                            }
-                            maxLength={slots.length || undefined}
-                            onChange={(event) => handleTrackingIdentifierChange(definition, event.target.value)}
-                            placeholder={slots.length ? `${slots.length} خانة` : definition.code || definition.name}
-                            dir={definition.dataType === 'numeric' || slots.length > 0 ? 'ltr' : 'rtl'}
-                            className="h-12 rounded-xl border-[#c5ddef] bg-white text-base font-bold text-[#173653] placeholder:text-[#8aa0b3] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-[#c5ddef] bg-white px-4 py-4 text-sm font-bold text-[#668097]">
-                    لا توجد تعريفات تتبع مرتبطة بتصنيف هذا المنتج.
-                  </div>
-                )}
-              </div>
+              ) : trackingIdentifierDefinitions.length ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {trackingIdentifierDefinitions.map((definition) => {
+                    const slots = getIdentifierSlots(definition);
+                    return (
+                      <label key={definition.identifierTypeId} className="block">
+                        <span className="mb-2 block text-xs font-black text-[#668097]">
+                          {definition.name}
+                          {definition.isRequired ? <span className="text-red-500"> *</span> : null}
+                        </span>
+                        <Input
+                          value={productDraft.trackingIdentifiers?.[definition.identifierTypeId] ?? ''}
+                          inputMode={
+                            slots.length > 0 && slots.every((slot) => slot.type === 'numeric')
+                              ? 'numeric'
+                              : 'text'
+                          }
+                          maxLength={slots.length || undefined}
+                          onChange={(event) => handleTrackingIdentifierChange(definition, event.target.value)}
+                          placeholder={slots.length ? `${slots.length} خانة` : definition.code || definition.name}
+                          dir={slots.length > 0 ? 'ltr' : 'rtl'}
+                          className="h-12 rounded-xl border-[#e6c8cf] bg-white text-base font-bold text-[#4d1f28] placeholder:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-[#c5ddef] bg-white px-4 py-3 text-sm font-bold text-[#668097]">
+                  هذا المنتج غير محدد له تتبع.
+                </div>
+              )
             ) : null}
 
             {pendingProduct?.requiresOwnershipTransfer ? (
@@ -861,7 +991,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                     setProductSheetError('');
                   }}
                   placeholder="اكتب اسم المالك الجديد"
-                  className="h-12 rounded-xl border-[#c5ddef] bg-[#f7fbff] text-base font-bold text-[#173653] placeholder:text-[#8aa0b3] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
+                  className="h-12 rounded-xl border-[#e6c8cf] bg-[#fcf6f7] text-base font-bold text-[#4d1f28] placeholder:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
                 />
               </label>
             ) : null}
@@ -887,7 +1017,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                           }));
                           setProductSheetError('');
                         }}
-                        className="h-11 w-full rounded-xl border border-[#c5ddef] bg-white px-3 text-sm font-bold text-[#173653] outline-none transition focus:border-[#2f86cf] focus:ring-4 focus:ring-[#d8ecfb]"
+                        className="h-11 w-full rounded-xl border border-[#e6c8cf] bg-white px-3 text-sm font-bold text-[#4d1f28] outline-none transition focus:border-[#9b3645] focus:ring-4 focus:ring-[#f1d7dc]"
                       >
                         <option value="">اختر {field.label}</option>
                         {field.values.map((value) => (
@@ -910,7 +1040,7 @@ export function ShowroomSalesCard({ onSaleCreated }) {
                           setProductSheetError('');
                         }}
                         placeholder={`حدد ${field.label}`}
-                        className="h-11 rounded-xl border-[#c5ddef] bg-white text-sm font-bold text-[#173653] placeholder:text-[#8aa0b3] focus:border-[#2f86cf] focus:ring-[#d8ecfb]"
+                        className="h-11 rounded-xl border-[#e6c8cf] bg-white text-sm font-bold text-[#4d1f28] placeholder:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
                       />
                     )}
                   </label>
@@ -953,16 +1083,26 @@ export function ShowroomSalesCard({ onSaleCreated }) {
             />
           </SheetBody>
           <SheetFooter className="justify-end border-t border-slate-200 bg-white px-5 py-4">
-            <Button variant="secondary" onClick={back} disabled={isCompleting} className="h-11 rounded-xl border-[#c5ddef] bg-white px-5 font-black text-[#173653] hover:bg-[#eef6fc]">
+            <Button variant="secondary" onClick={back} disabled={isCompleting} className="h-11 rounded-xl border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
               <ChevronRight className="h-4 w-4" />
               رجوع للدفع
             </Button>
-            <Button onClick={complete} disabled={isCompleting} className="h-11 rounded-xl bg-[#2f86cf] px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(47,134,207,0.95)] hover:bg-[#2878bb]">
+            <Button onClick={complete} disabled={isCompleting} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
               {isCompleting ? 'جار الحفظ...' : 'إتمام'}
             </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      <ProductFormSheet
+        open={isProductCreateSheetOpen}
+        onOpenChange={closeCreateProductSheet}
+        product={null}
+        categories={productCategories}
+        onSubmit={handleProductCreate}
+        isSubmitting={isProductSubmitting}
+        side="right"
+      />
 
       <PartnerFormSheet
         open={isCustomerSheetOpen}
@@ -988,9 +1128,9 @@ function SelectedProductsPanel({ cart, onUpdateQuantity, customer }) {
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white px-5 py-4" dir="rtl">
       {/* Customer card */}
       {customer && (
-        <div className="mb-4 flex shrink-0 items-center gap-3 rounded-xl border border-[#c5ddef] bg-[#f7fbff] px-4 py-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#edf5fc]">
-            <User className="h-5 w-5 text-[#2f86cf]" strokeWidth={2} />
+        <div className="mb-4 flex shrink-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white">
+            <User className="h-5 w-5 text-slate-700" strokeWidth={2} />
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-black text-[#173653]">{customer.name}</p>
@@ -1003,7 +1143,7 @@ function SelectedProductsPanel({ cart, onUpdateQuantity, customer }) {
           cart.map((item) => (
             <div
               key={item.lineId || item.id}
-              className="rounded-xl bg-[#2f86cf] p-3 text-white shadow-[0_18px_34px_-24px_rgba(47,134,207,0.85)]"
+              className="rounded-xl bg-slate-900 p-3 text-white shadow-[0_18px_34px_-24px_rgba(15,23,42,0.58)]"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/18 text-sm font-black text-white ring-1 ring-white/24">
@@ -1012,7 +1152,7 @@ function SelectedProductsPanel({ cart, onUpdateQuantity, customer }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-black text-white">{item.name}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-[#2f86cf]">{formatMoney(item.price * item.quantity)}</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-slate-900">{formatMoney(item.price * item.quantity)}</span>
                     <span className="text-[11px] font-bold text-white/70">{item.code}</span>
                   </div>
                   <LineMeta item={item} className="mt-2 text-white/75" />
@@ -1022,7 +1162,7 @@ function SelectedProductsPanel({ cart, onUpdateQuantity, customer }) {
             </div>
           ))
         ) : (
-          <div className="rounded-xl border border-dashed border-[#c5ddef] bg-[#f7fbff] px-4 py-8 text-center text-xs font-bold leading-5 text-[#668097]">
+          <div className="rounded-xl border border-dashed border-[#e6c8cf] bg-[#fcf6f7] px-4 py-8 text-center text-xs font-bold leading-5 text-[#8e6f76]">
             اختر منتجًا من القائمة ليظهر هنا.
           </div>
         )}
@@ -1069,7 +1209,7 @@ function LineControls({ item, onUpdateQuantity, compact = false, tone = 'default
           type="button"
           onClick={() => onUpdateQuantity(lineId, item.quantity + 1)}
           className={`${compact ? 'h-8 w-8 rounded-lg' : 'h-9 w-9 rounded-xl'} flex items-center justify-center border transition ${
-            isLight ? 'border-white bg-white text-[#2f86cf] hover:bg-white/90' : 'border-[#b8e0cf] bg-[#ecfbf4] text-[#167450] hover:bg-[#dff7ec]'
+            isLight ? 'border-white bg-white text-slate-900 hover:bg-white/90' : 'border-[#b8e0cf] bg-[#ecfbf4] text-[#167450] hover:bg-[#dff7ec]'
           }`}
           aria-label="زيادة الكمية"
         >

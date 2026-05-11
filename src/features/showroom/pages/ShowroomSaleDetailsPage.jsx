@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowRight, User, Package, CheckCircle } from 'lucide-react';
+import { useShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
 import { showroomService } from '@/features/showroom/services/showroom.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
@@ -21,6 +22,7 @@ export function ShowroomSaleDetailsPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { tenant } = useWorkspace();
+  const { currentShowroomConfigId } = useShowroomConfig();
   const [sale, setSale] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -42,7 +44,7 @@ export function ShowroomSaleDetailsPage() {
     }
 
     const fetchDetails = async () => {
-      if (!tenant?.id || !saleId) {
+      if (!tenant?.id || !saleId || !currentShowroomConfigId) {
         setIsLoading(false);
         if (!stateSale) {
           setError('لا توجد بيانات الفاتورة');
@@ -51,7 +53,11 @@ export function ShowroomSaleDetailsPage() {
       }
 
       try {
-        const details = await showroomService.getSaleDetails({ tenantId: tenant.id, saleId });
+        const details = await showroomService.getSaleDetails({
+          tenantId: tenant.id,
+          saleId,
+          showroomConfigId: currentShowroomConfigId,
+        });
         setSale(details);
       } catch (err) {
         if (!stateSale) {
@@ -71,7 +77,7 @@ export function ShowroomSaleDetailsPage() {
         // Ignore storage cleanup failures.
       }
     };
-  }, [location.state, saleId, tenant?.id]);
+  }, [currentShowroomConfigId, location.state, saleId, tenant?.id]);
 
   if (isLoading) {
     return (

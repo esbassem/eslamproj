@@ -77,6 +77,7 @@ export function ProductFormSheet({
   categories,
   onSubmit,
   isSubmitting,
+  side = 'bottom',
 }) {
   const [formState, setFormState] = useState(() => getInitialState(product));
   const [formError, setFormError] = useState('');
@@ -196,7 +197,11 @@ export function ProductFormSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="mx-auto h-[92vh] w-full max-w-4xl">
+      <SheetContent
+        side={side}
+        dir="rtl"
+        className={side === 'right' ? 'w-full max-w-[720px] border-l border-slate-200 bg-white' : 'mx-auto h-[92vh] w-full max-w-4xl'}
+      >
         <Button
           type="submit"
           form="product-form"
@@ -210,7 +215,7 @@ export function ProductFormSheet({
         </SheetHeader>
 
         <form id="product-form" className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
-          <SheetBody className="min-h-0 space-y-5">
+          <SheetBody className={side === 'right' ? 'min-h-0 flex-1 space-y-5 px-5 py-5 sm:px-7' : 'min-h-0 space-y-5'}>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="اسم المنتج">
                 <Input value={formState.name} onChange={handleChange('name')} />

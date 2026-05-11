@@ -46,11 +46,11 @@ export function ShowroomInvoicesCard({ invoices = [], isLoading = false, error =
   };
 
   return (
-    <section className="flex h-[min(660px,calc(100vh-7rem))] min-h-[440px] flex-col overflow-hidden bg-[#f7fbff] text-[#173653]">
-      <header className="border-b-2 border-[#9fc6e3] px-6 py-5 shadow-[0_10px_18px_-20px_rgba(47,134,207,0.75)] sm:px-8">
+    <section className="flex h-[min(660px,calc(100vh-7rem))] min-h-[440px] flex-col overflow-hidden bg-white text-slate-900">
+      <header className="border-b border-slate-200 px-6 py-5 sm:px-8">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#edf5fc]">
-            <FileText className="h-5 w-5 text-[#2f86cf]" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+            <FileText className="h-5 w-5 text-slate-700" />
           </div>
           <div>
             <h2 className="text-xl font-black tracking-tight text-[#173653] sm:text-2xl">عمليات البيع</h2>
@@ -58,23 +58,23 @@ export function ShowroomInvoicesCard({ invoices = [], isLoading = false, error =
               <button
                 type="button"
                 onClick={() => changeReportMonth(1)}
-                className="flex h-5 w-5 items-center justify-center rounded-full text-[#668097] transition hover:bg-[#edf5fc] hover:text-[#173653]"
+                className="flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-800"
                 aria-label="الشهر التالي"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
-              <span className="text-xs font-bold text-[#668097]">{monthLabel}</span>
+              <span className="text-xs font-bold text-slate-500">{monthLabel}</span>
               <button
                 type="button"
                 onClick={() => changeReportMonth(-1)}
-                className="flex h-5 w-5 items-center justify-center rounded-full text-[#668097] transition hover:bg-[#edf5fc] hover:text-[#173653]"
+                className="flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-800"
                 aria-label="الشهر السابق"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-xs font-bold text-[#668097]">·</span>
-              <span className="text-xs font-black text-[#173653]">{monthStats.count.toLocaleString('en-US')}</span>
-              <span className="text-xs font-bold text-[#668097]">فاتورة</span>
+              <span className="text-xs font-bold text-slate-400">·</span>
+              <span className="text-xs font-black text-slate-900">{monthStats.count.toLocaleString('en-US')}</span>
+              <span className="text-xs font-bold text-slate-500">فاتورة</span>
             </div>
           </div>
         </div>
@@ -82,7 +82,7 @@ export function ShowroomInvoicesCard({ invoices = [], isLoading = false, error =
 
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
-          <div className="flex h-full items-center justify-center px-5 text-center text-sm font-bold text-[#668097]">
+          <div className="flex h-full items-center justify-center px-5 text-center text-sm font-bold text-[#8e6f76]">
             جاري تحميل عمليات البيع...
           </div>
         ) : error ? (
@@ -90,7 +90,7 @@ export function ShowroomInvoicesCard({ invoices = [], isLoading = false, error =
             {error}
           </div>
         ) : filteredInvoices.length > 0 ? (
-          <div className="divide-y divide-[#e1edf7]">
+          <div className="divide-y divide-slate-100">
             {filteredInvoices.map((invoice) => {
               const totalAmount = Number(invoice.total_amount ?? invoice.totalAmount ?? 0);
               const paidAmount = Number(invoice.paid_amount ?? invoice.paidAmount ?? 0);
@@ -100,13 +100,13 @@ export function ShowroomInvoicesCard({ invoices = [], isLoading = false, error =
                   type="button"
                   key={invoice.id}
                   onClick={() => onInvoiceSelect?.(invoice)}
-                  className="block w-full px-6 py-4 text-right transition hover:bg-white focus:outline-none focus:ring-4 focus:ring-inset focus:ring-[#2f86cf]/15 sm:px-8"
+                  className="block w-full px-6 py-4 text-right transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-inset focus:ring-slate-200 sm:px-8"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-black text-[#173653]">{invoice.customer?.name || 'عميل'}</p>
+                      <p className="text-sm font-black text-slate-900">{invoice.customer?.name || 'عميل'}</p>
                       {getInvoiceProductsText(invoice) ? (
-                        <p className="mt-1 max-w-[13rem] truncate text-xs font-bold text-[#668097]">
+                        <p className="mt-1 max-w-[13rem] truncate text-xs font-bold text-slate-500">
                           {getInvoiceProductsText(invoice)}
                         </p>
                       ) : null}
@@ -118,7 +118,7 @@ export function ShowroomInvoicesCard({ invoices = [], isLoading = false, error =
                       </p>
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-black text-[#2f86cf]">
+                      <p className="text-sm font-black text-slate-900">
                         {totalAmount.toLocaleString('ar-EG')} EGP
                       </p>
                       <p className="mt-1 text-[11px] font-bold text-emerald-700">
@@ -134,7 +134,7 @@ export function ShowroomInvoicesCard({ invoices = [], isLoading = false, error =
             })}
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center px-5 text-center text-sm font-bold text-[#668097]">
+          <div className="flex h-full items-center justify-center px-5 text-center text-sm font-bold text-[#8e6f76]">
             لا توجد عمليات بيع حالياً
           </div>
         )}

@@ -328,12 +328,13 @@ async function validateTrackingIdentifierValues({ tenantId, categoryId, serials,
 
     for (const definition of definitions) {
       const rawValue = String(currentValues[definition.identifierTypeId] ?? '').trim();
+      const slots = getIdentifierSlots(definition);
 
       if (definition.isRequired && !rawValue) {
         throw new Error(`أدخل قيمة "${definition.name}" للوحدة ${serial}.`);
       }
 
-      if (rawValue && definition.dataType === 'numeric' && !isNumericIdentifierValue(rawValue)) {
+      if (slots.length && rawValue && slots.every((slot) => slot.type === 'numeric') && !isNumericIdentifierValue(rawValue)) {
         throw new Error(`قيمة "${definition.name}" يجب أن تكون رقمية.`);
       }
 
