@@ -126,14 +126,13 @@ function getLineAttributes(item) {
     .filter((attribute) => attribute.attributeValueId || attribute.valueText);
 }
 
-function buildSaleLine({ tenantId, saleId, showroomConfigId, item }) {
+function buildSaleLine({ tenantId, saleId, item }) {
   const quantity = Math.max(toMoney(item?.quantity) || 1, 1);
   const unitPrice = Math.max(toMoney(item?.price), 0);
 
   return {
     tenant_id: tenantId,
     sale_id: saleId,
-    showroom_config_id: showroomConfigId,
     product_product_id: getProductProductId(item),
     tracking_unit_id: null,
     ownership_name: item?.ownershipTransferName?.trim() || null,
@@ -555,7 +554,6 @@ export const showroomService = {
         .insert([{
           tenant_id: tenantId,
           sale_id: sale.id,
-          showroom_config_id: showroomConfig.id,
           amount: safePaidAmount,
           payment_date: saleDate,
           payment_method: paymentMethodId || null,
@@ -646,7 +644,6 @@ export const showroomService = {
         .from('showroom_sale_payments')
         .select('*')
         .eq('tenant_id', tenantId)
-        .eq('showroom_config_id', showroomConfigId)
         .eq('sale_id', saleId)
         .order('created_at', { ascending: true }),
     ]);
@@ -693,7 +690,6 @@ export const showroomService = {
       .insert([{
         tenant_id: tenantId,
         sale_id: saleId,
-        showroom_config_id: showroomConfigId,
         amount: paymentAmount,
         payment_date: paymentDate,
         payment_method: paymentMethod,
