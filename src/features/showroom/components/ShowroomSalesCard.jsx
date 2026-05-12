@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Minus, PackageSearch, Plus, PlusCircle, Search, Trash2, User, UserPlus } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, PackageSearch, Plus, PlusCircle, Search, Trash2, User, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
-import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetFooter, SheetHeader, SheetTitle } from '@/core/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetHeader, SheetTitle } from '@/core/ui/sheet';
 import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { posService } from '@/features/pos/api/pos.api';
 import { productAttributeService, productCategoryAttributeService, productCategoryService, productCategoryTrackingIdentifierService, productsService } from '@/features/products/api/products.api';
 import { ProductFormSheet } from '@/features/products/components/ProductFormSheet';
-import { ShowroomContractPreview } from '@/features/showroom/components/ShowroomContractPreview';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
-
-const STEPS = ['العميل', 'المنتجات', 'الدفع', 'العقد'];
 
 const NEW_CUSTOMER_INITIAL_VALUES = {
   isCustomer: true,
@@ -151,10 +148,10 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
   const [trackingIdentifierDefinitions, setTrackingIdentifierDefinitions] = useState([]);
   const [isTrackingIdentifiersLoading, setIsTrackingIdentifiersLoading] = useState(false);
   const [productSheetError, setProductSheetError] = useState('');
+  const [openAttributeKey, setOpenAttributeKey] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [paidAmount, setPaidAmount] = useState('');
   const [contractNote, setContractNote] = useState('');
-  const [isContractSheetOpen, setIsContractSheetOpen] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
 
   const loadCustomers = useCallback(async () => {
@@ -396,7 +393,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
 
     setPendingProduct(product);
     setProductDraft({
-      price: String(product.price ?? 0),
+      price: '',
       serialNumber: '',
       trackingIdentifiers: {},
       ownershipTransferName: '',
@@ -405,6 +402,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
     setTrackingIdentifierDefinitions([]);
     setIsTrackingIdentifiersLoading(false);
     setProductSheetError('');
+    setOpenAttributeKey('');
     setMessage('');
     setProductSheetOpen(true);
   };
@@ -452,6 +450,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
       setTrackingIdentifierDefinitions([]);
       setIsTrackingIdentifiersLoading(false);
       setProductSheetError('');
+      setOpenAttributeKey('');
     }
   };
 
@@ -561,11 +560,6 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
 
   const back = () => {
     setMessage('');
-    if (step === 3) {
-      setIsContractSheetOpen(false);
-      setStep(2);
-      return;
-    }
     setStep((current) => Math.max(current - 1, 0));
   };
 
@@ -593,14 +587,12 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
     setPaymentMethod('');
     setPaidAmount('');
     setContractNote('');
-    setIsContractSheetOpen(false);
   };
 
-  const openContractPreview = () => {
+  const openSaleReview = () => {
     if (!customer || !cart.length) return;
     setMessage('');
     setStep(3);
-    setIsContractSheetOpen(true);
   };
 
   const complete = async () => {
@@ -868,6 +860,18 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
               </div>
             </div>
           )}
+
+          {step === 3 && (
+            <SaleReviewStep
+              customer={customer}
+              cart={cart}
+              total={total}
+              paidAmount={Number(paidAmount) || 0}
+              remainingAmount={remainingAmount}
+              paymentMethod={paymentMethod}
+              contractNote={contractNote}
+            />
+          )}
         </div>
       </div>
 
@@ -889,8 +893,8 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                 <ChevronLeft className="h-4 w-4" />
               </Button>
             ) : step === 2 ? (
-              <Button onClick={openContractPreview} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
-                عرض العقد
+              <Button onClick={openSaleReview} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
+                مراجعة الفاتورة
                 <ChevronLeft className="h-4 w-4" />
               </Button>
             ) : (
@@ -903,194 +907,170 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
       </footer>
 
       <Sheet open={productSheetOpen} onOpenChange={closeProductSheet}>
-        <SheetContent side="bottom" className="mx-auto max-h-[98vh] min-h-[70vh] w-full max-w-2xl rounded-t-[26px] border-0" dir="rtl">
-          <SheetHeader className="rounded-t-[26px] bg-slate-900 px-5 py-5 text-right sm:px-7">
+        <SheetContent side="bottom" className="mx-auto max-h-[96vh] min-h-[68vh] w-full max-w-[680px] rounded-t-[28px] border-0 bg-white shadow-none" dir="rtl">
+          <SheetHeader className="rounded-t-[28px] border-b border-white/15 bg-gradient-to-l from-slate-900 via-slate-800 to-slate-700 px-5 py-6 text-right sm:px-7">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <SheetTitle className="text-xl font-black tracking-tight text-white">{getProductTitle(pendingProduct)}</SheetTitle>
-                <p className="mt-0.5 text-xs font-bold text-white/70">{getProductCode(pendingProduct)}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-bold text-white/75">{getProductCode(pendingProduct)}</p>
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button onClick={confirmProductSelection} className="h-9 rounded-xl bg-white px-5 font-black text-slate-900 hover:bg-white/90">
+                <Button onClick={confirmProductSelection} className="h-10 rounded-lg bg-white px-6 font-black text-slate-900 shadow-[0_8px_16px_-12px_rgba(15,23,42,0.5)] hover:bg-slate-100">
                   إضافة
                 </Button>
               </div>
             </div>
           </SheetHeader>
 
-          <SheetBody className="space-y-4 px-5 py-5 sm:px-7">
-            {productSheetError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
-                {productSheetError}
-              </div>
-            ) : null}
+          <SheetBody className="space-y-0 bg-transparent">
+            <div className="bg-white px-0 py-3 shadow-none">
+              {productSheetError ? (
+                <div className="rounded-none border-none border-red-200 bg-red-50 px-5 py-3 text-sm font-bold text-red-700 mb-4 sm:px-7">
+                  {productSheetError}
+                </div>
+              ) : null}
 
-            <div className="grid gap-4">
-              <label className="block">
-                <span className="mb-2 block text-sm font-black text-[#173653]">سعر البيع</span>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={productDraft.price}
-                  onChange={(event) => {
-                    setProductDraft((current) => ({ ...current, price: event.target.value }));
-                    setProductSheetError('');
-                  }}
-                  className="h-12 rounded-xl border-[#e6c8cf] bg-[#fcf6f7] text-base font-black text-[#4d1f28] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
-                />
-              </label>
+              <div className="rounded-none border-0 bg-transparent p-0 px-5 sm:px-7">
+              <div className={`grid gap-4 ${pendingProduct?.requiresOwnershipTransfer ? 'md:grid-cols-2' : ''}`}>
+                <label className="block">
+                  <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">سعر البيع</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={productDraft.price}
+                    onChange={(event) => {
+                      setProductDraft((current) => ({ ...current, price: event.target.value }));
+                      setProductSheetError('');
+                    }}
+                    className="h-11 w-full md:max-w-[240px] rounded-lg border-slate-300 bg-white px-3.5 text-sm font-black text-slate-900 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+                  />
+                  <span className="mt-2 block text-[10px] font-semibold text-slate-400">
+                    السعر المقترح: {formatMoney(Number(pendingProduct?.price ?? 0))}
+                  </span>
+                </label>
+
+                {pendingProduct?.requiresOwnershipTransfer ? (
+                  <label className="block">
+                    <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">اسم المالك الجديد</span>
+                    <Input
+                      value={productDraft.ownershipTransferName}
+                      onChange={(event) => {
+                        setProductDraft((current) => ({ ...current, ownershipTransferName: event.target.value }));
+                        setProductSheetError('');
+                      }}
+                      placeholder="اكتب اسم المالك الجديد"
+                      className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+                    />
+                  </label>
+                ) : null}
+              </div>
+
+              {pendingAttributeFields.length ? (
+                <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {pendingAttributeFields.map((field) => (
+                      <div key={field.key} className="min-w-0">
+                        {field.values?.length ? (
+                          <AttributeSelectCard
+                            field={field}
+                            value={productDraft.attributes[field.key] || ''}
+                            isOpen={openAttributeKey === field.key}
+                            onToggle={() => setOpenAttributeKey((current) => (current === field.key ? '' : field.key))}
+                            onSelect={(nextValue) => {
+                              setProductDraft((current) => ({
+                                ...current,
+                                attributes: {
+                                  ...current.attributes,
+                                  [field.key]: nextValue,
+                                },
+                              }));
+                              setProductSheetError('');
+                              setOpenAttributeKey('');
+                            }}
+                          />
+                        ) : (
+                          <label className="block">
+                            <span className="mb-2.5 block text-xs font-semibold text-slate-600">
+                              {field.label}
+                              {field.isRequired ? <span className="text-red-500"> *</span> : null}
+                            </span>
+                            <Input
+                              value={productDraft.attributes[field.key] || ''}
+                              onChange={(event) => {
+                                setProductDraft((current) => ({
+                                  ...current,
+                                  attributes: {
+                                    ...current.attributes,
+                                    [field.key]: event.target.value,
+                                  },
+                                }));
+                                setProductSheetError('');
+                              }}
+                              placeholder={`حدد ${field.label}`}
+                              className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+                            />
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              </div>
             </div>
 
+            <div className="space-y-4 px-5 py-4 sm:px-7">
             {pendingProduct?.tracking === 'serial' ? (
               isTrackingIdentifiersLoading ? (
-                <div className="rounded-xl border border-[#c5ddef] bg-white px-4 py-3 text-sm font-bold text-[#668097]">
+                <div className="px-0 py-1 text-sm font-bold text-slate-600">
                   جاري تحميل تعريفات التتبع...
                 </div>
               ) : trackingIdentifierDefinitions.length ? (
                 <div className="grid gap-3 md:grid-cols-2">
-                  {trackingIdentifierDefinitions.map((definition) => {
-                    const slots = getIdentifierSlots(definition);
-                    return (
-                      <label key={definition.identifierTypeId} className="block">
-                        <span className="mb-2 block text-xs font-black text-[#668097]">
-                          {definition.name}
-                          {definition.isRequired ? <span className="text-red-500"> *</span> : null}
-                        </span>
-                        <Input
-                          value={productDraft.trackingIdentifiers?.[definition.identifierTypeId] ?? ''}
-                          inputMode={
-                            slots.length > 0 && slots.every((slot) => slot.type === 'numeric')
-                              ? 'numeric'
-                              : 'text'
-                          }
-                          maxLength={slots.length || undefined}
-                          onChange={(event) => handleTrackingIdentifierChange(definition, event.target.value)}
-                          placeholder={slots.length ? `${slots.length} خانة` : definition.code || definition.name}
-                          dir={slots.length > 0 ? 'ltr' : 'rtl'}
-                          className="h-12 rounded-xl border-[#e6c8cf] bg-white text-base font-bold text-[#4d1f28] placeholder:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
-                        />
-                      </label>
-                    );
-                  })}
+                    {trackingIdentifierDefinitions.map((definition) => {
+                      const slots = getIdentifierSlots(definition);
+                      return (
+                        <label key={definition.identifierTypeId} className="block">
+                          <span className="mb-2.5 block text-xs font-semibold text-slate-600">
+                            {definition.name}
+                            {definition.isRequired ? <span className="text-red-500"> *</span> : null}
+                          </span>
+                          <Input
+                            value={productDraft.trackingIdentifiers?.[definition.identifierTypeId] ?? ''}
+                            inputMode={
+                              slots.length > 0 && slots.every((slot) => slot.type === 'numeric')
+                                ? 'numeric'
+                                : 'text'
+                            }
+                            maxLength={slots.length || undefined}
+                            onChange={(event) => handleTrackingIdentifierChange(definition, event.target.value)}
+                            placeholder={slots.length ? `${slots.length} خانة` : definition.code || definition.name}
+                            dir={slots.length > 0 ? 'ltr' : 'rtl'}
+                            className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+                          />
+                        </label>
+                      );
+                    })}
                 </div>
               ) : (
-                <div className="rounded-xl border border-[#c5ddef] bg-white px-4 py-3 text-sm font-bold text-[#668097]">
+                <div className="px-0 py-1 text-sm font-bold text-slate-600">
                   هذا المنتج غير محدد له تتبع.
                 </div>
               )
             ) : null}
 
-            {pendingProduct?.requiresOwnershipTransfer ? (
-              <label className="block">
-                <span className="mb-2 block text-sm font-black text-[#173653]">اسم المالك الجديد (نقل الملكية)</span>
-                <Input
-                  value={productDraft.ownershipTransferName}
-                  onChange={(event) => {
-                    setProductDraft((current) => ({ ...current, ownershipTransferName: event.target.value }));
-                    setProductSheetError('');
-                  }}
-                  placeholder="اكتب اسم المالك الجديد"
-                  className="h-12 rounded-xl border-[#e6c8cf] bg-[#fcf6f7] text-base font-bold text-[#4d1f28] placeholder:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
-                />
-              </label>
-            ) : null}
-
-            {pendingAttributeFields.length ? (
-              <div className="space-y-3">
-                {pendingAttributeFields.map((field) => (
-                  <label key={field.key} className="block">
-                    <span className="mb-2 block text-xs font-black text-[#668097]">
-                      {field.label}
-                      {field.isRequired ? <span className="text-red-500"> *</span> : null}
-                    </span>
-                    {field.values?.length ? (
-                      <select
-                        value={productDraft.attributes[field.key] || ''}
-                        onChange={(event) => {
-                          setProductDraft((current) => ({
-                            ...current,
-                            attributes: {
-                              ...current.attributes,
-                              [field.key]: event.target.value,
-                            },
-                          }));
-                          setProductSheetError('');
-                        }}
-                        className="h-11 w-full rounded-xl border border-[#e6c8cf] bg-white px-3 text-sm font-bold text-[#4d1f28] outline-none transition focus:border-[#9b3645] focus:ring-4 focus:ring-[#f1d7dc]"
-                      >
-                        <option value="">اختر {field.label}</option>
-                        {field.values.map((value) => (
-                          <option key={value.id} value={value.id}>
-                            {value.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <Input
-                        value={productDraft.attributes[field.key] || ''}
-                        onChange={(event) => {
-                          setProductDraft((current) => ({
-                            ...current,
-                            attributes: {
-                              ...current.attributes,
-                              [field.key]: event.target.value,
-                            },
-                          }));
-                          setProductSheetError('');
-                        }}
-                        placeholder={`حدد ${field.label}`}
-                        className="h-11 rounded-xl border-[#e6c8cf] bg-white text-sm font-bold text-[#4d1f28] placeholder:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
-                      />
-                    )}
-                  </label>
-                ))}
-              </div>
-            ) : pendingProduct?.tracking !== 'serial' ? (
-              <div className="rounded-xl border border-dashed border-[#c5ddef] bg-[#f7fbff] px-4 py-4 text-sm font-bold text-[#668097]">
+            {!pendingAttributeFields.length && pendingProduct?.tracking !== 'serial' ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-4 text-sm font-bold text-slate-500">
                 لا توجد خصائص إضافية مطلوبة لهذا المنتج.
               </div>
             ) : null}
+            </div>
           </SheetBody>
 
 
-        </SheetContent>
-      </Sheet>
-
-      <Sheet
-        open={isContractSheetOpen}
-        onOpenChange={(open) => {
-          setIsContractSheetOpen(open);
-          if (!open && step === 3) setStep(2);
-        }}
-      >
-        <SheetContent side="right" className="w-full max-w-[760px] border-l border-slate-200 bg-slate-100" dir="rtl">
-          <SheetHeader className="border-b border-slate-200 bg-white px-5 py-4 text-right">
-            <SheetDismissButton />
-            <SheetTitle className="text-lg font-black text-slate-900">معاينة العقد</SheetTitle>
-            <p className="text-xs font-bold text-slate-500">راجع بيانات العقد قبل إتمام عملية البيع.</p>
-          </SheetHeader>
-          <SheetBody className="bg-slate-100 px-4 py-4">
-            <ShowroomContractPreview
-              companyName={tenant?.name}
-              customer={customer}
-              items={cart}
-              totalAmount={total}
-              paidAmount={Number(paidAmount) || 0}
-              remainingAmount={remainingAmount}
-              paymentMethod={paymentMethod}
-              notes={contractNote}
-            />
-          </SheetBody>
-          <SheetFooter className="justify-end border-t border-slate-200 bg-white px-5 py-4">
-            <Button variant="secondary" onClick={back} disabled={isCompleting} className="h-11 rounded-xl border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
-              <ChevronRight className="h-4 w-4" />
-              رجوع للدفع
-            </Button>
-            <Button onClick={complete} disabled={isCompleting} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
-              {isCompleting ? 'جار الحفظ...' : 'إتمام'}
-            </Button>
-          </SheetFooter>
         </SheetContent>
       </Sheet>
 
@@ -1120,6 +1100,146 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
         inlineSubmit
       />
     </section>
+  );
+}
+
+function SaleReviewStep({ customer, cart, total, paidAmount, remainingAmount, paymentMethod, contractNote }) {
+  return (
+    <div className="mx-auto w-full max-w-[680px] space-y-3" dir="rtl">
+      <p className="text-right text-xs font-black text-red-600">مراجعة الفاتورة قبل التأكيد</p>
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="grid gap-3 px-4 py-3 text-sm font-bold text-slate-700 sm:grid-cols-2">
+          <div>
+            <p className="text-[11px] font-black text-slate-400">الاسم</p>
+            <p className="mt-1 text-slate-950">{customer?.name || '--'}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-black text-slate-400">الهاتف</p>
+            <p className="mt-1 font-mono text-slate-950" dir="ltr">{customer?.phone || customer?.phone1 || '--'}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="divide-y divide-slate-100">
+          {cart.map((item) => (
+            <div key={item.lineId || item.id} className="flex items-start gap-3 px-4 py-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-black text-white">
+                {item.quantity}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-black text-slate-950">{item.name}</p>
+                <p className="mt-1 text-xs font-bold text-slate-500">{item.code}</p>
+                <LineMeta item={item} className="mt-1 text-slate-500" />
+              </div>
+              <div className="shrink-0 text-left" dir="ltr">
+                <p className="font-mono text-sm font-black text-slate-950">{formatMoney(item.price * item.quantity)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
+          <ReviewAmount label="الإجمالي" value={total} />
+          <ReviewAmount label="المدفوع" value={paidAmount} note={paymentMethod?.trim() || 'غير محددة'} />
+          <ReviewAmount label="المتبقي" value={remainingAmount} tone={remainingAmount > 0 ? 'danger' : 'success'} />
+        </div>
+        {contractNote?.trim() ? (
+          <div className="border-t border-slate-100 px-4 py-3">
+            <p className="text-[11px] font-black text-slate-400">ملاحظة العقد</p>
+            <p className="mt-1 text-sm font-bold leading-6 text-slate-700">{contractNote.trim()}</p>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function ReviewAmount({ label, value, tone = 'default', note = '' }) {
+  const toneClass = tone === 'danger'
+    ? 'text-red-600'
+    : tone === 'success'
+      ? 'text-emerald-600'
+      : 'text-slate-950';
+
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-2">
+      <p className="text-[11px] font-black text-slate-400">{label}</p>
+      <p className={`mt-1 font-mono text-sm font-black ${toneClass}`}>{formatMoney(value)}</p>
+      {note ? <p className="mt-1 text-[11px] font-bold text-slate-400">{note}</p> : null}
+    </div>
+  );
+}
+
+function AttributeSelectCard({ field, value, isOpen, onToggle, onSelect }) {
+  const selectedValue = field.values.find((option) => option.id === value);
+  const displayValue = selectedValue?.name || (field.isRequired ? 'اختر القيمة' : 'بدون اختيار');
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`group w-full rounded-xl border bg-white px-3.5 py-3 text-right shadow-sm transition focus:outline-none focus:ring-4 ${
+          isOpen
+            ? 'border-slate-700 ring-slate-200'
+            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 focus:border-slate-500 focus:ring-slate-200'
+        }`}
+        aria-expanded={isOpen}
+      >
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-[11px] font-black text-slate-400">
+              {field.label}
+              {field.isRequired ? <span className="text-red-500"> *</span> : null}
+            </span>
+            <span className={`mt-1 block truncate text-sm font-black ${selectedValue ? 'text-slate-950' : 'text-slate-400'}`}>
+              {displayValue}
+            </span>
+          </span>
+          <span className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition ${isOpen ? 'rotate-180 bg-slate-900 text-white' : 'group-hover:bg-white'}`}>
+            <ChevronDown className="h-4 w-4" />
+          </span>
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_22px_45px_-24px_rgba(15,23,42,0.7)]">
+          {!field.isRequired ? (
+            <button
+              type="button"
+              onClick={() => onSelect('')}
+              className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-right text-xs font-black transition ${
+                !value ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <span>بدون {field.label}</span>
+              {!value ? <Check className="h-3.5 w-3.5" /> : null}
+            </button>
+          ) : null}
+          {field.values.map((option) => {
+            const selected = option.id === value;
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => onSelect(option.id)}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-right text-xs font-black transition ${
+                  selected ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="truncate">{option.name}</span>
+                {selected ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1180,7 +1300,12 @@ function LineMeta({ item, className = '' }) {
   return (
     <div className={`space-y-0.5 text-[11px] font-bold leading-5 ${className}`}>
       {trackingText ? <p className="truncate">{trackingText}</p> : item.serialNumber ? <p className="truncate">السيريال: {item.serialNumber}</p> : null}
-      {item.ownershipTransferName ? <p className="truncate">نقل الملكية إلى: {item.ownershipTransferName}</p> : null}
+      {item.ownershipTransferName ? (
+        <p className="inline-flex max-w-full items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-black text-red-700 ring-1 ring-red-100">
+          <span className="shrink-0">نقل الملكية إلى:</span>
+          <span className="mr-1 truncate">{item.ownershipTransferName}</span>
+        </p>
+      ) : null}
       {attributesText ? <p className="truncate">{attributesText}</p> : null}
     </div>
   );

@@ -29,6 +29,17 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
     ? payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : 0;
   const paidAmount = payments.length ? paymentsTotal : Number(sale?.paid_amount ?? sale?.paidAmount ?? 0);
+  const paymentEntries = payments.length
+    ? payments
+    : paidAmount > 0
+      ? [{
+          id: 'initial-payment',
+          amount: paidAmount,
+          payment_date: sale?.payment_date || sale?.created_at,
+          payment_method: sale?.payment_method || sale?.paymentMethod || '',
+          notes: 'دفعة أولى',
+        }]
+      : [];
   const remainingAmount = Number(sale?.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
   const items = Array.isArray(sale?.items) && sale.items.length > 0
     ? sale.items
@@ -37,20 +48,20 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
       : [];
 
   return (
-    <div className="h-full overflow-y-auto bg-slate-50 p-4" dir="rtl">
-      <div className="space-y-4">
-        <div className="flex items-start justify-between gap-3">
+    <div className="h-full overflow-y-auto bg-white" dir="rtl">
+      <div>
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <User className="h-5 w-5 shrink-0 text-slate-400" />
-              <h2 className="truncate text-xl font-black text-slate-800">
+              <h2 className="truncate text-xl font-black text-slate-900">
                 {sale?.customer?.name || 'عميل غير محدد'}
               </h2>
             </div>
             {sale?.customer?.phone && (
-              <p className="mt-0.5 pr-7 text-sm text-slate-500">{sale.customer.phone}</p>
+              <p className="mt-0.5 pr-7 text-sm font-bold text-slate-500">{sale.customer.phone}</p>
             )}
-            <p className="mt-1 pr-7 text-xs text-slate-400">
+            <p className="mt-1 pr-7 text-xs font-bold text-slate-400">
               {new Intl.DateTimeFormat('ar-EG', { dateStyle: 'long', timeStyle: 'short' }).format(
                 new Date(sale?.created_at || Date.now()),
               )}
@@ -60,7 +71,7 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
             <button
               type="button"
               onClick={onContractOpen}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 ring-1 ring-slate-200 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-200"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500 ring-1 ring-slate-200 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-slate-100"
               aria-label="عرض العقد"
             >
               <Printer className="h-4 w-4" />
@@ -68,23 +79,23 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div>
           {items.length > 0 && (
-            <section className="border-b border-slate-100">
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <section className="border-b border-slate-200">
+              <div className="flex items-center justify-between gap-3 bg-slate-50 px-5 py-4">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
-                    <Package className="h-4 w-4 text-slate-500" />
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
+                    <Package className="h-4 w-4" />
                   </span>
                   <div>
-                    <h3 className="text-base font-black text-slate-950">الإجمالي</h3>
-                    <p className="mt-0.5 text-[0.7rem] font-semibold text-slate-400">تفاصيل المنتجات</p>
+                    <h3 className="text-sm font-black text-slate-900">الإجمالي</h3>
+                    <p className="mt-0.5 text-[0.7rem] font-semibold text-slate-400">بنود الفاتورة</p>
                   </div>
                 </div>
-                <span className="shrink-0 font-mono text-base font-black text-slate-950">{formatMoney(totalAmount)}</span>
+                <span className="shrink-0 font-mono text-lg font-black text-slate-950">{formatMoney(totalAmount)}</span>
               </div>
-              <div className="px-4 pb-3">
-                <div className="mr-10 divide-y divide-slate-100 rounded-lg bg-slate-50 ring-1 ring-slate-100">
+              <div className="px-5 pb-4">
+                <div className="mr-10 divide-y divide-slate-100 border-y border-slate-100">
                   {items.map((item, index) => {
                     const itemName = item?.displayName || item?.name || item?.description || `منتج ${index + 1}`;
                     const itemPrice = Number(item?.price ?? item?.unit_price ?? 0);
@@ -92,7 +103,7 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
                     const itemTotal = Number(item?.total ?? item?.line_total ?? itemPrice * itemQty);
 
                     return (
-                      <div key={item?.lineId || item?.lineUuid || item?.id || index} className="flex items-start justify-between gap-3 px-3 py-2">
+                      <div key={item?.lineId || item?.lineUuid || item?.id || index} className="flex items-start justify-between gap-3 py-2.5">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-bold text-slate-700">{itemName}</p>
                           {itemQty > 1 && (
@@ -112,7 +123,7 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
                             <p className="mt-0.5 text-[0.7rem] text-slate-400">نقل ملكية: {item.ownership_name}</p>
                           )}
                         </div>
-                        <p className="shrink-0 font-mono text-xs font-bold text-slate-600">{formatMoney(itemTotal)}</p>
+                        <p className="shrink-0 font-mono text-[0.72rem] font-bold text-slate-500">{formatMoney(itemTotal)}</p>
                       </div>
                     );
                   })}
@@ -122,36 +133,39 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
           )}
 
           {paidAmount > 0 && (
-            <section className="border-b border-slate-100">
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <section className="border-b border-slate-200">
+              <div className="flex items-center justify-between gap-3 bg-emerald-50/75 px-5 py-4">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
-                    <Banknote className="h-4 w-4 text-slate-500" />
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white">
+                    <Banknote className="h-4 w-4" />
                   </span>
-                  <h3 className="text-base font-black text-slate-950">المدفوع</h3>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">المدفوع</h3>
+                    <p className="mt-0.5 text-[0.7rem] font-semibold text-slate-400">سجل التحصيل</p>
+                  </div>
                 </div>
-                <span className="shrink-0 font-mono text-base font-black text-slate-950">{formatMoney(paidAmount)}</span>
+                <span className="shrink-0 font-mono text-lg font-black text-emerald-600">{formatMoney(paidAmount)}</span>
               </div>
-              {payments.length ? (
-                <div className="px-4 pb-3">
-                  <div className="mr-10 divide-y divide-slate-100 rounded-lg bg-slate-50 ring-1 ring-slate-100">
-                  {payments.map((payment, index) => {
+              {paymentEntries.length ? (
+                <div className="px-5 pb-4">
+                  <div className="mr-10 divide-y divide-slate-100 border-y border-slate-100">
+                  {paymentEntries.map((payment, index) => {
                     const paymentDate = payment?.payment_date || payment?.created_at;
-                    const statement = payment?.notes || 'دفعة';
+                    const paymentMethod = payment?.payment_method || payment?.paymentMethod || '';
+                    const statement = payment?.notes || `دفعة ${index + 1}`;
 
                     return (
-                      <div key={payment?.id || index} className="flex items-start justify-between gap-3 px-3 py-2">
+                      <div key={payment?.id || index} className="flex items-start justify-between gap-3 py-2.5">
                         <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <p className="truncate text-xs font-bold text-slate-700">{statement}</p>
-                            {paymentDate ? (
-                              <span className="shrink-0 text-[0.7rem] font-semibold text-slate-400">
-                              {new Intl.DateTimeFormat('ar-EG', { dateStyle: 'medium' }).format(new Date(paymentDate))}
-                              </span>
-                            ) : null}
-                          </div>
+                          <p className="truncate text-xs font-bold text-slate-700">{statement}</p>
+                          <p className="mt-0.5 truncate text-[0.7rem] text-slate-400">
+                            {[
+                              paymentMethod || 'طريقة دفع غير محددة',
+                              paymentDate ? new Intl.DateTimeFormat('ar-EG', { dateStyle: 'medium' }).format(new Date(paymentDate)) : '',
+                            ].filter(Boolean).join(' - ')}
+                          </p>
                         </div>
-                        <span className="shrink-0 font-mono text-xs font-bold text-slate-600">{formatMoney(payment?.amount)}</span>
+                        <span className="shrink-0 font-mono text-[0.72rem] font-bold text-slate-500">{formatMoney(payment?.amount)}</span>
                       </div>
                     );
                   })}
@@ -161,8 +175,8 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
             </section>
           )}
 
-          <div className={`flex items-center justify-between gap-3 px-4 py-3 ${
-            remainingAmount > 0 ? 'bg-red-50/65 text-red-700' : 'bg-emerald-50/70 text-emerald-700'
+          <div className={`flex items-center justify-between gap-3 px-5 py-4 ${
+            remainingAmount > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
           }`}>
             <div className="flex min-w-0 items-center gap-2.5">
               <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
@@ -531,7 +545,7 @@ function ShowroomContractWindow({ sale, isOpen, companyName, onClose }) {
         exit={{ x: '100%' }}
         transition={{ type: 'tween', duration: 0.22, ease: [0.3, 1, 0.4, 1] }}
         style={{ zIndex: 2147483643 }}
-        className="fixed inset-y-0 right-0 flex w-full max-w-[760px] flex-col overflow-hidden bg-slate-100 shadow-2xl"
+        className="fixed inset-y-0 right-0 flex w-full max-w-[760px] flex-col overflow-hidden bg-slate-200 shadow-2xl"
         dir="rtl"
       >
         <style>{`
@@ -588,7 +602,7 @@ function ShowroomContractWindow({ sale, isOpen, companyName, onClose }) {
             }
           }
         `}</style>
-        <div className="flex-1 overflow-y-auto bg-slate-100 px-4 py-4">
+        <div className="flex-1 overflow-y-auto bg-slate-200 px-3 py-5 pb-8 shadow-inner sm:px-5">
           <div className="showroom-contract-print-shell">
             <div className="showroom-contract-print">
               <ShowroomContractPreview
@@ -604,7 +618,7 @@ function ShowroomContractWindow({ sale, isOpen, companyName, onClose }) {
             </div>
           </div>
         </div>
-        <footer className="relative border-t-4 border-[#2f86cf] bg-white px-5 py-4 text-right shadow-[0_-16px_32px_-28px_rgba(15,23,42,0.75)]">
+        <footer className="relative z-10 border-t-4 border-[#2f86cf] bg-white/95 px-5 py-4 text-right shadow-[0_-18px_38px_-24px_rgba(15,23,42,0.85)] backdrop-blur">
           <button
             type="button"
             onClick={() => window.print()}

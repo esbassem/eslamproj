@@ -19,7 +19,7 @@ export function normalizeAppCode(value) {
 
 export function getAppCodeFromPathname(pathname = '') {
   const normalizedPathname = pathname.split('?')[0].replace(/\/+$/, '') || '/';
-  const appMatch = normalizedPathname.match(/^\/app\/([^/]+)/);
+  const appMatch = normalizedPathname.match(/^\/apps?\/([^/]+)/);
 
   if (appMatch?.[1]) {
     return normalizeAppCode(appMatch[1]);
@@ -34,6 +34,9 @@ export function getAppCodeFromPathname(pathname = '') {
 
 export function getAppBasePath(appCode) {
   const normalizedAppCode = normalizeAppCode(appCode);
+  if (normalizedAppCode === 'old_cashbox') {
+    return '/apps/old-cashbox';
+  }
   return normalizedAppCode ? `/app/${normalizedAppCode}` : ROUTES.dashboard;
 }
 

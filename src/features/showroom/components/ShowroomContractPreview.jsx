@@ -214,6 +214,11 @@ export function ShowroomContractPreview({ companyName, customer, items, totalAmo
           ) : null}
         </section>
 
+        <section className="mt-8 flex items-end justify-end gap-3">
+          <p className="text-sm font-bold text-slate-700">توقيع العميل</p>
+          <div className="h-8 w-48 border-b border-slate-500" />
+        </section>
+
         <footer className="mt-5 border-t border-slate-200 pt-3 text-center text-[11px] text-slate-500">
           تم إنشاء هذا العقد إلكترونيًا من نظام {sellerName}
         </footer>

@@ -69,6 +69,10 @@ export function AppRouter() {
                 <Route path="settings" element={<Navigate to="/app/showroom_point" replace />} />
                 <Route path="sale/:saleId" element={<ShowroomSaleDetailsPage />} />
               </Route>
+              <Route path="/apps/:appCode" element={<AppLayout />}>
+                <Route index element={<DynamicAppPage />} />
+                <Route path="*" element={<DynamicAppPage />} />
+              </Route>
               <Route path="/app/pos/:posId/session/:sessionId/sell" element={<PosPage />} />
               <Route path="/app/:appCode" element={<AppLayout />}>
                 <Route index element={<DynamicAppPage />} />

@@ -752,25 +752,25 @@ export function ShowroomSellPage() {
       <div className="pointer-events-none absolute bottom-12 right-10 hidden h-px w-80 bg-white/55 md:block" />
       <div className="pointer-events-none absolute bottom-16 right-16 hidden h-px w-48 bg-[#f4d35e]/70 md:block" />
       <main className="relative z-10 mx-auto w-full max-w-[1280px]">
-        <header className="showroom-header-in mb-6 flex flex-wrap items-center justify-between gap-4 px-1 text-white sm:px-0">
+        <header className="showroom-header-in mb-3 flex flex-wrap items-center justify-between gap-3 px-1 text-white sm:px-0">
           <div className="flex min-w-0 items-center gap-3 text-right">
             <button
               type="button"
               aria-label="رجوع"
               onClick={() => navigate(-1)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/25 bg-white/10 text-white backdrop-blur transition hover:bg-white/20 focus:outline-none focus:ring-4 focus:ring-white/20"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/25 bg-white/10 text-white backdrop-blur transition hover:bg-white/20 focus:outline-none focus:ring-4 focus:ring-white/20"
             >
               <ArrowRight className="h-5 w-5" />
             </button>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-black leading-tight text-white sm:text-3xl">نقطة المعرض</h1>
-                <span className="rounded-full bg-white/12 px-2.5 py-1 text-[11px] font-black text-white/85 backdrop-blur">Live Workspace</span>
+                <h1 className="text-xl font-black leading-tight text-white sm:text-2xl">نقطة المعرض</h1>
+                <span className="rounded-full bg-white/12 px-2 py-0.5 text-[10px] font-black text-white/80 backdrop-blur">Live Workspace</span>
               </div>
-              <p className="text-xs font-bold text-white/78 sm:text-sm">واجهة بيع احترافية بترتيب واضح ومظهر مؤسسي هادئ</p>
+              <p className="hidden text-[11px] font-semibold text-white/70 sm:block">واجهة بيع احترافية بترتيب واضح ومظهر مؤسسي هادئ</p>
             </div>
           </div>
-          <div className="flex w-full items-center gap-2 rounded-2xl border border-white/25 bg-white/10 px-3 py-2 backdrop-blur sm:w-auto sm:min-w-[18rem]">
+          <div className="flex w-full items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-3 py-1.5 backdrop-blur sm:w-auto sm:min-w-[17rem]">
             <Store className="h-4 w-4 shrink-0 text-white/80" />
             <div className="min-w-0 flex-1">
               <label htmlFor="showroom-config" className="sr-only">نقطة المعرض</label>

@@ -29,6 +29,9 @@ export const MENU_COMPONENTS = {
 
   '/app/partners': lazyNamed(() => import('@/features/partners/pages/PartnersPage'), 'PartnersPage'),
   '/app/pos': lazyNamed(() => import('@/features/pos/pages/PosPage'), 'PosPage'),
+  '/app/old_cashbox': lazyNamed(() => import('@/features/old-cashbox/pages/OldCashboxPage'), 'OldCashboxPage'),
+  '/app/old-cashbox': lazyNamed(() => import('@/features/old-cashbox/pages/OldCashboxPage'), 'OldCashboxPage'),
+  '/apps/old-cashbox': lazyNamed(() => import('@/features/old-cashbox/pages/OldCashboxPage'), 'OldCashboxPage'),
   '/app/showroom_point': lazyNamed(() => import('@/features/showroom/pages/ShowroomSellPage'), 'ShowroomSellPage'),
   '/app/showroom_point/new': lazyNamed(() => import('@/features/showroom/pages/ShowroomSellPage'), 'ShowroomSellPage'),
   '/app/showroom_point/customers': lazyNamed(() => import('@/features/showroom/pages/ShowroomSellPage'), 'ShowroomSellPage'),
