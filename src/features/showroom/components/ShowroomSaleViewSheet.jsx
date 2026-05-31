@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, Banknote, CheckCircle2, Package, Printer, User } from 'lucide-react';
+import { AlertCircle, Banknote, CheckCircle2, Package, Printer, Trash2, User } from 'lucide-react';
 import { ShowroomContractPreview } from '@/features/showroom/components/ShowroomContractPreview';
 import { useShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
 import { showroomService } from '@/features/showroom/services/showroom.service';
@@ -9,6 +9,17 @@ import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('ar-EG')} EGP`;
+}
+
+function getLineConfiguredAttributes(item) {
+  return Array.isArray(item?.configuredAttributes)
+    ? item.configuredAttributes
+      .map((attribute) => ({
+        label: attribute?.label || attribute?.name || 'خاصية',
+        value: attribute?.value || attribute?.valueText || attribute?.value_text || '',
+      }))
+      .filter((attribute) => String(attribute.value).trim())
+    : [];
 }
 
 function SaleSheetSkeleton() {
@@ -22,7 +33,7 @@ function SaleSheetSkeleton() {
   );
 }
 
-function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemaining }) {
+function SaleSheetContent({ sale, onContractOpen, onPayRemaining, onDelete, canDelete, isPayingRemaining, isDeleting }) {
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
   const payments = Array.isArray(sale?.payments) ? sale.payments : [];
   const paymentsTotal = payments.length
@@ -67,10 +78,23 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
               )}
             </p>
           </div>
-          <div className="shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
+            {canDelete ? (
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={isDeleting}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600 ring-1 ring-red-100 transition hover:bg-red-100 hover:text-red-700 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="حذف الفاتورة"
+                title="حذف الفاتورة"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onContractOpen}
+              disabled={isDeleting}
               className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500 ring-1 ring-slate-200 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-slate-100"
               aria-label="عرض العقد"
             >
@@ -101,6 +125,7 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
                     const itemPrice = Number(item?.price ?? item?.unit_price ?? 0);
                     const itemQty = Number(item?.quantity ?? 1);
                     const itemTotal = Number(item?.total ?? item?.line_total ?? itemPrice * itemQty);
+                    const configuredAttributes = getLineConfiguredAttributes(item);
 
                     return (
                       <div key={item?.lineId || item?.lineUuid || item?.id || index} className="flex items-start justify-between gap-3 py-2.5">
@@ -117,6 +142,11 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, isPayingRemain
                           {Array.isArray(item?.trackingIdentifiers) && item.trackingIdentifiers.length ? (
                             <p className="mt-0.5 truncate text-[0.7rem] text-slate-400">
                               {item.trackingIdentifiers.map((identifier) => `${identifier.label}: ${identifier.value}`).join(' - ')}
+                            </p>
+                          ) : null}
+                          {configuredAttributes.length ? (
+                            <p className="mt-0.5 truncate text-[0.7rem] text-slate-400">
+                              {configuredAttributes.map((attribute) => `${attribute.label}: ${attribute.value}`).join(' - ')}
                             </p>
                           ) : null}
                           {item?.ownership_name && (
@@ -340,14 +370,16 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
   );
 }
 
-export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
-  const { tenant } = useWorkspace();
+export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted }) {
+  const { tenant, tenantUser } = useWorkspace();
   const { currentShowroomConfigId } = useShowroomConfig();
+  const canDeleteSale = tenantUser?.role === 'owner';
   const [fullSale, setFullSale] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');
   const [isContractOpen, setIsContractOpen] = useState(false);
   const [isPayingRemaining, setIsPayingRemaining] = useState(false);
+  const [isDeletingSale, setIsDeletingSale] = useState(false);
   const [sheetMode, setSheetMode] = useState('details');
 
   const fetchDetails = useCallback(async () => {
@@ -393,6 +425,7 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
       setFetchError('');
       setIsContractOpen(false);
       setIsPayingRemaining(false);
+      setIsDeletingSale(false);
       setSheetMode('details');
     }
   }, [isOpen, fetchDetails]);
@@ -431,6 +464,39 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
       setIsPayingRemaining(false);
     }
   }, [currentShowroomConfigId, fullSale, isPayingRemaining, sale, tenant?.id]);
+
+  const handleDeleteSale = useCallback(async () => {
+    const targetSale = fullSale ?? sale;
+
+    if (!tenant?.id || !currentShowroomConfigId || !targetSale?.id || isDeletingSale) {
+      return;
+    }
+
+    if (!canDeleteSale) {
+      setFetchError('حذف الفاتورة متاح فقط لمالك الشركة.');
+      return;
+    }
+
+    const confirmed = window.confirm('سيتم حذف الفاتورة وكل السطور والدفعات وآثار المخزون المرتبطة بها. هل أنت متأكد؟');
+    if (!confirmed) return;
+
+    setIsDeletingSale(true);
+    setFetchError('');
+
+    try {
+      await showroomService.deleteSale({
+        tenantId: tenant.id,
+        saleId: targetSale.id,
+        showroomConfigId: currentShowroomConfigId,
+      });
+      onDeleted?.(targetSale.id);
+      onClose?.();
+    } catch (err) {
+      setFetchError(err.message || 'تعذر حذف الفاتورة.');
+    } finally {
+      setIsDeletingSale(false);
+    }
+  }, [canDeleteSale, currentShowroomConfigId, fullSale, isDeletingSale, onClose, onDeleted, sale, tenant?.id]);
 
   if (typeof document === 'undefined') {
     return null;
@@ -491,7 +557,10 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose }) {
                 sale={fullSale ?? sale}
                 onContractOpen={() => setIsContractOpen(true)}
                 onPayRemaining={handleOpenPaymentStep}
+                onDelete={handleDeleteSale}
+                canDelete={canDeleteSale}
                 isPayingRemaining={isPayingRemaining}
+                isDeleting={isDeletingSale}
               />
             )}
           </motion.div>

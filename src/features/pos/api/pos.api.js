@@ -145,6 +145,7 @@ function normalizeProductTemplate(record) {
     requiresContract: template?.requires_contract ?? false,
     requiresOwnershipTransfer: template?.requires_ownership_transfer ?? false,
     requiresPostSaleDocuments: template?.requires_post_sale_documents ?? false,
+    requiresLicense: template?.requires_license ?? false,
   };
 }
 
@@ -231,6 +232,12 @@ async function attachSellAttributeFields(client, { tenantId, products }) {
     map.set(row.product_product_id, current);
     return map;
   }, new Map());
+  const selectedAttributeValueIdsByProductId = (selectedRows ?? []).reduce((map, row) => {
+    const current = map.get(row.product_product_id) ?? [];
+    if (row.attribute_value_id) current.push(row.attribute_value_id);
+    map.set(row.product_product_id, current);
+    return map;
+  }, new Map());
   const fieldsByCategoryId = (categoryLinkRows ?? []).reduce((map, link) => {
     const attribute = attributesById.get(link.attribute_id);
     if (!attribute) return map;
@@ -253,12 +260,14 @@ async function attachSellAttributeFields(client, { tenantId, products }) {
 
   return products.map((product) => {
     const selectedAttributeIds = selectedAttributeIdsByProductId.get(product.id) ?? new Set();
+    const attributeValueIds = [...new Set(selectedAttributeValueIdsByProductId.get(product.id) ?? [])];
     const attributeFields = (fieldsByCategoryId.get(product.categoryId) ?? [])
       .filter((field) => field.createsVariant ? !selectedAttributeIds.has(field.attributeId) : true)
       .sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0) || String(left.label).localeCompare(String(right.label)));
 
     return {
       ...product,
+      attributeValueIds,
       attributeFields,
     };
   });
@@ -502,7 +511,8 @@ export const posService = {
           sale_price,
           requires_contract,
           requires_ownership_transfer,
-          requires_post_sale_documents
+          requires_post_sale_documents,
+          requires_license
         )
       `)
       .eq('tenant_id', tenantId)

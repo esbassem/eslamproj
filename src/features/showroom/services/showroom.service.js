@@ -1,4 +1,5 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { resolveCurrentTenantUserId } from '@/features/workspace/api/currentTenantUser.api';
 import { isInventoryInstalled } from '@/core/lib/inventoryGuard';
 
 const SALE_SELECT = `
@@ -126,7 +127,195 @@ function getLineAttributes(item) {
     .filter((attribute) => attribute.attributeValueId || attribute.valueText);
 }
 
-function buildSaleLine({ tenantId, saleId, item }) {
+function getLineTrackingIdentifiers(item) {
+  const identifiers = Array.isArray(item?.trackingIdentifiers) ? item.trackingIdentifiers : [];
+
+  return identifiers
+    .map((identifier) => ({
+      identifierTypeId: identifier?.identifierTypeId ?? identifier?.identifier_type_id ?? null,
+      label: identifier?.label ?? identifier?.name ?? 'تعريف تتبع',
+      code: identifier?.code ?? null,
+      value: String(identifier?.value ?? identifier?.valueText ?? identifier?.value_text ?? '').trim(),
+      isNotAvailable: Boolean(identifier?.isNotAvailable ?? identifier?.is_not_available),
+    }))
+    .filter((identifier) => isUuid(identifier.identifierTypeId) && (identifier.value || identifier.isNotAvailable));
+}
+
+function getLineLicense(item) {
+  if (!item?.requiresLicense && !item?.license) {
+    return null;
+  }
+
+  const license = item?.license ?? {};
+  const status = license.status || license.licenseStatus || license.license_status || '';
+  const number = String(license.number ?? license.licenseNumber ?? license.license_number ?? '').trim();
+  const expiresAt = license.expiresAt || license.licenseExpiresAt || license.license_expires_at || null;
+
+  if (!status) {
+    throw new Error('حالة الترخيص مطلوبة.');
+  }
+
+  if (status === 'licensed' && !number) {
+    throw new Error('رقم الترخيص مطلوب عندما تكون حالة الترخيص "مرخص".');
+  }
+
+  if (status === 'licensed' && !expiresAt) {
+    throw new Error('تاريخ انتهاء الترخيص مطلوب عندما تكون حالة الترخيص "مرخص".');
+  }
+
+  return {
+    license_status: status,
+    license_number: number || null,
+    license_issued_at: license.issuedAt || license.licenseIssuedAt || license.license_issued_at || null,
+    license_expires_at: expiresAt,
+    issuing_authority: String(license.issuingAuthority ?? license.issuing_authority ?? '').trim() || null,
+    notes: String(license.notes ?? '').trim() || null,
+  };
+}
+
+function getTrackingNumber(item, trackingIdentifiers = getLineTrackingIdentifiers(item)) {
+  const explicitSerial = String(item?.serialNumber ?? item?.serial_number ?? '').trim();
+  if (explicitSerial) return explicitSerial;
+  return trackingIdentifiers.map((identifier) => identifier.value).filter(Boolean).join(' - ');
+}
+
+async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId, saleId, userId }) {
+  if ((item?.tracking ?? item?.tracking_type) !== 'serial') {
+    return null;
+  }
+
+  const trackingIdentifiers = getLineTrackingIdentifiers(item);
+  const trackingNumber = getTrackingNumber(item, trackingIdentifiers);
+
+  if (!trackingNumber && !trackingIdentifiers.some((identifier) => identifier.isNotAvailable)) {
+    return null;
+  }
+  const safeTrackingNumber = trackingNumber || `NA-${saleId}-${productProductId}-${String(item?.lineId || Date.now()).replace(/[^a-zA-Z0-9-]/g, '')}`;
+
+  const { data: existingUnits, error: existingError } = await client
+    .from('stock_tracking_units')
+    .select('id, status')
+    .eq('tenant_id', tenantId)
+    .eq('product_product_id', productProductId)
+    .eq('tracking_number', safeTrackingNumber)
+    .limit(1);
+
+  if (existingError) throw existingError;
+
+  let trackingUnit = existingUnits?.[0] ?? null;
+
+  if (trackingUnit?.status === 'sold') {
+    throw new Error(`الوحدة "${safeTrackingNumber}" تم بيعها من قبل.`);
+  }
+
+  if (trackingUnit) {
+    const { data: updatedUnit, error: updateError } = await client
+      .from('stock_tracking_units')
+      .update({
+        status: 'sold',
+      })
+      .eq('tenant_id', tenantId)
+      .eq('id', trackingUnit.id)
+      .select('id, status')
+      .single();
+
+    if (updateError) throw updateError;
+    trackingUnit = updatedUnit;
+  } else {
+    const { data: createdUnit, error: createError } = await client
+      .from('stock_tracking_units')
+      .insert([{
+        tenant_id: tenantId,
+        product_product_id: productProductId,
+        tracking_number: safeTrackingNumber,
+        tracking_type: 'serial',
+        status: 'sold',
+        notes: `showroom_sale:${saleId}`,
+      }])
+      .select('id, status')
+      .single();
+
+    if (createError) throw createError;
+    trackingUnit = createdUnit;
+  }
+
+  if (trackingIdentifiers.length) {
+    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId, tenantUserId: userId });
+    const { data: existingIdentifiers, error: identifiersFetchError } = await client
+      .from('stock_tracking_unit_identifiers')
+      .select('identifier_type_id')
+      .eq('tenant_id', tenantId)
+      .eq('tracking_unit_id', trackingUnit.id);
+
+    if (identifiersFetchError) throw identifiersFetchError;
+
+    const existingIdentifierIds = new Set((existingIdentifiers || []).map((identifier) => identifier.identifier_type_id));
+    const identifierRows = trackingIdentifiers
+      .filter((identifier) => !existingIdentifierIds.has(identifier.identifierTypeId))
+      .map((identifier) => ({
+        tenant_id: tenantId,
+        tracking_unit_id: trackingUnit.id,
+        identifier_type_id: identifier.identifierTypeId,
+        value: identifier.isNotAvailable ? null : identifier.value,
+        is_not_available: identifier.isNotAvailable,
+        created_by: currentTenantUserId,
+      }));
+
+    if (identifierRows.length) {
+      const { error: identifiersInsertError } = await client
+        .from('stock_tracking_unit_identifiers')
+        .insert(identifierRows);
+
+      if (identifiersInsertError) {
+        if (identifiersInsertError.code === '23505') {
+          throw new Error('هذه القيمة مستخدمة بالفعل في وحدة أخرى.');
+        }
+        throw identifiersInsertError;
+      }
+    }
+  }
+
+  return trackingUnit.id;
+}
+
+async function saveTrackingUnitLicense(client, { tenantId, item, trackingUnitId, userId }) {
+  const license = getLineLicense(item);
+  if (!license) return;
+
+  if (!trackingUnitId) {
+    throw new Error('لا يمكن حفظ الترخيص بدون وحدة تتبع مرتبطة بالمنتج.');
+  }
+
+  const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId, tenantUserId: userId });
+
+  const { error: updateError } = await client
+    .from('stock_tracking_unit_licenses')
+    .update({ is_current: false, updated_at: new Date().toISOString() })
+    .eq('tenant_id', tenantId)
+    .eq('tracking_unit_id', trackingUnitId)
+    .eq('is_current', true);
+
+  if (updateError) throw updateError;
+
+  const { error: insertError } = await client
+    .from('stock_tracking_unit_licenses')
+    .insert({
+      tenant_id: tenantId,
+      tracking_unit_id: trackingUnitId,
+      ...license,
+      is_current: true,
+      created_by: currentTenantUserId,
+    });
+
+  if (insertError) {
+    if (insertError.code === '23505') {
+      throw new Error('رقم الترخيص مستخدم بالفعل داخل نفس الشركة.');
+    }
+    throw insertError;
+  }
+}
+
+function buildSaleLine({ tenantId, saleId, item, trackingUnitId }) {
   const quantity = Math.max(toMoney(item?.quantity) || 1, 1);
   const unitPrice = Math.max(toMoney(item?.price), 0);
 
@@ -134,7 +323,7 @@ function buildSaleLine({ tenantId, saleId, item }) {
     tenant_id: tenantId,
     sale_id: saleId,
     product_product_id: getProductProductId(item),
-    tracking_unit_id: null,
+    tracking_unit_id: trackingUnitId || null,
     ownership_name: item?.ownershipTransferName?.trim() || null,
     description: item?.name || item?.displayName || null,
     quantity,
@@ -202,6 +391,196 @@ async function attachLineAttributes(client, tenantId, lines) {
   }));
 }
 
+async function attachLineTrackingIdentifiers(client, tenantId, lines) {
+  const saleLines = Array.isArray(lines) ? lines : [];
+  const trackingUnitIds = [...new Set(saleLines.map((line) => line.tracking_unit_id).filter(Boolean))];
+
+  if (!trackingUnitIds.length) {
+    return saleLines;
+  }
+
+  const [{ data: units, error: unitsError }, { data: identifierRows, error: identifiersError }] = await Promise.all([
+    client
+      .from('stock_tracking_units')
+      .select('id, tracking_number, status')
+      .eq('tenant_id', tenantId)
+      .in('id', trackingUnitIds),
+    client
+      .from('stock_tracking_unit_identifiers')
+      .select('id, tracking_unit_id, identifier_type_id, value, is_not_available')
+      .eq('tenant_id', tenantId)
+      .in('tracking_unit_id', trackingUnitIds),
+  ]);
+
+  if (unitsError) throw unitsError;
+  if (identifiersError) throw identifiersError;
+
+  const identifierTypeIds = [...new Set((identifierRows || []).map((row) => row.identifier_type_id).filter(Boolean))];
+  const { data: identifierTypes, error: typesError } = identifierTypeIds.length
+    ? await client
+      .from('product_tracking_identifier_types')
+      .select('id, name, code')
+      .eq('tenant_id', tenantId)
+      .in('id', identifierTypeIds)
+    : { data: [], error: null };
+
+  if (typesError) throw typesError;
+
+  const unitsById = new Map((units || []).map((unit) => [unit.id, unit]));
+  const typesById = new Map((identifierTypes || []).map((type) => [type.id, type]));
+  const identifiersByUnitId = new Map();
+
+  (identifierRows || []).forEach((row) => {
+    const current = identifiersByUnitId.get(row.tracking_unit_id) || [];
+    const type = typesById.get(row.identifier_type_id);
+
+    current.push({
+      id: row.id,
+      identifierTypeId: row.identifier_type_id,
+      label: type?.name || 'تعريف تتبع',
+      code: type?.code || '',
+      value: row.value || '',
+      isNotAvailable: row.is_not_available ?? false,
+    });
+
+    identifiersByUnitId.set(row.tracking_unit_id, current);
+  });
+
+  return saleLines.map((line) => {
+    const unit = unitsById.get(line.tracking_unit_id);
+    const trackingIdentifiers = identifiersByUnitId.get(line.tracking_unit_id) || [];
+
+    return {
+      ...line,
+      trackingUnit: unit ? {
+        id: unit.id,
+        trackingNumber: unit.tracking_number || '',
+        status: unit.status || '',
+      } : null,
+      serialNumber: unit?.tracking_number || '',
+      trackingIdentifiers,
+    };
+  });
+}
+
+async function attachLineDetails(client, tenantId, lines) {
+  const linesWithAttributes = await attachLineAttributes(client, tenantId, lines || []);
+  return attachLineTrackingIdentifiers(client, tenantId, linesWithAttributes);
+}
+
+async function restoreQuantityStock(client, { tenantId, productProductId, quantity }) {
+  const safeQuantity = Math.max(toMoney(quantity), 0);
+  if (!productProductId || safeQuantity <= 0) return;
+
+  const { data: existingQuant, error: quantError } = await client
+    .from('stock_quants')
+    .select('id, quantity_on_hand, reserved_quantity')
+    .eq('tenant_id', tenantId)
+    .eq('product_product_id', productProductId)
+    .limit(1)
+    .maybeSingle();
+
+  if (quantError) throw quantError;
+
+  if (!existingQuant) {
+    const { error: insertError } = await client
+      .from('stock_quants')
+      .insert({
+        tenant_id: tenantId,
+        product_product_id: productProductId,
+        quantity_on_hand: safeQuantity,
+      });
+
+    if (insertError) throw insertError;
+    return;
+  }
+
+  const currentQuantity = toMoney(existingQuant.quantity_on_hand);
+  const nextQuantity = currentQuantity + safeQuantity;
+  const reservedQuantity = toMoney(existingQuant.reserved_quantity);
+
+  if (currentQuantity < 0 && nextQuantity === 0 && reservedQuantity === 0) {
+    const { error: deleteError } = await client
+      .from('stock_quants')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('id', existingQuant.id);
+
+    if (deleteError) throw deleteError;
+    return;
+  }
+
+  const { error: updateError } = await client
+    .from('stock_quants')
+    .update({ quantity_on_hand: nextQuantity, updated_at: new Date().toISOString() })
+    .eq('tenant_id', tenantId)
+    .eq('id', existingQuant.id);
+
+  if (updateError) throw updateError;
+}
+
+async function restoreTrackingUnits(client, { tenantId, saleId, saleCreatedAt, lines }) {
+  const trackingUnitIds = [...new Set((lines || []).map((line) => line.tracking_unit_id).filter(Boolean))];
+  if (!trackingUnitIds.length) return [];
+
+  const { data: units, error: unitsError } = await client
+    .from('stock_tracking_units')
+    .select('id, notes, created_at')
+    .eq('tenant_id', tenantId)
+    .in('id', trackingUnitIds);
+
+  if (unitsError) throw unitsError;
+
+  const saleCreatedTime = new Date(saleCreatedAt || Date.now()).getTime();
+  const createdForSaleIds = [];
+  const restoreIds = [];
+
+  (units || []).forEach((unit) => {
+    const unitCreatedTime = new Date(unit.created_at || 0).getTime();
+    const isMarkedForSale = unit.notes === `showroom_sale:${saleId}`;
+    const wasCreatedWithSale = Number.isFinite(unitCreatedTime) && unitCreatedTime >= saleCreatedTime - 5000;
+
+    if (isMarkedForSale || wasCreatedWithSale) {
+      createdForSaleIds.push(unit.id);
+    } else {
+      restoreIds.push(unit.id);
+    }
+  });
+
+  if (restoreIds.length) {
+    const { error: restoreError } = await client
+      .from('stock_tracking_units')
+      .update({ status: 'in_stock', updated_at: new Date().toISOString() })
+      .eq('tenant_id', tenantId)
+      .in('id', restoreIds);
+
+    if (restoreError) throw restoreError;
+  }
+
+  return createdForSaleIds;
+}
+
+async function deleteTrackingUnits(client, { tenantId, trackingUnitIds }) {
+  const ids = [...new Set((trackingUnitIds || []).filter(Boolean))];
+  if (!ids.length) return;
+
+  const { error: identifiersDeleteError } = await client
+    .from('stock_tracking_unit_identifiers')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .in('tracking_unit_id', ids);
+
+  if (identifiersDeleteError) throw identifiersDeleteError;
+
+  const { error: unitsDeleteError } = await client
+    .from('stock_tracking_units')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .in('id', ids);
+
+  if (unitsDeleteError) throw unitsDeleteError;
+}
+
 async function attachSaleLines(client, tenantId, sales, showroomConfigId) {
   const saleRows = Array.isArray(sales) ? sales : [sales].filter(Boolean);
   const saleIds = saleRows.map((sale) => sale.id).filter(Boolean);
@@ -219,7 +598,7 @@ async function attachSaleLines(client, tenantId, sales, showroomConfigId) {
 
   if (error) throw error;
 
-  const linesWithAttributes = await attachLineAttributes(client, tenantId, lines || []);
+  const linesWithAttributes = await attachLineDetails(client, tenantId, lines || []);
   const linesBySaleId = new Map();
 
   linesWithAttributes.forEach((line) => {
@@ -503,11 +882,37 @@ export const showroomService = {
 
     if (saleError) throw saleError;
 
-    const lineRows = saleItems.map((item) => buildSaleLine({
+    const preparedSaleItems = await Promise.all(saleItems.map(async (item) => {
+      const productProductId = getProductProductId(item);
+      const trackingUnitId = productProductId
+        ? await ensureSaleTrackingUnit(client, {
+          tenantId,
+          item,
+          productProductId,
+          saleId: sale.id,
+          userId,
+        })
+        : null;
+
+      await saveTrackingUnitLicense(client, {
+        tenantId,
+        item,
+        trackingUnitId,
+        userId,
+      });
+
+      return {
+        item,
+        trackingUnitId,
+      };
+    }));
+
+    const lineRows = preparedSaleItems.map(({ item, trackingUnitId }) => buildSaleLine({
       tenantId,
       saleId: sale.id,
       showroomConfigId: showroomConfig.id,
       item,
+      trackingUnitId,
     }));
 
     let lines = [];
@@ -544,7 +949,7 @@ export const showroomService = {
         if (attributesError) throw attributesError;
       }
 
-      lines = await attachLineAttributes(client, tenantId, lines);
+      lines = await attachLineDetails(client, tenantId, lines);
     }
 
     let payments = [];
@@ -578,6 +983,7 @@ export const showroomService = {
 
         if (!isService && productProductId) {
           const quantity = Math.max(toMoney(line.quantity) || 1, 1);
+          const isSerial = (saleItem?.tracking ?? saleItem?.tracking_type) === 'serial' || Boolean(line.tracking_unit_id);
 
           // Record the outgoing stock move
           await client.from('stock_moves').insert({
@@ -590,23 +996,25 @@ export const showroomService = {
           });
 
           // Decrease quant (showroom allows selling without stock validation)
-          const { data: existingQuant } = await client
-            .from('stock_quants')
-            .select('id, quantity_on_hand')
-            .eq('tenant_id', tenantId)
-            .eq('product_product_id', productProductId)
-            .limit(1)
-            .maybeSingle();
+          if (!isSerial) {
+            const { data: existingQuant } = await client
+              .from('stock_quants')
+              .select('id, quantity_on_hand')
+              .eq('tenant_id', tenantId)
+              .eq('product_product_id', productProductId)
+              .limit(1)
+              .maybeSingle();
 
-          if (existingQuant) {
-            const nextQty = Number(existingQuant.quantity_on_hand) - quantity;
-            await client.from('stock_quants').update({ quantity_on_hand: nextQty }).eq('id', existingQuant.id);
-          } else {
-            await client.from('stock_quants').insert({
-              tenant_id: tenantId,
-              product_product_id: productProductId,
-              quantity_on_hand: -quantity,
-            });
+            if (existingQuant) {
+              const nextQty = Number(existingQuant.quantity_on_hand) - quantity;
+              await client.from('stock_quants').update({ quantity_on_hand: nextQty }).eq('id', existingQuant.id);
+            } else {
+              await client.from('stock_quants').insert({
+                tenant_id: tenantId,
+                product_product_id: productProductId,
+                quantity_on_hand: -quantity,
+              });
+            }
           }
         }
       }
@@ -652,13 +1060,106 @@ export const showroomService = {
     if (paymentsError) throw paymentsError;
 
     const saleWithCustomer = await attachCustomers(client, tenantId, sale);
-    const linesWithAttributes = await attachLineAttributes(client, tenantId, lines || []);
+    const linesWithAttributes = await attachLineDetails(client, tenantId, lines || []);
 
     return {
       ...saleWithCustomer,
       lines: linesWithAttributes,
       payments: payments || [],
     };
+  },
+
+  async deleteSale({ tenantId, saleId, showroomConfigId }) {
+    requireTenantId(tenantId);
+    requireShowroomConfigId(showroomConfigId);
+    const client = requireSupabase();
+
+    const { data: sale, error: saleError } = await client
+      .from('showroom_sales')
+      .select('id, tenant_id, showroom_config_id, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('showroom_config_id', showroomConfigId)
+      .eq('id', saleId)
+      .single();
+
+    if (saleError) throw saleError;
+
+    const { data: lines, error: linesError } = await client
+      .from('showroom_sale_lines')
+      .select('id, product_product_id, tracking_unit_id, quantity')
+      .eq('tenant_id', tenantId)
+      .eq('sale_id', saleId);
+
+    if (linesError) throw linesError;
+
+    const saleLines = lines || [];
+    const lineIds = saleLines.map((line) => line.id).filter(Boolean);
+
+    const trackingUnitIdsToDelete = await restoreTrackingUnits(client, {
+      tenantId,
+      saleId,
+      saleCreatedAt: sale.created_at,
+      lines: saleLines,
+    });
+
+    const quantityLines = saleLines.filter((line) => !line.tracking_unit_id);
+    for (const line of quantityLines) {
+      await restoreQuantityStock(client, {
+        tenantId,
+        productProductId: line.product_product_id,
+        quantity: line.quantity,
+      });
+    }
+
+    const { error: movesDeleteError } = await client
+      .from('stock_moves')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('notes', `showroom_sale:${saleId}`);
+
+    if (movesDeleteError) throw movesDeleteError;
+
+    if (lineIds.length) {
+      const { error: attributesDeleteError } = await client
+        .from('transaction_line_attributes')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .in('transaction_line_id', lineIds);
+
+      if (attributesDeleteError) throw attributesDeleteError;
+    }
+
+    const { error: paymentsDeleteError } = await client
+      .from('showroom_sale_payments')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('sale_id', saleId);
+
+    if (paymentsDeleteError) throw paymentsDeleteError;
+
+    const { error: linesDeleteError } = await client
+      .from('showroom_sale_lines')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('sale_id', saleId);
+
+    if (linesDeleteError) throw linesDeleteError;
+
+    await deleteTrackingUnits(client, {
+      tenantId,
+      trackingUnitIds: trackingUnitIdsToDelete,
+    });
+
+    const { error: saleDeleteError } = await client
+      .from('showroom_sales')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('showroom_config_id', showroomConfigId)
+      .eq('id', saleId);
+
+    if (saleDeleteError) throw saleDeleteError;
+
+    return { ok: true, saleId };
   },
 
   async paySaleRemaining({ tenantId, saleId, showroomConfigId, amount, notes, paymentMethod = 'دفعة' }) {

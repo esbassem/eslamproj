@@ -40,6 +40,7 @@ function getInitialState(record) {
     defaultRequiresContract: record?.defaultRequiresContract ?? false,
     defaultRequiresOwnershipTransfer: record?.defaultRequiresOwnershipTransfer ?? false,
     defaultRequiresPostSaleDocuments: record?.defaultRequiresPostSaleDocuments ?? false,
+    defaultRequiresLicense: record?.defaultRequiresLicense ?? false,
     attributeLinks: (record?.attributeLinks ?? []).map((link) => ({
       attributeId: link.attributeId ?? '',
       isRequired: Boolean(link.isRequired),
@@ -48,6 +49,7 @@ function getInitialState(record) {
     trackingIdentifierLinks: (record?.trackingIdentifierLinks ?? []).map((link) => ({
       identifierTypeId: link.identifierTypeId ?? '',
       isRequired: Boolean(link.isRequired),
+      allowNotAvailable: Boolean(link.allowNotAvailable),
       sequence: Number(link.sequence) || 0,
     })),
   };
@@ -129,6 +131,7 @@ export function CategoryFormSheet({ open, onOpenChange, record, categories, attr
       .map((item) => ({
         identifierTypeId: item.identifierTypeId,
         isRequired: Boolean(item.isRequired),
+        allowNotAvailable: Boolean(item.allowNotAvailable),
         sequence: Number(item.sequence) || 0,
       }));
 
@@ -371,7 +374,7 @@ export function CategoryFormSheet({ open, onOpenChange, record, categories, attr
 
                 <div className="space-y-3">
                   <div className="font-extrabold text-slate-950">إعدادات ما بعد البيع الافتراضية</div>
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-4">
                     <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700 cursor-pointer hover:border-slate-300 transition">
                       <input
                         type="checkbox"
@@ -398,6 +401,15 @@ export function CategoryFormSheet({ open, onOpenChange, record, categories, attr
                         className="h-4 w-4 accent-[rgb(2,27,76)]"
                       />
                       <span>يحتاج متابعة أوراق</span>
+                    </label>
+                    <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700 cursor-pointer hover:border-slate-300 transition">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formState.defaultRequiresLicense)}
+                        onChange={(event) => setFormState((current) => ({ ...current, defaultRequiresLicense: event.target.checked }))}
+                        className="h-4 w-4 accent-[rgb(2,27,76)]"
+                      />
+                      <span>يحتاج ترخيص</span>
                     </label>
                   </div>
                 </div>
@@ -513,7 +525,7 @@ export function CategoryFormSheet({ open, onOpenChange, record, categories, attr
                       variant="secondary"
                       onClick={() => setFormState((current) => ({
                         ...current,
-                        trackingIdentifierLinks: [...current.trackingIdentifierLinks, { identifierTypeId: '', isRequired: false, sequence: 0 }],
+                        trackingIdentifierLinks: [...current.trackingIdentifierLinks, { identifierTypeId: '', isRequired: false, allowNotAvailable: false, sequence: 0 }],
                       }))}
                     >
                       <Plus className="ml-1 h-4 w-4" />
@@ -528,7 +540,7 @@ export function CategoryFormSheet({ open, onOpenChange, record, categories, attr
                   ) : (
                     <div className="space-y-3">
                       {formState.trackingIdentifierLinks.map((link, index) => (
-                        <div key={`tracking-identifier-${record?.id ?? 'new'}-${index}`} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-[minmax(0,1.6fr)_140px_120px_44px]">
+                        <div key={`tracking-identifier-${record?.id ?? 'new'}-${index}`} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-[minmax(0,1.6fr)_120px_120px_170px_44px]">
                           <div className="space-y-2">
                             <Label htmlFor={`category-tracking-identifier-${index}`}>التعريف</Label>
                             <select
@@ -563,6 +575,18 @@ export function CategoryFormSheet({ open, onOpenChange, record, categories, attr
                                 onChange={(event) => handleTrackingIdentifierLinkChange(index, 'isRequired', event.target.checked)}
                               />
                               مطلوب
+                            </label>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>لا يوجد</Label>
+                            <label className="flex h-11 items-center gap-3 rounded-xl border border-border bg-white px-3 text-sm font-semibold">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(link.allowNotAvailable)}
+                                onChange={(event) => handleTrackingIdentifierLinkChange(index, 'allowNotAvailable', event.target.checked)}
+                              />
+                              السماح باختيار لا يوجد
                             </label>
                           </div>
 

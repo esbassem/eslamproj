@@ -82,6 +82,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
   const [serialText, setSerialText] = useState('');
   const [trackingIdentifierDefinitions, setTrackingIdentifierDefinitions] = useState([]);
   const [trackingIdentifierValues, setTrackingIdentifierValues] = useState({});
+  const [trackingIdentifierNotAvailable, setTrackingIdentifierNotAvailable] = useState({});
   const [variantContext, setVariantContext] = useState(null);
   const [attributeSelections, setAttributeSelections] = useState({});
   const [error, setError] = useState('');
@@ -128,6 +129,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
     setSerialText('');
     setTrackingIdentifierDefinitions([]);
     setTrackingIdentifierValues({});
+    setTrackingIdentifierNotAvailable({});
     setVariantContext(null);
     setAttributeSelections({});
     setError('');
@@ -207,6 +209,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
     if (!open || !tenantId || !selectedProduct?.categoryId || !isSerial) {
       setTrackingIdentifierDefinitions([]);
       setTrackingIdentifierValues({});
+      setTrackingIdentifierNotAvailable({});
       setIsLoadingTrackingIdentifiers(false);
       return undefined;
     }
@@ -214,6 +217,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
     setIsLoadingTrackingIdentifiers(true);
     setTrackingIdentifierDefinitions([]);
     setTrackingIdentifierValues({});
+    setTrackingIdentifierNotAvailable({});
 
     productCategoryTrackingIdentifierService
       .listCategoryIdentifiers({ tenantId, categoryId: selectedProduct.categoryId })
@@ -239,10 +243,18 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
   useEffect(() => {
     if (!serialNumbers.length) {
       setTrackingIdentifierValues({});
+      setTrackingIdentifierNotAvailable({});
       return;
     }
 
     setTrackingIdentifierValues((current) => {
+      const next = {};
+      serialNumbers.forEach((serial) => {
+        next[serial] = current[serial] ?? {};
+      });
+      return next;
+    });
+    setTrackingIdentifierNotAvailable((current) => {
       const next = {};
       serialNumbers.forEach((serial) => {
         next[serial] = current[serial] ?? {};
@@ -257,6 +269,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
     setProductSearch(product.name);
     setSerialText('');
     setTrackingIdentifierValues({});
+    setTrackingIdentifierNotAvailable({});
     setQuantity('1');
   };
 
@@ -270,6 +283,26 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
         [identifierType.identifierTypeId]: nextValue,
       },
     }));
+  };
+
+  const handleTrackingIdentifierNotAvailableChange = (serial, definition, checked) => {
+    setTrackingIdentifierNotAvailable((current) => ({
+      ...current,
+      [serial]: {
+        ...(current[serial] ?? {}),
+        [definition.identifierTypeId]: checked,
+      },
+    }));
+
+    if (checked) {
+      setTrackingIdentifierValues((current) => ({
+        ...current,
+        [serial]: {
+          ...(current[serial] ?? {}),
+          [definition.identifierTypeId]: '',
+        },
+      }));
+    }
   };
 
   const handleQuickCreateProduct = async () => {
@@ -358,7 +391,8 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
       for (const serial of serialNumbers) {
         for (const definition of trackingIdentifierDefinitions) {
           const value = String(trackingIdentifierValues[serial]?.[definition.identifierTypeId] ?? '').trim();
-          if (definition.isRequired && !value) {
+          const isNotAvailable = Boolean(trackingIdentifierNotAvailable[serial]?.[definition.identifierTypeId]);
+          if (definition.isRequired && !value && !(definition.allowNotAvailable && isNotAvailable)) {
             setError(`أدخل قيمة "${definition.name}" للوحدة ${serial}.`);
             return;
           }
@@ -395,13 +429,23 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
       setIsSubmitting(true);
       setError('');
       const attributeValueIds = Object.values(attributeSelections).filter(Boolean);
+      const trackingIdentifierPayload = Object.fromEntries(serialNumbers.map((serial) => [
+        serial,
+        Object.fromEntries(trackingIdentifierDefinitions.map((definition) => [
+          definition.identifierTypeId,
+          {
+            value: trackingIdentifierValues[serial]?.[definition.identifierTypeId] ?? '',
+            isNotAvailable: Boolean(trackingIdentifierNotAvailable[serial]?.[definition.identifierTypeId]),
+          },
+        ])),
+      ]));
       await inventoryService.addStock({
         tenantId,
         productId,
         attributeValueIds,
         quantity,
         serialNumbers,
-        trackingIdentifierValuesBySerial: trackingIdentifierValues,
+        trackingIdentifierValuesBySerial: trackingIdentifierPayload,
         userId,
       });
       onOpenChange(false);
@@ -441,6 +485,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                           setSerialText('');
                           setTrackingIdentifierDefinitions([]);
                           setTrackingIdentifierValues({});
+                          setTrackingIdentifierNotAvailable({});
                           setError('');
                         }}
                         className="flex-shrink-0 text-xs font-extrabold text-[rgb(2,27,76)] underline-offset-4 hover:underline"
@@ -460,6 +505,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                           setAttributeSelections({});
                           setTrackingIdentifierDefinitions([]);
                           setTrackingIdentifierValues({});
+                          setTrackingIdentifierNotAvailable({});
                           setError('');
                         }}
                         placeholder="ابحث باسم المنتج"
@@ -552,12 +598,25 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                               <div className="grid gap-3 md:grid-cols-2">
                                 {trackingIdentifierDefinitions.map((definition) => {
                                   const slots = getIdentifierSlots(definition);
+                                  const isNotAvailable = Boolean(trackingIdentifierNotAvailable[serial]?.[definition.identifierTypeId]);
                                   return (
                                     <div key={`${serial}-${definition.identifierTypeId}`} className="space-y-2">
-                                      <Label htmlFor={`tracking-identifier-${serial}-${definition.identifierTypeId}`}>
-                                        {definition.name}
-                                        {definition.isRequired ? <span className="text-red-600"> *</span> : null}
-                                      </Label>
+                                      <div className="flex items-center justify-between gap-3">
+                                        <Label htmlFor={`tracking-identifier-${serial}-${definition.identifierTypeId}`}>
+                                          {definition.name}
+                                          {definition.isRequired ? <span className="text-red-600"> *</span> : null}
+                                        </Label>
+                                        {definition.allowNotAvailable ? (
+                                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                                            <input
+                                              type="checkbox"
+                                              checked={isNotAvailable}
+                                              onChange={(event) => handleTrackingIdentifierNotAvailableChange(serial, definition, event.target.checked)}
+                                            />
+                                            لا يوجد
+                                          </label>
+                                        ) : null}
+                                      </div>
                                       <Input
                                         id={`tracking-identifier-${serial}-${definition.identifierTypeId}`}
                                         type="text"
@@ -565,6 +624,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                                         maxLength={slots.length || undefined}
                                         value={trackingIdentifierValues[serial]?.[definition.identifierTypeId] ?? ''}
                                         onChange={(event) => handleTrackingIdentifierValueChange(serial, definition, event.target.value)}
+                                        disabled={isNotAvailable}
                                         dir={slots.length > 0 ? 'ltr' : 'rtl'}
                                       />
                                     </div>

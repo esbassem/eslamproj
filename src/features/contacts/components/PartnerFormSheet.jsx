@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { UploadCloud, X } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
@@ -17,6 +18,8 @@ const EMPTY_FORM = {
   name: '',
   phone: '',
   nationalId: '',
+  identityCardFrontFile: null,
+  identityCardBackFile: null,
   address: '',
   notes: '',
   isCustomer: true,
@@ -25,6 +28,8 @@ const EMPTY_FORM = {
   payableAccount: '',
 };
 
+const NATIONAL_ID_LENGTH = 14;
+
 function normalizeInitialValues(initialValues) {
   if (!initialValues) return EMPTY_FORM;
 
@@ -32,6 +37,8 @@ function normalizeInitialValues(initialValues) {
     name: initialValues.name ?? '',
     phone: initialValues.phone ?? '',
     nationalId: initialValues.nationalId ?? initialValues.national_id ?? '',
+    identityCardFrontFile: null,
+    identityCardBackFile: null,
     address: initialValues.address ?? '',
     notes: initialValues.notes ?? '',
     isCustomer: initialValues.isCustomer ?? (Number(initialValues.customerRank ?? 0) > 0),
@@ -39,6 +46,124 @@ function normalizeInitialValues(initialValues) {
     receivableAccount: initialValues.receivableAccount ?? '',
     payableAccount: initialValues.payableAccount ?? '',
   };
+}
+
+function validateImageFile(file) {
+  return !file || file.type?.startsWith('image/');
+}
+
+function NationalIdBoxes({ value, onChange }) {
+  const inputRefs = useRef([]);
+  const digits = String(value || '').replace(/\D/g, '').slice(0, NATIONAL_ID_LENGTH).padEnd(NATIONAL_ID_LENGTH, ' ').split('');
+
+  const updateDigit = (index, nextValue) => {
+    const nextDigit = nextValue.replace(/\D/g, '').slice(-1);
+    const nextDigits = [...digits].map((digit) => (digit === ' ' ? '' : digit));
+    nextDigits[index] = nextDigit;
+    onChange(nextDigits.join('').slice(0, NATIONAL_ID_LENGTH));
+
+    if (nextDigit && index < NATIONAL_ID_LENGTH - 1) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (index) => (event) => {
+    if (event.key === 'Backspace' && !digits[index].trim() && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handlePaste = (index) => (event) => {
+    event.preventDefault();
+    const pastedDigits = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, NATIONAL_ID_LENGTH - index);
+
+    if (!pastedDigits) return;
+
+    const nextDigits = [...digits].map((digit) => (digit === ' ' ? '' : digit));
+    pastedDigits.split('').forEach((digit, digitIndex) => {
+      nextDigits[index + digitIndex] = digit;
+    });
+
+    onChange(nextDigits.join('').slice(0, NATIONAL_ID_LENGTH));
+    inputRefs.current[Math.min(index + pastedDigits.length, NATIONAL_ID_LENGTH - 1)]?.focus();
+  };
+
+  return (
+    <div className="w-full overflow-x-auto rounded-xl border border-slate-200 bg-white px-2 py-2" dir="ltr">
+      <div className="flex w-max flex-nowrap gap-0.5">
+        {digits.map((digit, index) => (
+          <div key={index} className={`flex items-center ${index === 5 || index === 10 ? 'ml-2' : ''}`}>
+            <input
+              ref={(element) => {
+                inputRefs.current[index] = element;
+              }}
+              value={digit.trim()}
+              onChange={(event) => updateDigit(index, event.target.value)}
+              onKeyDown={handleKeyDown(index)}
+              onPaste={handlePaste(index)}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={1}
+              aria-label={`رقم ${index + 1} من الرقم القومي`}
+              className="h-7 w-5 shrink-0 rounded border border-slate-400 bg-slate-50 text-center font-mono text-sm font-black leading-none text-slate-950 outline-none transition focus:border-slate-800 focus:bg-white focus:ring-2 focus:ring-slate-200"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IdentityImagePicker({ id, title, file, onChange, onClear }) {
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl('');
+      return undefined;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50 transition hover:border-slate-400 hover:bg-white">
+      <label htmlFor={id} className="block cursor-pointer">
+        <div className="relative aspect-[16/10]">
+          {previewUrl ? (
+            <img src={previewUrl} alt={title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-600 shadow-sm">
+                <UploadCloud className="h-5 w-5" />
+              </div>
+              <span className="mt-3 text-sm font-black text-slate-900">{title}</span>
+              <span className="mt-1 text-xs font-bold text-slate-500">اضغط لاختيار صورة</span>
+            </div>
+          )}
+        </div>
+      </label>
+      {file ? (
+        <>
+          <div className="border-t border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
+            <span className="block truncate">{file.name}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClear}
+            className="absolute left-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-slate-600 shadow-sm transition hover:bg-white hover:text-slate-950"
+            aria-label={`إزالة ${title}`}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </>
+      ) : null}
+      <input id={id} type="file" accept="image/*" className="sr-only" onChange={onChange} />
+    </div>
+  );
 }
 
 export function PartnerFormSheet({
@@ -74,12 +199,26 @@ export function PartnerFormSheet({
     setForm((current) => ({ ...current, [field]: value }));
   };
 
+  const handleFileChange = (field) => (event) => {
+    const file = event.target.files?.[0] || null;
+    setForm((current) => ({ ...current, [field]: file }));
+  };
+
+  const clearFile = (field) => {
+    setForm((current) => ({ ...current, [field]: null }));
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
 
     if (!form.name.trim()) {
       setError('اسم جهة الاتصال مطلوب.');
+      return;
+    }
+
+    if (!validateImageFile(form.identityCardFrontFile) || !validateImageFile(form.identityCardBackFile)) {
+      setError('يمكن رفع صور فقط في صور البطاقة.');
       return;
     }
 
@@ -135,7 +274,7 @@ export function PartnerFormSheet({
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
                 <Label htmlFor="partner-name">الاسم</Label>
                 <Input id="partner-name" value={form.name} onChange={handleChange('name')} placeholder="اسم الجهة" />
               </div>
@@ -145,21 +284,37 @@ export function PartnerFormSheet({
                 <Input id="partner-phone" value={form.phone} onChange={handleChange('phone')} placeholder="01000000000" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="partner-national-id">الرقم القومي</Label>
-                <Input
-                  id="partner-national-id"
+                <NationalIdBoxes
                   value={form.nationalId}
-                  onChange={handleChange('nationalId')}
-                  placeholder="الرقم القومي للعميل"
-                  inputMode="numeric"
-                  dir="ltr"
+                  onChange={(nationalId) => setForm((current) => ({ ...current, nationalId }))}
                 />
               </div>
 
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="partner-address">العنوان</Label>
                 <Input id="partner-address" value={form.address} onChange={handleChange('address')} placeholder="المدينة - الشارع" />
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label>صورة البطاقة</Label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <IdentityImagePicker
+                    id="partner-identity-front"
+                    title="الوجه"
+                    file={form.identityCardFrontFile}
+                    onChange={handleFileChange('identityCardFrontFile')}
+                    onClear={() => clearFile('identityCardFrontFile')}
+                  />
+                  <IdentityImagePicker
+                    id="partner-identity-back"
+                    title="الضهر"
+                    file={form.identityCardBackFile}
+                    onChange={handleFileChange('identityCardBackFile')}
+                    onClear={() => clearFile('identityCardBackFile')}
+                  />
+                </div>
               </div>
             </div>
 

@@ -22,7 +22,7 @@ function SidebarContent() {
   const sidebarBgColor = activeApp?.iconColor || 'rgb(2 27 76)';
 
   return (
-    <div className="h-[calc(100vh-4rem)] w-[310px] rounded-xl border border-[rgba(255,255,255,0.08)] p-4 text-white shadow-[0_16px_36px_-28px_rgba(15,23,42,0.58)] relative" style={{ backgroundColor: sidebarBgColor }}>
+    <div className="h-[calc(100vh-2rem)] w-[310px] rounded-xl border border-[rgba(255,255,255,0.08)] p-4 text-white shadow-[0_16px_36px_-28px_rgba(15,23,42,0.58)] relative" style={{ backgroundColor: sidebarBgColor }}>
       <div className="absolute inset-0 rounded-xl bg-black/25 pointer-events-none" />
       <div className="relative flex h-full flex-col">
         <div className="px-1 pt-1">
@@ -62,8 +62,10 @@ function AppSidebarComponent({ mobile = false, open = false, onOpenChange = () =
   }
 
   return (
-    <aside className="sticky top-4 z-10 hidden self-start lg:block">
-      <SidebarContent />
+    <aside className="hidden w-[310px] self-start lg:block">
+      <div className="fixed top-4 z-10">
+        <SidebarContent />
+      </div>
     </aside>
   );
 }

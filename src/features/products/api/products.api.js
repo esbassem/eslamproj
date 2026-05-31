@@ -1,7 +1,7 @@
 import { requireSupabase } from '@/core/lib/supabase';
 
 const PRODUCT_TEMPLATE_COLUMNS =
-  'id, tenant_id, category_id, brand_id, name, internal_reference, barcode, product_type, tracking, can_be_sold, can_be_purchased, is_active, sale_price, cost_price, attributes_jsonb, extra_data, default_product_product_id, requires_contract, requires_ownership_transfer, requires_post_sale_documents, created_at, updated_at';
+  'id, tenant_id, category_id, brand_id, name, internal_reference, barcode, product_type, tracking, can_be_sold, can_be_purchased, is_active, sale_price, cost_price, attributes_jsonb, extra_data, default_product_product_id, requires_contract, requires_ownership_transfer, requires_post_sale_documents, requires_license, created_at, updated_at';
 const PRODUCT_VARIANT_COLUMNS =
   'id, tenant_id, product_template_id, display_name, sku, barcode, tracking, sale_price, cost_price, is_active, created_at, updated_at';
 const ATTRIBUTE_COLUMNS =
@@ -10,7 +10,7 @@ const ATTRIBUTE_VALUE_COLUMNS =
   'id, tenant_id, attribute_id, name, code, color_hex, image_url, extra_price, show_in_variant_name, sort_order, is_active, created_at, updated_at';
 const CATEGORY_ATTRIBUTE_COLUMNS = 'id, tenant_id, category_id, attribute_id, is_required, display_order, created_at';
 const TRACKING_IDENTIFIER_TYPE_COLUMNS = 'id, tenant_id, code, name, data_type, is_active, input_schema, created_at';
-const CATEGORY_TRACKING_IDENTIFIER_COLUMNS = 'id, tenant_id, category_id, identifier_type_id, is_required, sequence, created_at';
+const CATEGORY_TRACKING_IDENTIFIER_COLUMNS = 'id, tenant_id, category_id, identifier_type_id, is_required, allow_not_available, sequence, created_at';
 const TRACKING_UNIT_COLUMNS =
   'id, tenant_id, product_product_id, tracking_number, tracking_type, status, notes, created_at, updated_at';
 
@@ -47,6 +47,7 @@ function normalizeProduct(record) {
     requiresContract: record.requires_contract ?? false,
     requiresOwnershipTransfer: record.requires_ownership_transfer ?? false,
     requiresPostSaleDocuments: record.requires_post_sale_documents ?? false,
+    requiresLicense: record.requires_license ?? false,
     variantCount: record.variant_count ?? 0,
     extraData: record.extra_data ?? null,
     createdAt: record.created_at ?? null,
@@ -91,6 +92,7 @@ function normalizeCategory(record) {
     defaultRequiresContract: record.default_requires_contract ?? false,
     defaultRequiresOwnershipTransfer: record.default_requires_ownership_transfer ?? false,
     defaultRequiresPostSaleDocuments: record.default_requires_post_sale_documents ?? false,
+    defaultRequiresLicense: record.default_requires_license ?? false,
     displayPrefix: record.display_prefix ?? '',
     isActive: record.is_active ?? true,
     sortOrder: record.sort_order ?? 0,
@@ -235,6 +237,7 @@ function normalizeCategoryTrackingIdentifierLink(record) {
     categoryId: record.category_id ?? null,
     identifierTypeId: record.identifier_type_id ?? null,
     isRequired: record.is_required ?? false,
+    allowNotAvailable: record.allow_not_available ?? false,
     sequence: Number(record.sequence) || 0,
     createdAt: record.created_at ?? null,
   };
@@ -438,6 +441,7 @@ async function listCategoryTrackingIdentifierDefinitions(client, { tenantId, cat
         identifierType: type,
         name: type.name,
         code: type.code,
+        allowNotAvailable: link.allowNotAvailable,
         dataType: type.dataType,
         inputSchema: type.inputSchema,
         hasSlotPattern: type.hasSlotPattern,
@@ -691,6 +695,7 @@ async function syncCategoryTrackingIdentifierLinks(client, { tenantId, categoryI
         {
           identifierTypeId: item.identifierTypeId,
           isRequired: Boolean(item.isRequired),
+          allowNotAvailable: Boolean(item.allowNotAvailable),
           sequence: Number(item.sequence) || 0,
         },
       ]),
@@ -710,6 +715,7 @@ async function syncCategoryTrackingIdentifierLinks(client, { tenantId, categoryI
     category_id: categoryId,
     identifier_type_id: item.identifierTypeId,
     is_required: item.isRequired,
+    allow_not_available: item.allowNotAvailable,
     sequence: item.sequence,
   }));
 
@@ -1083,6 +1089,7 @@ export const productsService = {
         requires_contract: payload.requiresContract ?? false,
         requires_ownership_transfer: payload.requiresOwnershipTransfer ?? false,
         requires_post_sale_documents: payload.requiresPostSaleDocuments ?? false,
+        requires_license: payload.requiresLicense ?? false,
       })
       .select(PRODUCT_TEMPLATE_COLUMNS)
       .single();
@@ -1146,6 +1153,10 @@ export const productsService = {
 
     if (Object.prototype.hasOwnProperty.call(payload, 'requiresPostSaleDocuments')) {
       body.requires_post_sale_documents = payload.requiresPostSaleDocuments;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'requiresLicense')) {
+      body.requires_license = payload.requiresLicense;
     }
 
     const { data, error } = await client
@@ -1215,7 +1226,7 @@ export const productCategoryService = {
     const client = requireSupabase();
     const { data, error } = await client
       .from('product_categories')
-      .select('id, tenant_id, parent_id, name, default_product_type, default_tracking, default_can_be_sold, default_can_be_purchased, default_is_active, default_requires_contract, default_requires_ownership_transfer, default_requires_post_sale_documents, display_prefix, is_active, sort_order, created_at, updated_at')
+      .select('id, tenant_id, parent_id, name, default_product_type, default_tracking, default_can_be_sold, default_can_be_purchased, default_is_active, default_requires_contract, default_requires_ownership_transfer, default_requires_post_sale_documents, default_requires_license, display_prefix, is_active, sort_order, created_at, updated_at')
       .eq('tenant_id', tenantId)
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true });
@@ -1238,6 +1249,7 @@ export const productCategoryService = {
       default_requires_contract: payload.defaultRequiresContract ?? false,
       default_requires_ownership_transfer: payload.defaultRequiresOwnershipTransfer ?? false,
       default_requires_post_sale_documents: payload.defaultRequiresPostSaleDocuments ?? false,
+      default_requires_license: payload.defaultRequiresLicense ?? false,
       display_prefix: payload.displayPrefix?.trim() || null,
       is_active: payload.isActive,
     };
@@ -1249,7 +1261,7 @@ export const productCategoryService = {
     const query = id
       ? client.from('product_categories').update(body).eq('id', id)
       : client.from('product_categories').insert(body);
-    const { data, error } = await query.select('id, tenant_id, parent_id, name, default_product_type, default_tracking, default_can_be_sold, default_can_be_purchased, default_is_active, default_requires_contract, default_requires_ownership_transfer, default_requires_post_sale_documents, display_prefix, is_active, sort_order, created_at, updated_at').single();
+    const { data, error } = await query.select('id, tenant_id, parent_id, name, default_product_type, default_tracking, default_can_be_sold, default_can_be_purchased, default_is_active, default_requires_contract, default_requires_ownership_transfer, default_requires_post_sale_documents, default_requires_license, display_prefix, is_active, sort_order, created_at, updated_at').single();
 
     if (error) throw new Error(error.message);
     if (Object.prototype.hasOwnProperty.call(payload, 'attributeLinks')) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Badge } from '@/core/ui/badge';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
 import { ContactsHeader } from '@/features/contacts/components/ContactsHeader';
@@ -35,6 +36,7 @@ function formatMoney(value) {
 
 export function PartnerList({ filterType = 'all' }) {
   const { tenant } = useWorkspace();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [partners, setPartners] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -79,6 +81,20 @@ export function PartnerList({ filterType = 'all' }) {
 
     return () => window.clearTimeout(timeoutId);
   }, [loadPartners]);
+
+  useEffect(() => {
+    if (searchParams.get('quickCreate') !== 'customer') {
+      return;
+    }
+
+    setEditingPartner(null);
+    setIsSheetOpen(true);
+    setSearchParams((current) => {
+      const nextParams = new URLSearchParams(current);
+      nextParams.delete('quickCreate');
+      return nextParams;
+    }, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const handleCreate = async (payload) => {
     if (!tenant?.id) {

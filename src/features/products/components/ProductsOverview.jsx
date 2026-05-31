@@ -8,6 +8,7 @@ import {
   ToggleRight,
   Trash2,
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { Badge } from '@/core/ui/badge';
 import { Button } from '@/core/ui/button';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
@@ -68,6 +69,7 @@ function getProductSearchText(product) {
 
 export function ProductsOverview({ initialView = PRODUCT_VIEWS.products }) {
   const { tenant } = useWorkspace();
+  const [searchParams, setSearchParams] = useSearchParams();
   const tenantId = tenant?.id;
   const {
     products,
@@ -103,6 +105,20 @@ export function ProductsOverview({ initialView = PRODUCT_VIEWS.products }) {
   useEffect(() => {
     setActiveView(initialView);
   }, [initialView]);
+
+  useEffect(() => {
+    if (isLoading || searchParams.get('quickCreate') !== 'product') {
+      return;
+    }
+
+    setActiveView(PRODUCT_VIEWS.products);
+    setProductSheet({ open: true, product: null });
+    setSearchParams((current) => {
+      const nextParams = new URLSearchParams(current);
+      nextParams.delete('quickCreate');
+      return nextParams;
+    }, { replace: true });
+  }, [isLoading, searchParams, setSearchParams]);
 
   const showToast = (message, tone = 'danger') => {
     setToast({ message, tone });

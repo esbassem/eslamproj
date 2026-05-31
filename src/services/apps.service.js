@@ -129,6 +129,10 @@ function normalizeMenu(menu, app) {
 }
 
 function filterMenusByAppRules(menus, appCode) {
+  if (appCode === 'photos') {
+    return menus.filter((menu) => menu.active !== false);
+  }
+
   if (appCode !== 'products') {
     return menus;
   }

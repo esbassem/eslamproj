@@ -11,6 +11,10 @@ export const LEGACY_ROUTE_APP_CODES = {
   [ROUTES.contracts]: 'contracts',
   [ROUTES.settings]: 'settings',
   [ROUTES.team]: 'team',
+  '/photos': 'photos',
+  '/photos/all': 'photos',
+  '/photos/unlinked': 'photos',
+  '/photos/settings': 'photos',
 };
 
 export function normalizeAppCode(value) {
@@ -36,6 +40,9 @@ export function getAppBasePath(appCode) {
   const normalizedAppCode = normalizeAppCode(appCode);
   if (normalizedAppCode === 'old_cashbox') {
     return '/apps/old-cashbox';
+  }
+  if (normalizedAppCode === 'photos') {
+    return '/photos';
   }
   return normalizedAppCode ? `/app/${normalizedAppCode}` : ROUTES.dashboard;
 }

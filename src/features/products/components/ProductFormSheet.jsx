@@ -45,6 +45,7 @@ function getInitialState(product) {
     requiresContract: product?.requiresContract ?? false,
     requiresOwnershipTransfer: product?.requiresOwnershipTransfer ?? false,
     requiresPostSaleDocuments: product?.requiresPostSaleDocuments ?? false,
+    requiresLicense: product?.requiresLicense ?? false,
   };
 }
 
@@ -67,6 +68,7 @@ function applySuggestedCategoryDefaults(state, category) {
     requiresContract: category.defaultRequiresContract ?? state.requiresContract,
     requiresOwnershipTransfer: category.defaultRequiresOwnershipTransfer ?? state.requiresOwnershipTransfer,
     requiresPostSaleDocuments: category.defaultRequiresPostSaleDocuments ?? state.requiresPostSaleDocuments,
+    requiresLicense: category.defaultRequiresLicense ?? state.requiresLicense,
   };
 }
 
@@ -388,11 +390,11 @@ export function ProductFormSheet({
               </FormSection>
             ) : null}
 
-            {formState.categoryId || formState.requiresContract || formState.requiresOwnershipTransfer || formState.requiresPostSaleDocuments ? (
+            {formState.categoryId || formState.requiresContract || formState.requiresOwnershipTransfer || formState.requiresPostSaleDocuments || formState.requiresLicense ? (
               <FormSection>
                 <div className="space-y-3 md:col-span-2">
                   <div className="font-extrabold text-slate-950">إجراءات ما بعد البيع</div>
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-4">
                     <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700 cursor-pointer hover:border-slate-300 transition">
                       <input
                         type="checkbox"
@@ -419,6 +421,15 @@ export function ProductFormSheet({
                         className="h-4 w-4 accent-[rgb(2,27,76)]"
                       />
                       <span>يحتاج متابعة أوراق</span>
+                    </label>
+                    <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700 cursor-pointer hover:border-slate-300 transition">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formState.requiresLicense)}
+                        onChange={handleChange('requiresLicense')}
+                        className="h-4 w-4 accent-[rgb(2,27,76)]"
+                      />
+                      <span>يحتاج ترخيص</span>
                     </label>
                   </div>
                 </div>

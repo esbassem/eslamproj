@@ -29,6 +29,9 @@ const loadShowroomWorkspaceLayout = () => import('@/features/showroom/layouts/Sh
 const loadShowroomCockpitPage = () => import('@/features/showroom/pages/ShowroomCockpitPage');
 const loadShowroomSellPage = () => import('@/features/showroom/pages/ShowroomSellPage');
 const loadShowroomSaleDetailsPage = () => import('@/features/showroom/pages/ShowroomSaleDetailsPage');
+const loadMotoCustomerCareWorkspaceLayout = () => import('@/features/moto-customer-care/layouts/MotoCustomerCareWorkspaceLayout');
+const loadMotoCustomerCareSalesFollowUpListPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage');
+const loadMotoCustomerCareSaleFollowUpDetailsPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSaleFollowUpDetailsPage');
 
 export const PublicLayout = lazyNamed(loadPublicLayout, 'PublicLayout');
 export const AuthLayout = lazyNamed(loadAuthLayout, 'AuthLayout');
@@ -52,6 +55,9 @@ export const ShowroomWorkspaceLayout = lazyNamed(loadShowroomWorkspaceLayout, 'S
 export const ShowroomCockpitPage = lazyNamed(loadShowroomCockpitPage, 'ShowroomCockpitPage');
 export const ShowroomSellPage = lazyNamed(loadShowroomSellPage, 'ShowroomSellPage');
 export const ShowroomSaleDetailsPage = lazyNamed(loadShowroomSaleDetailsPage, 'ShowroomSaleDetailsPage');
+export const MotoCustomerCareWorkspaceLayout = lazyNamed(loadMotoCustomerCareWorkspaceLayout, 'MotoCustomerCareWorkspaceLayout');
+export const MotoCustomerCareSalesFollowUpListPage = lazyNamed(loadMotoCustomerCareSalesFollowUpListPage, 'MotoCustomerCareSalesFollowUpListPage');
+export const MotoCustomerCareSaleFollowUpDetailsPage = lazyNamed(loadMotoCustomerCareSaleFollowUpDetailsPage, 'MotoCustomerCareSaleFollowUpDetailsPage');
 
 const protectedRoutePreloaders = {
   [ROUTES.dashboard]: loadDashboardPage,

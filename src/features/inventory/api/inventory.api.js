@@ -1,5 +1,6 @@
 import { requireSupabase } from '@/core/lib/supabase';
 import { productCategoryTrackingIdentifierService, productVariantService } from '@/features/products/api/products.api';
+import { resolveCurrentTenantUserId } from '@/features/workspace/api/currentTenantUser.api';
 
 const PRODUCT_COLUMNS =
   'id, tenant_id, category_id, brand_id, name, internal_reference, barcode, product_type, tracking, can_be_sold, can_be_purchased, is_active, sale_price, cost_price, attributes_jsonb, extra_data, default_product_product_id, created_at, updated_at';
@@ -12,6 +13,7 @@ const TENANT_USER_COLUMNS = 'id, full_name, email';
 const MOVE_TYPES = new Set(['in', 'out', 'inventory', 'return', 'reserve', 'release']);
 const SERVICE_STOCK_MESSAGE = 'هذا المنتج خدمة ولا يدعم المخزون';
 const SERIAL_UNITS_MESSAGE = 'هذا المنتج متتبع بالسيريال ويجب تحديد الوحدات';
+const TENANT_FILES_BUCKET = 'tenant-files';
 
 function numberValue(value) {
   const next = Number(value);
@@ -66,13 +68,17 @@ function isSerialProduct(product) {
   return product?.tracking === 'serial';
 }
 
+function isTrackedProduct(product) {
+  return product?.tracking === 'serial' || product?.tracking === 'lot';
+}
+
 function assertStockProduct(product) {
   if (isServiceProduct(product)) throw new Error(SERVICE_STOCK_MESSAGE);
 }
 
 function assertQuantityProduct(product) {
   assertStockProduct(product);
-  if (isSerialProduct(product)) throw new Error(SERIAL_UNITS_MESSAGE);
+  if (isTrackedProduct(product)) throw new Error(SERIAL_UNITS_MESSAGE);
 }
 
 function assertSerialProduct(product) {
@@ -128,6 +134,21 @@ function byId(records) {
   return new Map((records ?? []).map((record) => [record.id, record]));
 }
 
+function getFileExtension(file) {
+  const nameExtension = String(file?.name || '').split('.').pop();
+  const mimeExtension = String(file?.type || '').split('/').pop();
+  return (nameExtension && nameExtension !== file?.name ? nameExtension : mimeExtension || 'jpg')
+    .replace(/[^a-z0-9]/gi, '')
+    .toLowerCase() || 'jpg';
+}
+
+function assertTrackingUnitImage(file) {
+  if (!file) return;
+  if (!file.type?.startsWith('image/')) {
+    throw new Error('يمكن رفع صور فقط لصورة الشاسيه أو الموتور.');
+  }
+}
+
 async function getProduct(client, { tenantId, productId }) {
   const { data, error } = await client
     .from('product_products')
@@ -175,13 +196,20 @@ async function resolveInventoryVariant({ tenantId, productTemplateId, productPro
   return null;
 }
 
-async function validateCategoryAttributeSelection({ tenantId, productTemplateId, attributeValueIds }) {
+async function validateCategoryAttributeSelection({ tenantId, productTemplateId, attributeValueIds, textAttributeRows }) {
   const context = await productVariantService.getTemplateVariantContext({
     tenantId,
     productTemplateId,
   });
   const rawSelectedIds = (attributeValueIds ?? []).filter(Boolean);
   const selectedIds = [...new Set(rawSelectedIds)];
+  const normalizedTextRows = (Array.isArray(textAttributeRows) ? textAttributeRows : [])
+    .map((row) => ({
+      attributeId: row?.attributeId ?? row?.attribute_id,
+      attributeValueId: null,
+      valueText: String(row?.valueText ?? row?.value_text ?? '').trim(),
+    }))
+    .filter((row) => row.attributeId && row.valueText);
 
   if (rawSelectedIds.length !== selectedIds.length) {
     throw new Error('لا يمكن إرسال قيم خصائص مكررة.');
@@ -208,7 +236,21 @@ async function validateCategoryAttributeSelection({ tenantId, productTemplateId,
     throw new Error('لا يمكن اختيار أكثر من قيمة لنفس الخاصية.');
   }
 
-  const selectedAttributeIds = new Set(selectedAttributeIdsList);
+  const contextAttributeIds = new Set((context.attributes ?? []).map((attribute) => attribute.id));
+  const invalidTextSelection = normalizedTextRows.find((row) => !contextAttributeIds.has(row.attributeId));
+  if (invalidTextSelection) {
+    throw new Error('تم إدخال قيمة خاصية غير مرتبطة بتصنيف هذا المنتج.');
+  }
+
+  const selectedAttributeIds = new Set([...selectedAttributeIdsList, ...normalizedTextRows.map((row) => row.attributeId)]);
+  const selectedAttributeRows = [
+    ...selectedIds.map((valueId) => ({
+      attributeId: valueToAttributeId.get(valueId),
+      attributeValueId: valueId,
+      valueText: null,
+    })),
+    ...normalizedTextRows,
+  ];
   const missingRequiredAttribute = (context.attributes ?? []).find(
     (attribute) => attribute.isRequired && !selectedAttributeIds.has(attribute.id),
   );
@@ -220,6 +262,7 @@ async function validateCategoryAttributeSelection({ tenantId, productTemplateId,
   return {
     ...context,
     selectedIds,
+    selectedAttributeRows,
   };
 }
 
@@ -314,6 +357,20 @@ function validateIdentifierValueAgainstSchema(definition, value) {
   return true;
 }
 
+function normalizeIdentifierInput(input) {
+  if (input && typeof input === 'object') {
+    return {
+      value: String(input.value ?? '').trim(),
+      isNotAvailable: Boolean(input.isNotAvailable),
+    };
+  }
+
+  return {
+    value: String(input ?? '').trim(),
+    isNotAvailable: false,
+  };
+}
+
 async function validateTrackingIdentifierValues({ tenantId, categoryId, serials, valuesBySerial }) {
   if (!categoryId) return { definitions: [], valuesBySerial: {} };
 
@@ -327,11 +384,15 @@ async function validateTrackingIdentifierValues({ tenantId, categoryId, serials,
     normalizedValues[serial] = {};
 
     for (const definition of definitions) {
-      const rawValue = String(currentValues[definition.identifierTypeId] ?? '').trim();
+      const { value: rawValue, isNotAvailable } = normalizeIdentifierInput(currentValues[definition.identifierTypeId]);
       const slots = getIdentifierSlots(definition);
 
-      if (definition.isRequired && !rawValue) {
+      if (definition.isRequired && !rawValue && !(definition.allowNotAvailable && isNotAvailable)) {
         throw new Error(`أدخل قيمة "${definition.name}" للوحدة ${serial}.`);
+      }
+
+      if (isNotAvailable && !definition.allowNotAvailable) {
+        throw new Error(`لا يمكن اختيار "لا يوجد" في "${definition.name}".`);
       }
 
       if (slots.length && rawValue && slots.every((slot) => slot.type === 'numeric') && !isNumericIdentifierValue(rawValue)) {
@@ -340,8 +401,11 @@ async function validateTrackingIdentifierValues({ tenantId, categoryId, serials,
 
       validateIdentifierValueAgainstSchema(definition, rawValue);
 
-      if (rawValue) {
-        normalizedValues[serial][definition.identifierTypeId] = rawValue;
+      if (rawValue || isNotAvailable) {
+        normalizedValues[serial][definition.identifierTypeId] = {
+          value: rawValue || null,
+          isNotAvailable,
+        };
       }
     }
   }
@@ -349,25 +413,68 @@ async function validateTrackingIdentifierValues({ tenantId, categoryId, serials,
   return { definitions, valuesBySerial: normalizedValues };
 }
 
-async function saveTrackingUnitIdentifiers(client, { tenantId, units, valuesBySerial }) {
+async function saveTrackingUnitIdentifiers(client, { tenantId, units, valuesBySerial, userId }) {
   const rows = [];
 
   for (const unit of units ?? []) {
     const values = valuesBySerial?.[unit.trackingNumber] ?? {};
-    for (const [identifierTypeId, value] of Object.entries(values)) {
-      if (!value) continue;
+    for (const [identifierTypeId, input] of Object.entries(values)) {
+      const { value, isNotAvailable } = normalizeIdentifierInput(input);
+      if (!value && !isNotAvailable) continue;
       rows.push({
         tenant_id: tenantId,
         tracking_unit_id: unit.id,
         identifier_type_id: identifierTypeId,
-        value,
+        value: isNotAvailable ? null : value,
+        is_not_available: isNotAvailable,
       });
     }
   }
 
   if (!rows.length) return;
 
-  const { error } = await client.from('stock_tracking_unit_identifiers').insert(rows);
+  const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId, tenantUserId: userId });
+  const { error } = await client
+    .from('stock_tracking_unit_identifiers')
+    .insert(rows.map((row) => ({ ...row, created_by: currentTenantUserId })));
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('هذه القيمة مستخدمة بالفعل في وحدة أخرى.');
+    }
+    throw new Error(error.message);
+  }
+}
+
+async function saveTrackingUnitAttributes(client, { tenantId, units, baseAttributes, valuesBySerial }) {
+  const rows = [];
+
+  for (const unit of units ?? []) {
+    const serialAttributes = valuesBySerial?.[unit.trackingNumber] ?? [];
+    const nextAttributes = [...(baseAttributes ?? []), ...(Array.isArray(serialAttributes) ? serialAttributes : [])];
+    const seenAttributes = new Set();
+
+    for (const attribute of nextAttributes) {
+      const attributeId = attribute?.attributeId ?? attribute?.attribute_id;
+      const attributeValueId = attribute?.attributeValueId ?? attribute?.attribute_value_id ?? null;
+      const valueText = attribute?.valueText ?? attribute?.value_text ?? null;
+      const dedupeKey = `${attributeId}:${attributeValueId ?? valueText ?? ''}`;
+
+      if (!attributeId || (!attributeValueId && !valueText) || seenAttributes.has(dedupeKey)) continue;
+      seenAttributes.add(dedupeKey);
+
+      rows.push({
+        tenant_id: tenantId,
+        tracking_unit_id: unit.id,
+        attribute_id: attributeId,
+        attribute_value_id: attributeValueId,
+        value_text: valueText,
+      });
+    }
+  }
+
+  if (!rows.length) return;
+
+  const { error } = await client.from('stock_tracking_unit_attributes').insert(rows);
   if (error) throw new Error(error.message);
 }
 
@@ -417,36 +524,66 @@ export const inventoryService = {
       .sort((left, right) => String(left.name).localeCompare(String(right.name)));
   },
 
-  async addStock({ tenantId, productId, productProductId, attributeValueIds, quantity, serialNumbers, trackingIdentifierValuesBySerial, userId }) {
+  async addStock({
+    tenantId,
+    productId,
+    productProductId,
+    attributeValueIds,
+    textAttributeRows,
+    quantity,
+    serialNumbers,
+    trackingIdentifierValuesBySerial,
+    trackingUnitAttributesBySerial,
+    userId,
+  }) {
     const client = requireSupabase();
     const product = await getProduct(client, { tenantId, productId });
     assertStockProduct(product);
     const productTemplateId = product.productTemplateId;
-    const attributeSelection = await validateCategoryAttributeSelection({ tenantId, productTemplateId, attributeValueIds });
-    const resolvedVariant =
-      (await resolveInventoryVariant({ tenantId, productTemplateId, productProductId, attributeValueIds: attributeSelection.selectedIds })) ??
-      (productProductId ? await productVariantService.getVariant({ tenantId, id: productProductId }) : null);
-    const activeVariantId = resolvedVariant?.id ?? productProductId ?? product.id;
 
-    if (isSerialProduct(product)) {
-      const rawSerials = (serialNumbers ?? []).map((item) => item.trim()).filter(Boolean);
-      const serials = [...new Set(rawSerials)];
-      if (!serials.length) throw new Error(SERIAL_UNITS_MESSAGE);
-      if (rawSerials.length !== serials.length) {
-        throw new Error('يوجد IMEI / Serial مكرر داخل الإدخال الحالي.');
+    if (isTrackedProduct(product)) {
+      const activeVariantId = productProductId ?? product.id;
+      const rawUnitKeys = (serialNumbers ?? []).map((item) => String(item || '').trim()).filter(Boolean);
+      const unitKeys = [...new Set(rawUnitKeys)];
+      if (!unitKeys.length) throw new Error(SERIAL_UNITS_MESSAGE);
+      if (rawUnitKeys.length !== unitKeys.length) {
+        throw new Error('يوجد رقم تتبع مكرر داخل الإدخال الحالي.');
       }
       const trackingIdentifierValidation = await validateTrackingIdentifierValues({
         tenantId,
         categoryId: product.categoryId,
-        serials,
+        serials: unitKeys,
         valuesBySerial: trackingIdentifierValuesBySerial,
       });
+      const selectedValueIds = [...new Set((attributeValueIds ?? []).filter(Boolean))];
+      const { data: valueRows, error: valueRowsError } = selectedValueIds.length
+        ? await client
+          .from('product_attribute_values')
+          .select('id, attribute_id')
+          .eq('tenant_id', tenantId)
+          .in('id', selectedValueIds)
+        : { data: [], error: null };
 
-      const rows = serials.map((serial) => ({
+      if (valueRowsError) throw new Error(valueRowsError.message);
+
+      const valueAttributeRows = (valueRows ?? []).map((row) => ({
+        attributeId: row.attribute_id,
+        attributeValueId: row.id,
+        valueText: null,
+      }));
+      const textRows = (Array.isArray(textAttributeRows) ? textAttributeRows : [])
+        .map((row) => ({
+          attributeId: row?.attributeId ?? row?.attribute_id,
+          attributeValueId: null,
+          valueText: String(row?.valueText ?? row?.value_text ?? '').trim(),
+        }))
+        .filter((row) => row.attributeId && row.valueText);
+
+      const rows = unitKeys.map((unitKey) => ({
         tenant_id: tenantId,
         product_product_id: activeVariantId,
-        tracking_number: serial,
-        tracking_type: 'serial',
+        tracking_number: unitKey || null,
+        tracking_type: product.tracking,
         status: 'in_stock',
       }));
 
@@ -461,24 +598,127 @@ export const inventoryService = {
         tenantId,
         units: (insertedUnits ?? []).map(normalizeSerial),
         valuesBySerial: trackingIdentifierValidation.valuesBySerial,
+        userId,
+      });
+      await saveTrackingUnitAttributes(client, {
+        tenantId,
+        units: (insertedUnits ?? []).map(normalizeSerial),
+        baseAttributes: [...valueAttributeRows, ...textRows],
+        valuesBySerial: trackingUnitAttributesBySerial,
       });
       await createMove(client, {
         tenantId,
         productProductId: activeVariantId,
         moveType: 'in',
-        quantity: serials.length,
+        quantity: unitKeys.length,
         userId,
       });
-      return { quantity: serials.length };
+      return { quantity: unitKeys.length, units: (insertedUnits ?? []).map(normalizeSerial) };
     }
 
     assertQuantityProduct(product);
+    const attributeSelection = await validateCategoryAttributeSelection({ tenantId, productTemplateId, attributeValueIds, textAttributeRows });
+    const resolvedVariant =
+      (await resolveInventoryVariant({ tenantId, productTemplateId, productProductId, attributeValueIds: attributeSelection.selectedIds })) ??
+      (productProductId ? await productVariantService.getVariant({ tenantId, id: productProductId }) : null);
+    const activeVariantId = resolvedVariant?.id ?? productProductId ?? product.id;
     const nextQuantity = numberValue(quantity);
     if (nextQuantity <= 0) throw new Error('أدخل كمية صحيحة.');
 
     await increaseQuant(client, { tenantId, productProductId: activeVariantId, quantity: nextQuantity });
     await createMove(client, { tenantId, productProductId: activeVariantId, moveType: 'in', quantity: nextQuantity, userId });
     return { quantity: nextQuantity };
+  },
+
+  async saveTrackingUnitLicense({ tenantId, trackingUnitId, license = {}, userId } = {}) {
+    const client = requireSupabase();
+    if (!tenantId) throw new Error('لا توجد شركة نشطة.');
+    if (!trackingUnitId) throw new Error('تعذر تحديد وحدة التتبع المطلوبة.');
+
+    const status = license.status || '';
+    const number = String(license.number ?? '').trim();
+    const expiresAt = license.expiresAt || null;
+
+    if (!status) throw new Error('اختر حالة الترخيص.');
+    if (status === 'licensed' && !number) throw new Error('رقم الرخصة مطلوب عندما تكون الحالة مرخص.');
+    if (status === 'licensed' && !expiresAt) throw new Error('تاريخ انتهاء الترخيص مطلوب عندما تكون الحالة مرخص.');
+
+    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
+
+    const { error: updateError } = await client
+      .from('stock_tracking_unit_licenses')
+      .update({ is_current: false, updated_at: new Date().toISOString() })
+      .eq('tenant_id', tenantId)
+      .eq('tracking_unit_id', trackingUnitId)
+      .eq('is_current', true);
+
+    if (updateError) throw new Error(updateError.message);
+
+    const { error: insertError } = await client
+      .from('stock_tracking_unit_licenses')
+      .insert({
+        tenant_id: tenantId,
+        tracking_unit_id: trackingUnitId,
+        license_status: status,
+        license_number: number || null,
+        license_issued_at: license.issuedAt || null,
+        license_expires_at: expiresAt,
+        issuing_authority: String(license.issuingAuthority ?? '').trim() || null,
+        notes: String(license.notes ?? '').trim() || null,
+        is_current: true,
+        created_by: createdBy,
+      });
+
+    if (insertError) {
+      if (insertError.code === '23505') throw new Error('رقم الرخصة مستخدم بالفعل داخل نفس الشركة.');
+      throw new Error(insertError.message);
+    }
+
+    return true;
+  },
+
+  async saveTrackingUnitAttachment({ tenantId, trackingUnitId, documentType, file, userId } = {}) {
+    const client = requireSupabase();
+    if (!tenantId) throw new Error('لا توجد شركة نشطة.');
+    if (!trackingUnitId) throw new Error('تعذر تحديد القطعة الفريدة.');
+    if (!documentType) throw new Error('تعذر تحديد نوع الصورة.');
+    if (!file) return null;
+
+    assertTrackingUnitImage(file);
+
+    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
+    const extension = getFileExtension(file);
+    const path = `${tenantId}/tracking-units/${trackingUnitId}/${documentType}-${crypto.randomUUID()}.${extension}`;
+
+    const { error: uploadError } = await client.storage.from(TENANT_FILES_BUCKET).upload(path, file, {
+      cacheControl: '3600',
+      contentType: file.type || 'image/jpeg',
+      upsert: false,
+    });
+
+    if (uploadError) {
+      throw new Error(uploadError.message || 'تعذر رفع صورة القطعة.');
+    }
+
+    const { error: attachmentError } = await client.from('ir_attachments').insert({
+      tenant_id: tenantId,
+      bucket_name: TENANT_FILES_BUCKET,
+      file_path: path,
+      document_type: documentType,
+      related_model: 'stock_tracking_units',
+      related_id: trackingUnitId,
+      original_file_name: file.name || null,
+      mime_type: file.type || null,
+      file_size: file.size || null,
+      created_by: createdBy,
+    });
+
+    if (attachmentError) {
+      await client.storage.from(TENANT_FILES_BUCKET).remove([path]);
+      throw new Error(attachmentError.message || 'تم رفع الصورة لكن تعذر ربطها بالقطعة.');
+    }
+
+    return { path, bucket: TENANT_FILES_BUCKET, documentType };
   },
 
   async getStock({ tenantId }) {

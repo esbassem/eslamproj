@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, PackageSearch, Plus, PlusCircle, Search, Trash2, User, UserPlus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Minus, PackageSearch, Plus, PlusCircle, Search, Trash2, User, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetHeader, SheetTitle } from '@/core/ui/sheet';
@@ -14,6 +14,22 @@ const NEW_CUSTOMER_INITIAL_VALUES = {
   isCustomer: true,
   isSupplier: false,
 };
+
+const LICENSE_STATUS_OPTIONS = [
+  { value: 'jawab', label: 'جواب' },
+  { value: 'licensed', label: 'مرخص' },
+];
+
+function getInitialLicenseDraft() {
+  return {
+    status: '',
+    number: '',
+    issuedAt: '',
+    expiresAt: '',
+    issuingAuthority: '',
+    notes: '',
+  };
+}
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('ar-EG')} EGP`;
@@ -99,7 +115,7 @@ function validateIdentifierValue(definition, value) {
   const safeValue = String(value ?? '').trim();
   const slots = getIdentifierSlots(definition);
 
-  if (definition.isRequired && !safeValue) {
+  if (definition.isRequired && !safeValue && !(definition.allowNotAvailable && definition.isNotAvailable)) {
     return `أدخل قيمة "${definition.name}".`;
   }
 
@@ -144,7 +160,10 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
   const [message, setMessage] = useState('');
   const [productSheetOpen, setProductSheetOpen] = useState(false);
   const [pendingProduct, setPendingProduct] = useState(null);
-  const [productDraft, setProductDraft] = useState({ price: '', trackingIdentifiers: {}, attributes: {} });
+  const [productDraft, setProductDraft] = useState({ price: '', trackingIdentifiers: {}, trackingIdentifierNotAvailable: {}, attributes: {}, license: getInitialLicenseDraft() });
+  const [productSheetStep, setProductSheetStep] = useState(1);
+  const [isLicenseFieldsLoading, setIsLicenseFieldsLoading] = useState(false);
+  const licenseFieldsTimeoutRef = useRef(null);
   const [trackingIdentifierDefinitions, setTrackingIdentifierDefinitions] = useState([]);
   const [isTrackingIdentifiersLoading, setIsTrackingIdentifiersLoading] = useState(false);
   const [productSheetError, setProductSheetError] = useState('');
@@ -211,6 +230,12 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  useEffect(() => () => {
+    if (licenseFieldsTimeoutRef.current) {
+      window.clearTimeout(licenseFieldsTimeoutRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -317,6 +342,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
         setProductDraft((current) => ({
           ...current,
           trackingIdentifiers: Object.fromEntries((definitions ?? []).map((definition) => [definition.identifierTypeId, current.trackingIdentifiers?.[definition.identifierTypeId] ?? ''])),
+          trackingIdentifierNotAvailable: Object.fromEntries((definitions ?? []).map((definition) => [definition.identifierTypeId, current.trackingIdentifierNotAvailable?.[definition.identifierTypeId] ?? false])),
         }));
       })
       .catch((error) => {
@@ -396,9 +422,17 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
       price: '',
       serialNumber: '',
       trackingIdentifiers: {},
+      trackingIdentifierNotAvailable: {},
       ownershipTransferName: '',
       attributes,
+      license: getInitialLicenseDraft(),
     });
+    setProductSheetStep(1);
+    setIsLicenseFieldsLoading(false);
+    if (licenseFieldsTimeoutRef.current) {
+      window.clearTimeout(licenseFieldsTimeoutRef.current);
+      licenseFieldsTimeoutRef.current = null;
+    }
     setTrackingIdentifierDefinitions([]);
     setIsTrackingIdentifiersLoading(false);
     setProductSheetError('');
@@ -446,7 +480,13 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
     setProductSheetOpen(open);
     if (!open) {
       setPendingProduct(null);
-      setProductDraft({ price: '', serialNumber: '', trackingIdentifiers: {}, ownershipTransferName: '', attributes: {} });
+      setProductDraft({ price: '', serialNumber: '', trackingIdentifiers: {}, trackingIdentifierNotAvailable: {}, ownershipTransferName: '', attributes: {}, license: getInitialLicenseDraft() });
+      setProductSheetStep(1);
+      setIsLicenseFieldsLoading(false);
+      if (licenseFieldsTimeoutRef.current) {
+        window.clearTimeout(licenseFieldsTimeoutRef.current);
+        licenseFieldsTimeoutRef.current = null;
+      }
       setTrackingIdentifierDefinitions([]);
       setIsTrackingIdentifiersLoading(false);
       setProductSheetError('');
@@ -466,27 +506,76 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
     setProductSheetError('');
   };
 
-  const confirmProductSelection = () => {
+  const handleTrackingIdentifierNotAvailableChange = (definition, checked) => {
+    setProductDraft((current) => ({
+      ...current,
+      trackingIdentifierNotAvailable: {
+        ...(current.trackingIdentifierNotAvailable ?? {}),
+        [definition.identifierTypeId]: checked,
+      },
+      trackingIdentifiers: checked
+        ? {
+            ...(current.trackingIdentifiers ?? {}),
+            [definition.identifierTypeId]: '',
+          }
+        : (current.trackingIdentifiers ?? {}),
+    }));
+    setProductSheetError('');
+  };
+
+  const handleLicenseChange = (field) => (event) => {
+    setProductDraft((current) => ({
+      ...current,
+      license: {
+        ...(current.license ?? getInitialLicenseDraft()),
+        [field]: event.target.value,
+      },
+    }));
+    setProductSheetError('');
+  };
+
+  const handleLicenseStatusSelect = (status) => {
+    if (licenseFieldsTimeoutRef.current) {
+      window.clearTimeout(licenseFieldsTimeoutRef.current);
+    }
+
+    setProductDraft((current) => ({
+      ...current,
+      license: {
+        ...(current.license ?? getInitialLicenseDraft()),
+        status,
+      },
+    }));
+    setProductSheetError('');
+    setIsLicenseFieldsLoading(true);
+    licenseFieldsTimeoutRef.current = window.setTimeout(() => {
+      setIsLicenseFieldsLoading(false);
+      licenseFieldsTimeoutRef.current = null;
+    }, 380);
+  };
+
+  const buildProductSelection = ({ includeLicense = false, validatePrice = true } = {}) => {
     if (!pendingProduct) return;
 
-    const price = Number(productDraft.price);
-    if (!Number.isFinite(price) || price < 0) {
+    const price = validatePrice ? Number(productDraft.price) : Number(productDraft.price || pendingProduct.price || 0);
+    if (validatePrice && (!Number.isFinite(price) || price < 0)) {
       setProductSheetError('أدخل سعرًا صحيحًا للمنتج.');
-      return;
+      return null;
     }
 
     if (isTrackingIdentifiersLoading) {
       setProductSheetError('انتظر حتى يتم تحميل تعريفات التتبع.');
-      return;
+      return null;
     }
 
     if (pendingProduct.tracking === 'serial') {
       for (const definition of trackingIdentifierDefinitions) {
         const value = String(productDraft.trackingIdentifiers?.[definition.identifierTypeId] ?? '').trim();
-        const validation = validateIdentifierValue(definition, value);
+        const isNotAvailable = Boolean(productDraft.trackingIdentifierNotAvailable?.[definition.identifierTypeId]);
+        const validation = validateIdentifierValue({ ...definition, isNotAvailable }, value);
         if (validation !== true) {
           setProductSheetError(validation);
-          return;
+          return null;
         }
       }
     }
@@ -494,7 +583,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
     const missingRequiredAttribute = pendingAttributeFields.find((field) => field.isRequired && !String(productDraft.attributes[field.key] || '').trim());
     if (missingRequiredAttribute) {
       setProductSheetError(`حدد ${missingRequiredAttribute.label} قبل إضافة المنتج.`);
-      return;
+      return null;
     }
 
     const configuredAttributes = pendingAttributeFields
@@ -518,27 +607,149 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
         label: definition.name,
         code: definition.code,
         value: String(productDraft.trackingIdentifiers?.[definition.identifierTypeId] ?? '').trim(),
+        isNotAvailable: Boolean(productDraft.trackingIdentifierNotAvailable?.[definition.identifierTypeId]),
       }))
-      .filter((identifier) => identifier.value);
+      .filter((identifier) => identifier.value || identifier.isNotAvailable);
     const fallbackSerialNumber = pendingProduct.tracking === 'serial' && !trackingIdentifiers.length
       ? String(productDraft.serialNumber ?? '').trim()
       : '';
 
-    addProduct({
+    let license = null;
+    if (includeLicense && pendingProduct.requiresLicense) {
+      if (isLicenseFieldsLoading) {
+        setProductSheetError('انتظر حتى يتم تجهيز حقول الترخيص.');
+        return null;
+      }
+
+      const draftLicense = productDraft.license ?? getInitialLicenseDraft();
+      license = {
+        status: draftLicense.status || '',
+        number: String(draftLicense.number ?? '').trim(),
+        issuedAt: draftLicense.issuedAt || null,
+        expiresAt: draftLicense.expiresAt || null,
+        issuingAuthority: String(draftLicense.issuingAuthority ?? '').trim(),
+        notes: String(draftLicense.notes ?? '').trim(),
+      };
+
+      if (!license.status) {
+        setProductSheetError('اختر حالة الترخيص.');
+        return null;
+      }
+
+      if (license.status === 'licensed' && !license.number) {
+        setProductSheetError('أدخل رقم الترخيص عندما تكون الحالة "مرخص".');
+        return null;
+      }
+
+      if (license.status === 'licensed' && !license.expiresAt) {
+        setProductSheetError('أدخل تاريخ انتهاء الترخيص عندما تكون الحالة "مرخص".');
+        return null;
+      }
+    }
+
+    return {
       ...pendingProduct,
       name: getProductTitle(pendingProduct),
       code: getProductCode(pendingProduct),
       price,
       serialNumber: trackingIdentifiers.length
-        ? trackingIdentifiers.map((identifier) => identifier.value).join(' - ')
+        ? trackingIdentifiers.map((identifier) => identifier.value).filter(Boolean).join(' - ')
         : fallbackSerialNumber,
       trackingIdentifiers,
       ownershipTransferName: productDraft.ownershipTransferName.trim(),
       configuredAttributes,
+      license,
       lineId: `${pendingProduct.id}-${Date.now()}`,
+    };
+  };
+
+  const confirmProductSelection = () => {
+    const isLicenseProduct = Boolean(pendingProduct?.requiresLicense);
+    const selection = buildProductSelection({
+      includeLicense: isLicenseProduct,
+      validatePrice: !isLicenseProduct || productSheetStep === 2,
     });
+    if (!selection) return;
+
+    if (isLicenseProduct && productSheetStep === 1) {
+      setProductSheetError('');
+      setProductSheetStep(2);
+      return;
+    }
+
+    addProduct(selection);
     closeProductSheet(false);
   };
+
+  const renderLicenseFields = () => (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-3">
+        {LICENSE_STATUS_OPTIONS.map((option) => {
+          const active = (productDraft.license?.status ?? '') === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => handleLicenseStatusSelect(option.value)}
+              className={`flex h-20 w-24 flex-col items-center justify-center gap-1.5 rounded-xl border text-center transition ${
+                active
+                  ? 'border-slate-900 bg-slate-900 text-white shadow-[0_18px_34px_-26px_rgba(15,23,42,0.85)]'
+                  : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <span
+                className={`flex h-7 w-7 items-center justify-center rounded-full border ${
+                  active ? 'border-white/25 bg-white/15 text-white' : 'border-slate-200 bg-slate-50 text-transparent'
+                }`}
+              >
+                <Check className="h-4 w-4" />
+              </span>
+              <span className="text-sm font-black">{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {isLicenseFieldsLoading ? (
+        <div className="flex h-28 w-full items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 text-sm font-black text-slate-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="mr-2">جاري تجهيز الحقول...</span>
+        </div>
+      ) : productDraft.license?.status === 'licensed' ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block">
+            <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">رقم الرخصة</span>
+            <Input
+              value={productDraft.license?.number ?? ''}
+              onChange={handleLicenseChange('number')}
+              placeholder="رقم الرخصة"
+              className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">تاريخ انتهاء الترخيص</span>
+            <Input
+              type="date"
+              value={productDraft.license?.expiresAt ?? ''}
+              onChange={handleLicenseChange('expiresAt')}
+              className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+            />
+          </label>
+
+          <label className="block md:col-span-2">
+            <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">جهة الإصدار</span>
+            <Input
+              value={productDraft.license?.issuingAuthority ?? ''}
+              onChange={handleLicenseChange('issuingAuthority')}
+              placeholder="مرور ايه"
+              className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+            />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
 
   const next = () => {
     if (step === 0 && !selectedCustomer) {
@@ -914,59 +1125,80 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                 <SheetTitle className="text-xl font-black tracking-tight text-white">{getProductTitle(pendingProduct)}</SheetTitle>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <p className="text-xs font-bold text-white/75">{getProductCode(pendingProduct)}</p>
+                  {pendingProduct?.requiresLicense ? (
+                    <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-black text-white">
+                      يحتاج ترخيص
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {pendingProduct?.requiresLicense && productSheetStep === 2 ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setProductSheetError('');
+                      setProductSheetStep(1);
+                    }}
+                    className="h-10 rounded-lg border-white/20 bg-white/10 px-4 font-black text-white hover:bg-white/20"
+                  >
+                    السابق
+                  </Button>
+                ) : null}
                 <Button onClick={confirmProductSelection} className="h-10 rounded-lg bg-white px-6 font-black text-slate-900 shadow-[0_8px_16px_-12px_rgba(15,23,42,0.5)] hover:bg-slate-100">
-                  إضافة
+                  {pendingProduct?.requiresLicense && productSheetStep === 1 ? 'التالي' : 'إضافة'}
                 </Button>
               </div>
             </div>
           </SheetHeader>
 
-          <SheetBody className="space-y-0 bg-transparent">
-            <div className="bg-white px-0 py-3 shadow-none">
+          <SheetBody className="space-y-0 bg-transparent px-0 pb-0 pt-0">
+            <div className="bg-white px-0 pb-3 pt-0 shadow-none">
               {productSheetError ? (
                 <div className="rounded-none border-none border-red-200 bg-red-50 px-5 py-3 text-sm font-bold text-red-700 mb-4 sm:px-7">
                   {productSheetError}
                 </div>
               ) : null}
 
+              {productSheetStep === 1 ? (
+                <>
               <div className="rounded-none border-0 bg-transparent p-0 px-5 sm:px-7">
-              <div className={`grid gap-4 ${pendingProduct?.requiresOwnershipTransfer ? 'md:grid-cols-2' : ''}`}>
-                <label className="block">
-                  <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">سعر البيع</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={productDraft.price}
-                    onChange={(event) => {
-                      setProductDraft((current) => ({ ...current, price: event.target.value }));
-                      setProductSheetError('');
-                    }}
-                    className="h-11 w-full md:max-w-[240px] rounded-lg border-slate-300 bg-white px-3.5 text-sm font-black text-slate-900 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
-                  />
-                  <span className="mt-2 block text-[10px] font-semibold text-slate-400">
-                    السعر المقترح: {formatMoney(Number(pendingProduct?.price ?? 0))}
-                  </span>
-                </label>
-
-                {pendingProduct?.requiresOwnershipTransfer ? (
+              {!pendingProduct?.requiresLicense ? (
+                <div className={`grid gap-4 ${pendingProduct?.requiresOwnershipTransfer ? 'md:grid-cols-2' : ''}`}>
                   <label className="block">
-                    <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">اسم المالك الجديد</span>
+                    <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">سعر البيع</span>
                     <Input
-                      value={productDraft.ownershipTransferName}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={productDraft.price}
                       onChange={(event) => {
-                        setProductDraft((current) => ({ ...current, ownershipTransferName: event.target.value }));
+                        setProductDraft((current) => ({ ...current, price: event.target.value }));
                         setProductSheetError('');
                       }}
-                      placeholder="اكتب اسم المالك الجديد"
-                      className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+                      className="h-11 w-full md:max-w-[240px] rounded-lg border-slate-300 bg-white px-3.5 text-sm font-black text-slate-900 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
                     />
+                    <span className="mt-2 block text-[10px] font-semibold text-slate-400">
+                      السعر المقترح: {formatMoney(Number(pendingProduct?.price ?? 0))}
+                    </span>
                   </label>
-                ) : null}
-              </div>
+
+                  {pendingProduct?.requiresOwnershipTransfer ? (
+                    <label className="block">
+                      <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">اسم المالك الجديد</span>
+                      <Input
+                        value={productDraft.ownershipTransferName}
+                        onChange={(event) => {
+                          setProductDraft((current) => ({ ...current, ownershipTransferName: event.target.value }));
+                          setProductSheetError('');
+                        }}
+                        placeholder="اكتب اسم المالك الجديد"
+                        className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
 
               {pendingAttributeFields.length ? (
                 <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
@@ -1020,7 +1252,6 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                 </div>
               ) : null}
               </div>
-            </div>
 
             <div className="space-y-4 px-5 py-4 sm:px-7">
             {pendingProduct?.tracking === 'serial' ? (
@@ -1032,11 +1263,24 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                 <div className="grid gap-3 md:grid-cols-2">
                     {trackingIdentifierDefinitions.map((definition) => {
                       const slots = getIdentifierSlots(definition);
+                      const isNotAvailable = Boolean(productDraft.trackingIdentifierNotAvailable?.[definition.identifierTypeId]);
                       return (
                         <label key={definition.identifierTypeId} className="block">
-                          <span className="mb-2.5 block text-xs font-semibold text-slate-600">
-                            {definition.name}
-                            {definition.isRequired ? <span className="text-red-500"> *</span> : null}
+                          <span className="mb-2.5 flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+                            <span>
+                              {definition.name}
+                              {definition.isRequired ? <span className="text-red-500"> *</span> : null}
+                            </span>
+                            {definition.allowNotAvailable ? (
+                              <span className="flex items-center gap-1.5 text-slate-500">
+                                <input
+                                  type="checkbox"
+                                  checked={isNotAvailable}
+                                  onChange={(event) => handleTrackingIdentifierNotAvailableChange(definition, event.target.checked)}
+                                />
+                                لا يوجد
+                              </span>
+                            ) : null}
                           </span>
                           <Input
                             value={productDraft.trackingIdentifiers?.[definition.identifierTypeId] ?? ''}
@@ -1048,6 +1292,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                             maxLength={slots.length || undefined}
                             onChange={(event) => handleTrackingIdentifierChange(definition, event.target.value)}
                             placeholder={slots.length ? `${slots.length} خانة` : definition.code || definition.name}
+                            disabled={isNotAvailable}
                             dir={slots.length > 0 ? 'ltr' : 'rtl'}
                             className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
                           />
@@ -1067,6 +1312,52 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                 لا توجد خصائص إضافية مطلوبة لهذا المنتج.
               </div>
             ) : null}
+
+            {pendingProduct?.requiresLicense ? (
+              <div className="border-t border-slate-100 pt-2">
+                {renderLicenseFields()}
+              </div>
+            ) : null}
+            </div>
+                </>
+              ) : (
+                <div className="space-y-4 px-5 pb-4 pt-0 sm:px-7">
+                  <div className={`grid gap-4 ${pendingProduct?.requiresOwnershipTransfer ? 'md:grid-cols-2' : ''}`}>
+                    <label className="block">
+                      <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">سعر البيع</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={productDraft.price}
+                        onChange={(event) => {
+                          setProductDraft((current) => ({ ...current, price: event.target.value }));
+                          setProductSheetError('');
+                        }}
+                        className="h-11 w-full md:max-w-[240px] rounded-lg border-slate-300 bg-white px-3.5 text-sm font-black text-slate-900 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+                      />
+                      <span className="mt-2 block text-[10px] font-semibold text-slate-400">
+                        السعر المقترح: {formatMoney(Number(pendingProduct?.price ?? 0))}
+                      </span>
+                    </label>
+
+                    {pendingProduct?.requiresOwnershipTransfer ? (
+                      <label className="block">
+                        <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">اسم المالك الجديد</span>
+                        <Input
+                          value={productDraft.ownershipTransferName}
+                          onChange={(event) => {
+                            setProductDraft((current) => ({ ...current, ownershipTransferName: event.target.value }));
+                            setProductSheetError('');
+                          }}
+                          placeholder="اكتب اسم المالك الجديد"
+                          className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </div>
+              )}
             </div>
           </SheetBody>
 
@@ -1294,12 +1585,14 @@ function SelectedProductsPanel({ cart, onUpdateQuantity, customer }) {
 function LineMeta({ item, className = '' }) {
   const attributesText = item.configuredAttributes?.length ? item.configuredAttributes.map((attribute) => `${attribute.label}: ${attribute.value}`).join(' - ') : '';
   const trackingText = item.trackingIdentifiers?.length ? item.trackingIdentifiers.map((identifier) => `${identifier.label}: ${identifier.value}`).join(' - ') : '';
+  const licenseText = item.license?.number ? `ترخيص: ${item.license.number}` : item.license ? 'يحتاج ترخيص' : '';
 
-  if (!item.serialNumber && !trackingText && !attributesText && !item.ownershipTransferName) return null;
+  if (!item.serialNumber && !trackingText && !attributesText && !item.ownershipTransferName && !licenseText) return null;
 
   return (
     <div className={`space-y-0.5 text-[11px] font-bold leading-5 ${className}`}>
       {trackingText ? <p className="truncate">{trackingText}</p> : item.serialNumber ? <p className="truncate">السيريال: {item.serialNumber}</p> : null}
+      {licenseText ? <p className="truncate">{licenseText}</p> : null}
       {item.ownershipTransferName ? (
         <p className="inline-flex max-w-full items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-black text-red-700 ring-1 ring-red-100">
           <span className="shrink-0">نقل الملكية إلى:</span>

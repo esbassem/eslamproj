@@ -1,5 +1,8 @@
 import { requireSupabase } from '@/core/lib/supabase';
 
+const TENANT_FILES_BUCKET = 'tenant-files';
+const IDENTITY_DOCUMENTS_FOLDER = 'identity-documents';
+
 function toNumber(value, fallback = 0) {
   const next = Number(value);
   return Number.isFinite(next) ? next : fallback;
@@ -149,6 +152,74 @@ function buildPartnerPayload(data) {
   return payload;
 }
 
+function getFileExtension(file) {
+  const nameExtension = String(file?.name || '').split('.').pop();
+  const safeExtension = String(nameExtension || 'jpg').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  return safeExtension || 'jpg';
+}
+
+function createIdentityFilePath({ tenantId, side, file }) {
+  const extension = getFileExtension(file);
+  return `${tenantId}/${IDENTITY_DOCUMENTS_FOLDER}/${side}-${crypto.randomUUID()}.${extension}`;
+}
+
+function validateAttachmentFile(file) {
+  if (!file) return;
+  if (!file.type?.startsWith('image/')) {
+    throw new Error('يمكن رفع صور فقط في صور البطاقة.');
+  }
+}
+
+async function uploadPartnerIdentityAttachment(client, { tenantId, partnerId, file, side }) {
+  if (!file) return null;
+
+  validateAttachmentFile(file);
+
+  const path = createIdentityFilePath({ tenantId, side, file });
+  const { error: uploadError } = await client.storage.from(TENANT_FILES_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    contentType: file.type || 'image/jpeg',
+    upsert: false,
+  });
+
+  if (uploadError) {
+    throw new Error(uploadError.message || 'تعذر رفع صورة البطاقة.');
+  }
+
+  const { error: attachmentError } = await client.from('ir_attachments').insert({
+    tenant_id: tenantId,
+    file_path: path,
+    related_model: 'partners',
+    related_id: partnerId,
+  });
+
+  if (attachmentError) {
+    await client.storage.from(TENANT_FILES_BUCKET).remove([path]);
+    throw new Error(attachmentError.message || 'تم رفع الصورة لكن تعذر ربطها بالعميل.');
+  }
+
+  return path;
+}
+
+async function uploadPartnerIdentityAttachments(client, { tenantId, partnerId, identityCardFrontFile, identityCardBackFile }) {
+  if (!tenantId || !partnerId) return;
+
+  await Promise.all([
+    uploadPartnerIdentityAttachment(client, {
+      tenantId,
+      partnerId,
+      file: identityCardFrontFile,
+      side: 'front',
+    }),
+    uploadPartnerIdentityAttachment(client, {
+      tenantId,
+      partnerId,
+      file: identityCardBackFile,
+      side: 'back',
+    }),
+  ]);
+}
+
 export const partnersService = {
   async getPartners({ tenantId, filterType = 'all', search = '', status = 'all' } = {}) {
     const client = requireSupabase();
@@ -185,13 +256,21 @@ export const partnersService = {
 
   async createPartner(payload) {
     const client = requireSupabase();
-    const body = buildPartnerPayload({ active: true, ...payload });
+    const { identityCardFrontFile, identityCardBackFile, ...partnerPayload } = payload || {};
+    const body = buildPartnerPayload({ active: true, ...partnerPayload });
 
     const { data, error } = await client.from('partners').insert(body).select('*').single();
 
     if (error) {
       throw new Error(error.message || 'تعذر إنشاء جهة الاتصال.');
     }
+
+    await uploadPartnerIdentityAttachments(client, {
+      tenantId: data.tenant_id,
+      partnerId: data.id,
+      identityCardFrontFile,
+      identityCardBackFile,
+    });
 
     return normalizePartner(data);
   },
@@ -202,7 +281,8 @@ export const partnersService = {
     }
 
     const client = requireSupabase();
-    const body = buildPartnerPayload(payload);
+    const { identityCardFrontFile, identityCardBackFile, ...partnerPayload } = payload || {};
+    const body = buildPartnerPayload(partnerPayload);
 
     let query = client.from('partners').update(body).eq('id', id);
     if (tenantId) {
@@ -214,6 +294,13 @@ export const partnersService = {
     if (error) {
       throw new Error(error.message || 'تعذر تعديل جهة الاتصال.');
     }
+
+    await uploadPartnerIdentityAttachments(client, {
+      tenantId: data.tenant_id || tenantId,
+      partnerId: data.id,
+      identityCardFrontFile,
+      identityCardBackFile,
+    });
 
     return normalizePartner(data);
   },

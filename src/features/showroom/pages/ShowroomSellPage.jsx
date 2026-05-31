@@ -580,6 +580,11 @@ export function ShowroomSellPage() {
     }
   };
 
+  const handleSaleDeleted = (saleId) => {
+    setSales((current) => current.filter((item) => item.id !== saleId));
+    setSelectedSale(null);
+  };
+
   if (isHomeRoute) {
     return (
       <>
@@ -831,6 +836,7 @@ export function ShowroomSellPage() {
         sale={selectedSale}
         isOpen={Boolean(selectedSale)}
         onClose={() => setSelectedSale(null)}
+        onDeleted={handleSaleDeleted}
       />
       <ShowroomConfigSheet
         open={isCreateConfigOpen}

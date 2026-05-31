@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { MoreHorizontal, Settings } from 'lucide-react';
+import { ImagePlus, MoreHorizontal, PackagePlus, Settings, UserPlus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { uiExperiments } from '@/core/config/app.config';
@@ -23,11 +23,19 @@ import {
 } from '@/core/ui/sheet';
 import { useAppContext } from '@/contexts/AppContext';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
+import { partnersService } from '@/features/contacts/services/partners.service';
+import { QuickImageUploadSheet } from '@/features/dashboard/components/QuickImageUploadSheet';
+import { QuickStockUnitSheet } from '@/features/dashboard/components/QuickStockUnitSheet';
 import { resolveModuleIcon } from '@/features/modules/modules.navigation';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { appsService } from '@/services/apps.service';
 
 const DEFAULT_APP_ICON_COLOR = '#64748B';
+const NEW_CUSTOMER_INITIAL_VALUES = {
+  isCustomer: true,
+  isSupplier: false,
+};
 
 function getReadableColor(hexColor) {
   const normalized = String(hexColor || '').replace('#', '');
@@ -48,7 +56,7 @@ export function DashboardPage() {
   const { t } = useI18n();
   const { tenant } = useWorkspace();
   const { apps, appsStatus, appsError, installApp, uninstallApp } = useAppContext();
-  const { user } = useAuth();
+  const { user, tenant_user: tenantUser } = useAuth();
   const navigate = useNavigate();
   const [launchingApp, setLaunchingApp] = useState(null);
   const launchTimeoutRef = useRef(null);
@@ -60,6 +68,10 @@ export function DashboardPage() {
   const [catalogStatus, setCatalogStatus] = useState('idle');
   const [catalogError, setCatalogError] = useState(null);
   const [selectedCatalogApp, setSelectedCatalogApp] = useState(null);
+  const [isCustomerSheetOpen, setIsCustomerSheetOpen] = useState(false);
+  const [isCustomerSubmitting, setIsCustomerSubmitting] = useState(false);
+  const [isImageUploadSheetOpen, setIsImageUploadSheetOpen] = useState(false);
+  const [isStockUnitSheetOpen, setIsStockUnitSheetOpen] = useState(false);
   const dashboardApps = apps.filter((app) => app.code !== 'dashboard');
   const launcherApps = dashboardApps.some((app) => app.code === 'settings')
     ? dashboardApps
@@ -209,6 +221,31 @@ export function DashboardPage() {
     }
   };
 
+  const handleCreateCustomer = async (payload) => {
+    if (!tenant?.id) {
+      return { ok: false, error: 'لا توجد شركة نشطة.' };
+    }
+
+    try {
+      setIsCustomerSubmitting(true);
+      await partnersService.createPartner({
+        tenantId: tenant.id,
+        ...payload,
+        isCustomer: true,
+        customerRank: 1,
+        isSupplier: Boolean(payload.isSupplier),
+        supplierRank: payload.isSupplier ? 1 : 0,
+      });
+      setIsCustomerSheetOpen(false);
+      setToast({ tone: 'success', message: 'تم تسجيل العميل.' });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error.message || 'تعذر إضافة العميل.' };
+    } finally {
+      setIsCustomerSubmitting(false);
+    }
+  };
+
   if (uiExperiments.homeLauncherNavigation) {
     return (
       <div className="relative flex min-h-[calc(100dvh-5.5rem)] w-full flex-col items-center overflow-hidden px-4 pb-6 pt-3 text-slate-700 sm:min-h-[calc(100vh-9rem)] sm:px-10 sm:pb-2 sm:pt-5 lg:px-16 lg:pt-6">
@@ -250,6 +287,11 @@ export function DashboardPage() {
             <p className="mt-1 max-w-md text-xs font-medium leading-6 text-slate-500 sm:mt-3 sm:text-base sm:leading-7">
               {tenant?.name ? `مساحة عمل ${tenant.name}` : 'اختر التطبيق الذي تريد العمل عليه.'}
             </p>
+              <QuickCreateTools
+                onCreateCustomer={() => setIsCustomerSheetOpen(true)}
+                onCreateStockUnit={() => setIsStockUnitSheetOpen(true)}
+                onOpenImageUpload={() => setIsImageUploadSheetOpen(true)}
+              />
           </div>
 
           <div className="fade-up w-full lg:mt-16" dir="rtl" style={{ animationDelay: '0.06s' }}>
@@ -354,6 +396,34 @@ export function DashboardPage() {
           onConfirm={handleConfirmUninstall}
           isSubmitting={isUninstalling}
         />
+        <PartnerFormSheet
+          open={isCustomerSheetOpen}
+          onOpenChange={setIsCustomerSheetOpen}
+          initialValues={NEW_CUSTOMER_INITIAL_VALUES}
+          onSubmit={handleCreateCustomer}
+          isSubmitting={isCustomerSubmitting}
+          side="right"
+          hideTypeFields
+          hideAccountingFields
+          hideFooterNote
+          hideCancelButton
+          accentHeader
+          hideDismissButton
+          inlineSubmit
+        />
+        <QuickImageUploadSheet
+          open={isImageUploadSheetOpen}
+          onOpenChange={setIsImageUploadSheetOpen}
+          tenantId={tenant?.id}
+          onUploaded={() => setToast({ tone: 'success', message: 'تم رفع الصورة.' })}
+        />
+        <QuickStockUnitSheet
+          open={isStockUnitSheetOpen}
+          onOpenChange={setIsStockUnitSheetOpen}
+          tenantId={tenant?.id}
+          userId={tenantUser?.id || null}
+          onSaved={() => setToast({ tone: 'success', message: 'تم تسجيل الوحدة.' })}
+        />
         <FloatingNotice notice={toast} onClose={() => setToast(null)} />
       </div>
     );
@@ -367,6 +437,69 @@ export function DashboardPage() {
         primaryAction={t('dashboard.primaryAction')}
         secondaryAction={t('dashboard.secondaryAction')}
       />
+    </div>
+  );
+}
+
+function QuickCreateTools({ onCreateCustomer, onCreateStockUnit, onOpenImageUpload }) {
+  const tools = [
+    {
+      title: 'تسجيل منتج',
+      onClick: onCreateStockUnit,
+      Icon: PackagePlus,
+      color: '#2563eb',
+    },
+    {
+      title: 'تسجيل عميل',
+      onClick: onCreateCustomer,
+      Icon: UserPlus,
+      color: '#059669',
+    },
+    {
+      title: 'رفع صورة سريع',
+      onClick: onOpenImageUpload,
+      Icon: ImagePlus,
+      color: '#7c3aed',
+    },
+  ];
+
+  return (
+    <div className="mt-5 max-w-sm sm:mt-6">
+      <div className="flex flex-wrap gap-2.5">
+        {tools.map(({ title, href, onClick, Icon, color }) => {
+          const content = (
+            <>
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
+                style={{ backgroundColor: color }}
+              >
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="whitespace-nowrap text-sm font-black text-slate-950">{title}</span>
+            </>
+          );
+          const className = 'group inline-flex h-12 items-center gap-2.5 rounded-2xl border border-white/80 bg-white/74 px-3.5 text-right shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_16px_34px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70';
+
+          return href ? (
+            <Link
+              key={title}
+              to={href}
+              className={className}
+            >
+              {content}
+            </Link>
+          ) : (
+            <button
+              key={title}
+              type="button"
+              onClick={onClick}
+              className={className}
+            >
+              {content}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

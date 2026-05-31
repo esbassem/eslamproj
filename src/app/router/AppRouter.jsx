@@ -11,6 +11,9 @@ import {
   AuthLayout,
   ForgotPasswordPage,
   LandingPage,
+  MotoCustomerCareSaleFollowUpDetailsPage,
+  MotoCustomerCareSalesFollowUpListPage,
+  MotoCustomerCareWorkspaceLayout,
   NotFoundPage,
   OnboardingPage,
   PosPage,
@@ -68,6 +71,26 @@ export function AppRouter() {
                 <Route path="customers" element={<ShowroomSellPage />} />
                 <Route path="settings" element={<Navigate to="/app/showroom_point" replace />} />
                 <Route path="sale/:saleId" element={<ShowroomSaleDetailsPage />} />
+              </Route>
+              <Route path="/app/moto_customer_care" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
+              <Route path="/app/moto-customer-care" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
+              <Route path="/app/moto_customer_care/dashboard" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
+              <Route path="/app/moto-customer-care/dashboard" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
+              <Route path="/app/moto_customer_care/sales" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
+              <Route path="/app/moto_customer_care/sales/:saleId" element={<MotoCustomerCareWorkspaceLayout />}>
+                <Route index element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
+              </Route>
+              <Route path="/app/moto-customer-care/sales" element={<MotoCustomerCareWorkspaceLayout />}>
+                <Route index element={<MotoCustomerCareSalesFollowUpListPage />} />
+                <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
+              </Route>
+              <Route path="/photos" element={<AppLayout />}>
+                <Route index element={<DynamicAppPage />} />
+                <Route path="*" element={<DynamicAppPage />} />
+              </Route>
+              <Route path="/apps/moto-customer-care/sales" element={<MotoCustomerCareWorkspaceLayout />}>
+                <Route index element={<MotoCustomerCareSalesFollowUpListPage />} />
+                <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
               <Route path="/apps/:appCode" element={<AppLayout />}>
                 <Route index element={<DynamicAppPage />} />
