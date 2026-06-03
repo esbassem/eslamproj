@@ -3,6 +3,16 @@ import { requireSupabase } from '@/core/lib/supabase';
 const TABLE_NAME = 'old_cashbox_transactions';
 const COLUMNS = 'id, amount, type, note, date, status, created_by, created_at, ref_id';
 
+function createTransactionId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (character) => (
+    (Number(character) ^ Math.random() * 16 >> Number(character) / 4).toString(16)
+  ));
+}
+
 export async function listOldCashboxTransactions() {
   const client = requireSupabase();
   const pageSize = 1000;
@@ -48,6 +58,7 @@ export async function createOldCashboxTransactions(transactions) {
   const rows = (Array.isArray(transactions) ? transactions : [transactions])
     .filter(Boolean)
     .map((transaction) => ({
+      id: transaction.id || createTransactionId(),
       amount: Number(transaction.amount || 0),
       type: transaction.type,
       note: transaction.note,
