@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, Search, UploadCloud } from 'lucide-react';
+import { Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, Search, UploadCloud, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
@@ -13,6 +13,8 @@ import {
   SheetTitle,
 } from '@/core/ui/sheet';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
+import { partnersService } from '@/features/contacts/services/partners.service';
 import { QuickStockUnitSheet } from '@/features/dashboard/components/QuickStockUnitSheet';
 import { inventoryService } from '@/features/inventory/api/inventory.api';
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
@@ -119,6 +121,7 @@ const PAPERWORK_TYPE_LABELS = {
 const PAPERWORK_DOCUMENT_STATUS_LABELS = {
   available: 'موجودة',
   in_custody: 'في العهدة',
+  transferred: 'تم التحويل',
   with_employee: 'مع موظف',
   stored: 'مخزنة',
   delivered: 'تم التسليم',
@@ -147,6 +150,7 @@ const PAPERWORK_MOVE_SOURCE_LABELS = {
   to_customer: 'تسليم للعميل',
   to_supplier: 'رجوع لمورد',
   to_processor: 'إرسال لجهة تخليص',
+  to_employee: 'تسليم لموظف',
   lost: 'مفقود',
   cancelled: 'ملغي',
   other: 'آخر',
@@ -157,6 +161,11 @@ const PAPERWORK_MOVE_SOURCE_LABELS = {
   deliver_to_customer: 'تسليم للعميل',
   return: 'إرجاع',
   manual_adjustment: 'تسوية يدوية',
+};
+
+const PAPERWORK_NEW_CUSTOMER_INITIAL_VALUES = {
+  isCustomer: true,
+  isSupplier: false,
 };
 
 const paperworkDocumentFilters = [
@@ -647,7 +656,7 @@ function PaperworkRequestCard({ request, onEditTracking, onEditLicense }) {
   );
 }
 
-function PaperworkDocumentCard({ document }) {
+function PaperworkDocumentCard({ document, onMoveOut }) {
   const statusLabel = PAPERWORK_DOCUMENT_STATUS_LABELS[document.status] || document.status || '--';
   const isInCustody = document.status === 'in_custody';
   const documentTypeLabel = PAPERWORK_DOCUMENT_TYPE_LABELS[document.documentType] || document.documentType || '--';
@@ -747,7 +756,7 @@ function PaperworkDocumentCard({ document }) {
                       <p className="text-[11px] font-bold text-slate-500">ملاحظة: {noteText}</p>
                     ) : null}
                   </div>
-                  <Button type="button" disabled className="min-w-[92px] cursor-not-allowed bg-emerald-600 text-white hover:bg-emerald-600 disabled:opacity-60">
+                  <Button type="button" onClick={() => onMoveOut?.(document)} className="min-w-[92px] bg-emerald-600 text-white hover:bg-emerald-700">
                     صرف
                   </Button>
                 </div>
@@ -859,6 +868,291 @@ function PaperworkDocumentMoveCard({ move }) {
         </div>
       </div>
     </article>
+  );
+}
+
+function PaperworkDocumentOutMoveSheet({ document, open, onOpenChange, tenantId, onSaved }) {
+  const [step, setStep] = useState('customer');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customers, setCustomers] = useState([]);
+  const [notes, setNotes] = useState('');
+  const [isCustomersLoading, setIsCustomersLoading] = useState(false);
+  const [isCustomerSheetOpen, setIsCustomerSheetOpen] = useState(false);
+  const [isCustomerSubmitting, setIsCustomerSubmitting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const documentName = document?.documentTitle || document?.displayTitle || 'ورقة بدون عنوان';
+  const canSave = Boolean(
+    document?.id
+      && !isSaving
+      && selectedCustomer?.id,
+  );
+
+  useEffect(() => {
+    if (!open) {
+      setStep('customer');
+      setCustomerSearch('');
+      setSelectedCustomer(null);
+      setCustomers([]);
+      setNotes('');
+      setError('');
+      return;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !tenantId) {
+      setCustomers([]);
+      setIsCustomersLoading(false);
+      return;
+    }
+
+    let active = true;
+    const timeoutId = window.setTimeout(() => {
+      setIsCustomersLoading(true);
+      setError('');
+
+      partnersService.getPartners({
+        tenantId,
+        filterType: 'customer',
+        search: customerSearch,
+        status: 'active',
+      })
+        .then((rows) => {
+          if (!active) return;
+          setCustomers(rows);
+        })
+        .catch((loadError) => {
+          if (!active) return;
+          setError(loadError?.message || 'تعذر تحميل العملاء.');
+        })
+        .finally(() => {
+          if (!active) return;
+          setIsCustomersLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [customerSearch, open, tenantId]);
+
+  const selectCustomer = (customer) => {
+    setSelectedCustomer(customer);
+    setCustomerSearch(customer.name || '');
+    setError('');
+    setStep('confirm');
+  };
+
+  const createCustomer = async (payload) => {
+    if (!tenantId) {
+      return { ok: false, error: 'لا توجد شركة نشطة.' };
+    }
+
+    try {
+      setIsCustomerSubmitting(true);
+      const createdCustomer = await partnersService.createPartner({
+        tenantId,
+        ...payload,
+        isCustomer: true,
+        customerRank: 1,
+        isSupplier: Boolean(payload.isSupplier),
+        supplierRank: payload.isSupplier ? 1 : 0,
+      });
+      setCustomers((current) => [createdCustomer, ...current.filter((item) => item.id !== createdCustomer.id)]);
+      selectCustomer(createdCustomer);
+      setIsCustomerSheetOpen(false);
+      return { ok: true };
+    } catch (createError) {
+      return { ok: false, error: createError.message || 'تعذر إضافة العميل.' };
+    } finally {
+      setIsCustomerSubmitting(false);
+    }
+  };
+
+  const save = async () => {
+    if (!canSave) return;
+
+    setIsSaving(true);
+    setError('');
+
+    try {
+      await motoCustomerCareService.createPaperworkDocumentOutMove({
+        tenantId,
+        documentId: document?.id,
+        sourceType: 'to_customer',
+        targetPartnerId: selectedCustomer.id,
+        notes,
+      });
+      onOpenChange(false);
+      await onSaved?.();
+    } catch (saveError) {
+      setError(saveError?.message || 'تعذر صرف الورقة.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="right" className="max-w-md" dir="rtl">
+          <SheetDismissButton />
+          <SheetHeader className="space-y-3 bg-white px-5 py-4 pl-16 text-right">
+            <div className="min-w-0">
+              <SheetTitle className="text-lg font-black">صرف ورقة</SheetTitle>
+              <p className="mt-1 truncate text-sm font-bold text-slate-500" title={documentName}>{documentName}</p>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+              <p className="min-w-0 flex-1 truncate text-xs font-black text-slate-400">
+                {step === 'customer' ? 'اختيار العميل' : 'مراجعة الصرف'}
+              </p>
+              <div className="flex flex-shrink-0 items-center gap-2">
+                {step === 'customer' ? (
+                  <Button type="button" size="sm" onClick={() => setStep('confirm')} disabled={!selectedCustomer?.id}>
+                    التالي
+                  </Button>
+                ) : (
+                  <>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setStep('customer')}>رجوع</Button>
+                    <Button type="button" size="sm" onClick={save} disabled={!canSave}>
+                      {isSaving ? 'جاري الصرف...' : 'تأكيد الصرف'}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </SheetHeader>
+
+          <SheetBody className="space-y-4">
+            {error ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</div>
+            ) : null}
+
+            {step === 'customer' ? (
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      value={customerSearch}
+                      onChange={(event) => {
+                        setCustomerSearch(event.target.value);
+                        setSelectedCustomer(null);
+                        setError('');
+                      }}
+                      placeholder="ابحث عن عميل"
+                      className="h-[52px] pr-11 text-base font-bold"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomerSheetOpen(true)}
+                    className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                    aria-label="إضافة عميل جديد"
+                    title="إضافة عميل جديد"
+                  >
+                    <UserPlus className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {isCustomersLoading ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold text-slate-500">
+                    جاري تحميل العملاء...
+                  </div>
+                ) : customers.length > 0 ? (
+                  <div className="max-h-[360px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    {customers.map((customer) => {
+                      const isSelected = selectedCustomer?.id === customer.id;
+
+                      return (
+                        <button
+                          key={customer.id}
+                          type="button"
+                          onClick={() => selectCustomer(customer)}
+                          className={`grid w-full grid-cols-[1fr_auto] items-center gap-4 border-b border-slate-100 px-4 py-3 text-right transition last:border-b-0 hover:bg-slate-50 ${
+                            isSelected ? 'bg-slate-100 text-slate-950' : 'text-slate-900'
+                          }`}
+                        >
+                          <span className="min-w-0">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="truncate text-sm font-black">{customer.name}</span>
+                              {isSelected ? (
+                                <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black text-white">مختار</span>
+                              ) : null}
+                            </span>
+                            <span className="mt-1 grid grid-cols-[70px_1fr] gap-2 text-xs font-bold text-slate-500">
+                              <span className="text-slate-400">الهاتف</span>
+                              <span className="truncate">{customer.phone || 'بدون رقم هاتف'}</span>
+                            </span>
+                            {customer.notes ? (
+                              <span className="mt-1 grid grid-cols-[70px_1fr] gap-2 text-[11px] font-bold text-slate-400">
+                                <span>ملاحظة</span>
+                                <span className="truncate">{customer.notes}</span>
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className={`flex h-8 w-8 items-center justify-center rounded-full border ${
+                            isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-transparent'
+                          }`}>
+                            <Check className="h-4 w-4" />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold text-slate-500">
+                    لا يوجد عملاء مطابقون.
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {step === 'confirm' ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-xs font-black text-slate-400">سيتم صرف الورقة إلى</p>
+                  <p className="mt-1 truncate text-base font-black text-slate-950">{selectedCustomer?.name || '--'}</p>
+                  <p className="mt-0.5 truncate text-xs font-bold text-slate-500">{selectedCustomer?.phone || 'بدون رقم هاتف'}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500">ملاحظات</label>
+                  <textarea
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    rows={4}
+                    placeholder="اكتب ملاحظة اختيارية"
+                    className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+                  />
+                </div>
+              </div>
+            ) : null}
+          </SheetBody>
+
+        </SheetContent>
+      </Sheet>
+
+      <PartnerFormSheet
+        open={isCustomerSheetOpen}
+        onOpenChange={setIsCustomerSheetOpen}
+        initialValues={PAPERWORK_NEW_CUSTOMER_INITIAL_VALUES}
+        onSubmit={createCustomer}
+        isSubmitting={isCustomerSubmitting}
+        side="right"
+        hideTypeFields
+        hideAccountingFields
+        hideFooterNote
+        hideCancelButton
+        accentHeader
+        hideDismissButton
+        inlineSubmit
+      />
+    </>
   );
 }
 
@@ -2085,6 +2379,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const [stockUnitSheetItem, setStockUnitSheetItem] = useState(null);
   const [paperworkRequestItem, setPaperworkRequestItem] = useState(null);
   const [paperworkDocumentSheetOpen, setPaperworkDocumentSheetOpen] = useState(false);
+  const [paperworkOutMoveDocument, setPaperworkOutMoveDocument] = useState(null);
   const { tenant_user: tenantUser } = useAuth();
   const {
     tenantId,
@@ -2216,7 +2511,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                 ))
               ) : activeSection === 'papers' && paperworkFilter !== 'moves' && displayedPaperworkDocuments.length ? (
                 displayedPaperworkDocuments.map((document) => (
-                  <PaperworkDocumentCard key={document.id} document={document} />
+                  <PaperworkDocumentCard key={document.id} document={document} onMoveOut={setPaperworkOutMoveDocument} />
                 ))
               ) : activeSection !== 'papers' && displayedSales.length ? (
                 displayedSales.map((sale) => (
@@ -2305,6 +2600,15 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         onOpenChange={setPaperworkDocumentSheetOpen}
         tenantId={tenantId}
         userId={tenantUser?.id}
+        onSaved={refresh}
+      />
+      <PaperworkDocumentOutMoveSheet
+        document={paperworkOutMoveDocument}
+        open={Boolean(paperworkOutMoveDocument)}
+        onOpenChange={(open) => {
+          if (!open) setPaperworkOutMoveDocument(null);
+        }}
+        tenantId={tenantId}
         onSaved={refresh}
       />
     </section>

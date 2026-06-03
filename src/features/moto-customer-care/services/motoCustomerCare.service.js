@@ -106,6 +106,7 @@ const PAPERWORK_DOCUMENT_MOVE_COLUMNS = `
   created_at
 `;
 const TENANT_USER_COLUMNS = 'id, full_name, email';
+const PAPERWORK_OUT_SOURCE_TYPES = new Set(['to_customer', 'to_supplier', 'to_processor', 'to_employee', 'lost', 'cancelled', 'other']);
 
 function requireTenantId(tenantId) {
   if (!tenantId) {
@@ -1438,6 +1439,160 @@ export const motoCustomerCareService = {
       })),
       moves: normalizedMoves,
     };
+  },
+
+  async listPaperworkMoveTargets({ tenantId } = {}) {
+    requireTenantId(tenantId);
+    const client = requireSupabase();
+
+    const [partnersResult, usersResult] = await Promise.all([
+      client
+        .from('partners')
+        .select(PARTNER_COLUMNS)
+        .eq('tenant_id', tenantId)
+        .order('name', { ascending: true })
+        .limit(200),
+      client
+        .from('tenant_users')
+        .select(TENANT_USER_COLUMNS)
+        .eq('tenant_id', tenantId)
+        .order('full_name', { ascending: true })
+        .limit(100),
+    ]);
+
+    if (partnersResult.error) {
+      throw partnersResult.error;
+    }
+
+    if (usersResult.error) {
+      throw usersResult.error;
+    }
+
+    return {
+      partners: (partnersResult.data || []).map(normalizeCustomer),
+      users: (usersResult.data || []).map((user) => ({
+        id: user.id,
+        name: user.full_name || user.email || 'مستخدم غير محدد',
+        email: user.email || '',
+      })),
+    };
+  },
+
+  async createPaperworkDocumentOutMove({
+    tenantId,
+    documentId,
+    sourceType = 'to_customer',
+    targetPartnerId = null,
+    targetUserId = null,
+    targetLocation = '',
+    notes = '',
+  } = {}) {
+    requireTenantId(tenantId);
+
+    if (!documentId) {
+      throw new Error('تعذر تحديد الورقة المطلوب صرفها.');
+    }
+
+    if (!PAPERWORK_OUT_SOURCE_TYPES.has(sourceType)) {
+      throw new Error('نوع الصرف غير مدعوم.');
+    }
+
+    const needsPartner = ['to_customer', 'to_supplier', 'to_processor'].includes(sourceType);
+    const needsUser = sourceType === 'to_employee';
+    const needsLocation = sourceType === 'other';
+    const safeLocation = String(targetLocation || '').trim();
+    const safeNotes = String(notes || '').trim();
+
+    if (needsPartner && !targetPartnerId) {
+      throw new Error('اختر الجهة التي سيتم الصرف لها.');
+    }
+
+    if (needsUser && !targetUserId) {
+      throw new Error('اختر الموظف الذي سيتم الصرف له.');
+    }
+
+    if (needsLocation && !safeLocation) {
+      throw new Error('اكتب وجهة الصرف.');
+    }
+
+    const client = requireSupabase();
+    const { data: document, error: documentError } = await client
+      .from('paperwork_documents')
+      .select('id, status')
+      .eq('tenant_id', tenantId)
+      .eq('id', documentId)
+      .maybeSingle();
+
+    if (documentError) {
+      throw documentError;
+    }
+
+    if (!document) {
+      throw new Error('الورقة غير موجودة.');
+    }
+
+    if (document.status !== 'in_custody') {
+      throw new Error('لا يمكن صرف ورقة ليست في العهدة.');
+    }
+
+    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
+    const statusBySourceType = {
+      to_customer: 'delivered',
+      lost: 'lost',
+      cancelled: 'cancelled',
+    };
+    const nextStatus = statusBySourceType[sourceType] || 'transferred';
+    const destinationLocation = needsPartner || needsUser
+      ? null
+      : safeLocation || (sourceType === 'lost' ? 'مفقود' : sourceType === 'cancelled' ? 'ملغي' : null);
+
+    const { data: move, error: moveError } = await client
+      .from('paperwork_document_moves')
+      .insert({
+        tenant_id: tenantId,
+        document_id: documentId,
+        move_direction: 'out',
+        source_type: sourceType,
+        from_user_id: currentTenantUserId,
+        to_partner_id: needsPartner ? targetPartnerId : null,
+        to_user_id: needsUser ? targetUserId : null,
+        to_location: destinationLocation,
+        moved_at: new Date().toISOString(),
+        notes: safeNotes || null,
+        created_by: currentTenantUserId,
+      })
+      .select('id')
+      .single();
+
+    if (moveError) {
+      throw moveError;
+    }
+
+    const updatePayload = {
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (safeNotes) {
+      updatePayload.notes = safeNotes;
+    }
+
+    const { error: updateError } = await client
+      .from('paperwork_documents')
+      .update(updatePayload)
+      .eq('tenant_id', tenantId)
+      .eq('id', documentId);
+
+    if (updateError) {
+      await client
+        .from('paperwork_document_moves')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('id', move.id);
+      throw updateError;
+    }
+
+    return move.id;
   },
 
   async listTrackingUnitIdentifiers({ tenantId, trackingUnitId } = {}) {
