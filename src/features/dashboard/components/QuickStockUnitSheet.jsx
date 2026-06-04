@@ -298,12 +298,11 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
     return values.length ? values.join(' - ') : serialNumber.trim();
   }, [identifierDefinitions, identifierValues, selectedProduct, serialNumber]);
 
-  const requiresTrackingPhotos = Boolean(
-    !isJawabRegistration
-    &&
-    isTrackedProduct(selectedProduct)
-    && (selectedProduct?.requiresPostSaleDocuments || (selectedProduct?.requiresLicense && license.status === 'jawab')),
-  );
+  const missingIdentifierDefinition = useMemo(() => {
+    if (!identifierDefinitions.length) return null;
+
+    return identifierDefinitions.find((definition) => !String(identifierValues[definition.identifierTypeId] || '').trim()) || null;
+  }, [identifierDefinitions, identifierValues]);
 
   const canSave = useMemo(() => {
     if (step !== 'details' || !tenantId || !selectedProduct || definitionsStatus === 'loading' || attributeFieldsStatus === 'loading' || isSaving) {
@@ -322,6 +321,10 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
       return false;
     }
 
+    if (missingIdentifierDefinition) {
+      return false;
+    }
+
     const missingRequiredAttribute = selectedAttributeFields.some((field) => field.isRequired && !String(attributeValues[field.key] || '').trim());
     if (missingRequiredAttribute) {
       return false;
@@ -337,12 +340,8 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
       }
     }
 
-    if (requiresTrackingPhotos && (!chassisPhotoFile || !enginePhotoFile)) {
-      return false;
-    }
-
     return true;
-  }, [attributeFieldsStatus, attributeValues, chassisPhotoFile, definitionsStatus, enginePhotoFile, isJawabRegistration, isSaving, license, requiresTrackingPhotos, selectedAttributeFields, selectedProduct, step, tenantId, trackingNumber]);
+  }, [attributeFieldsStatus, attributeValues, definitionsStatus, isJawabRegistration, isSaving, license, missingIdentifierDefinition, selectedAttributeFields, selectedProduct, step, tenantId, trackingNumber]);
 
   const selectProduct = (product) => {
     const attributes = Object.fromEntries(getProductAttributeFields(product).map((field) => [field.key, '']));
@@ -383,6 +382,11 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
       return;
     }
 
+    if (missingIdentifierDefinition) {
+      setError(`أدخل ${missingIdentifierDefinition.name} قبل تسجيل الوحدة.`);
+      return;
+    }
+
     const missingRequiredAttribute = selectedAttributeFields.find((field) => field.isRequired && !String(attributeValues[field.key] || '').trim());
     if (missingRequiredAttribute) {
       setError(`حدد ${missingRequiredAttribute.label} قبل تسجيل الوحدة.`);
@@ -411,11 +415,6 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
         setError('أدخل تاريخ انتهاء الترخيص عندما تكون الحالة مرخص.');
         return;
       }
-    }
-
-    if (requiresTrackingPhotos && (!chassisPhotoFile || !enginePhotoFile)) {
-      setError('صورة رقم الشاسيه وصورة رقم الموتور مطلوبة لهذا المنتج.');
-      return;
     }
 
     setIsSaving(true);
@@ -725,7 +724,10 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
                     <div className="grid gap-3 sm:grid-cols-2">
                       {identifierDefinitions.map((definition) => (
                         <div key={definition.identifierTypeId}>
-                          <label className="mb-2 block text-xs font-black text-slate-600">{definition.name}</label>
+                          <label className="mb-2 block text-xs font-black text-slate-600">
+                            {definition.name}
+                            <span className="text-red-500"> *</span>
+                          </label>
                           <Input
                             value={identifierValues[definition.identifierTypeId] || ''}
                             onChange={(event) => {
@@ -769,7 +771,6 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
                       <label className="block rounded-xl border border-slate-200 bg-white px-3 py-3">
                         <span className="mb-2 block text-xs font-black text-slate-600">
                           صورة رقم الشاسيه
-                          {requiresTrackingPhotos ? <span className="text-red-500"> *</span> : null}
                         </span>
                         <input
                           type="file"
@@ -788,7 +789,6 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
                       <label className="block rounded-xl border border-slate-200 bg-white px-3 py-3">
                         <span className="mb-2 block text-xs font-black text-slate-600">
                           صورة رقم الموتور
-                          {requiresTrackingPhotos ? <span className="text-red-500"> *</span> : null}
                         </span>
                         <input
                           type="file"
