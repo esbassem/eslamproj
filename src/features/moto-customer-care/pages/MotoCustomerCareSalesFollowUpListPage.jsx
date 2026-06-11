@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, Search, UploadCloud, UserPlus } from 'lucide-react';
+import { useReducedMotion } from 'framer-motion';
+import { ArrowRight, Camera, Check, ChevronLeft, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, Search, UploadCloud, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
@@ -227,23 +228,23 @@ function buildSectionSummary(sales) {
 
 function ReportNumber({ label, value, active = false }) {
   return (
-    <div className={`min-w-0 rounded-full px-3 py-2 text-center ring-1 ${
+    <div className={`min-w-0 rounded-full bg-slate-50 px-3 py-2 text-center text-slate-950 ring-1 ring-slate-200/80 ${
       active
-        ? 'bg-slate-100 text-slate-950 ring-slate-200/80'
-        : 'bg-white/[0.10] text-white ring-white/10'
+        ? 'lg:bg-slate-100 lg:text-slate-950 lg:ring-slate-200/80'
+        : 'lg:bg-white/[0.10] lg:text-white lg:ring-white/10'
     }`}>
-      <p className={`truncate text-[10px] font-black ${active ? 'text-slate-500' : 'text-blue-50/60'}`}>{label}</p>
-      <p className={`mt-0.5 truncate font-mono text-xs font-black ${active ? 'text-slate-950' : 'text-white/90'}`} dir="ltr">{value}</p>
+      <p className={`truncate text-[10px] font-black text-slate-500 ${active ? 'lg:text-slate-500' : 'lg:text-blue-50/60'}`}>{label}</p>
+      <p className={`mt-0.5 truncate font-mono text-xs font-black text-slate-950 ${active ? 'lg:text-slate-950' : 'lg:text-white/90'}`} dir="ltr">{value}</p>
     </div>
   );
 }
 
 const followUpSections = [
-  { id: 'sales', label: 'المبيعات' },
-  { id: 'papers', label: 'الأوراق' },
+  { id: 'sales', label: 'المبيعات', description: 'متابعة عمليات البيع بعد التسليم.' },
+  { id: 'papers', label: 'الأوراق', description: 'إدارة الجوابات والحركات والتسليم.' },
 ];
 
-function FollowUpSectionsPanel({ activeSection, onSectionChange, sales, paperworkDocuments = [] }) {
+function FollowUpSectionsPanel({ activeSection, onSectionChange, sales, paperworkDocuments = [], isMobileContentOpen }) {
   const sectionStats = useMemo(() => {
     return {
       sales: sales,
@@ -252,7 +253,7 @@ function FollowUpSectionsPanel({ activeSection, onSectionChange, sales, paperwor
   }, [paperworkDocuments, sales]);
 
   return (
-    <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto px-3 py-1 lg:pr-6">
+    <aside className={`${isMobileContentOpen ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col gap-3 overflow-y-auto px-1 py-1 sm:px-3 lg:pr-6`}>
       {followUpSections.map((section) => {
         const sectionRows = sectionStats[section.id] || [];
         const sectionSales = section.id === 'papers' ? sales : sectionRows;
@@ -265,22 +266,23 @@ function FollowUpSectionsPanel({ activeSection, onSectionChange, sales, paperwor
             key={section.id}
             type="button"
             onClick={() => onSectionChange(section.id)}
-            className={`group relative w-full overflow-hidden rounded-2xl border px-4 py-4 text-right transition duration-200 ${
+            className={`group relative w-full overflow-hidden rounded-[1.65rem] border border-white/90 bg-white px-4 py-4 text-right text-slate-950 shadow-[0_16px_38px_rgba(15,23,42,0.10)] transition duration-200 active:scale-[0.985] lg:rounded-2xl lg:border lg:px-4 lg:py-4 lg:active:scale-100 ${
               isActive
-                ? 'border-white bg-white text-slate-950 shadow-[0_18px_40px_rgba(15,23,42,0.18)]'
-                : 'border-white/15 bg-white/[0.10] text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:border-white/30 hover:bg-white/[0.16]'
+                ? 'lg:border-white lg:bg-white lg:text-slate-950 lg:shadow-[0_18px_40px_rgba(15,23,42,0.18)]'
+                : 'lg:border-white/15 lg:bg-white/[0.10] lg:text-white/85 lg:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] lg:hover:border-white/30 lg:hover:bg-white/[0.16]'
             }`}
           >
-            <div className={`absolute inset-y-5 right-0 w-1.5 rounded-l-full transition ${
+            <div className={`absolute inset-y-5 right-0 hidden w-1.5 rounded-l-full transition lg:block ${
               isActive ? 'bg-[#2189ff]' : 'bg-transparent'
             }`} aria-hidden="true" />
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className={`text-lg font-black leading-6 ${isActive ? 'text-slate-950' : 'text-blue-50'}`}>{section.label}</p>
+                <p className={`text-lg font-black leading-6 text-slate-950 ${isActive ? 'lg:text-slate-950' : 'lg:text-blue-50'}`}>{section.label}</p>
+                <p className={`mt-1 text-xs font-bold leading-5 text-slate-500 ${isActive ? 'lg:text-slate-500' : 'lg:text-blue-50/65'}`}>{section.description}</p>
               </div>
-              <span className={`h-2.5 w-2.5 flex-shrink-0 rounded-full transition ${
-                isActive ? 'bg-[#2189ff]' : 'bg-white/25 group-hover:bg-white/45'
-              }`} aria-hidden="true" />
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition group-active:bg-slate-200 lg:hidden">
+                <ChevronLeft className="h-5 w-5" />
+              </span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {reports.slice(0, 2).map((report) => (
@@ -295,28 +297,69 @@ function FollowUpSectionsPanel({ activeSection, onSectionChange, sales, paperwor
 }
 
 function hasPaperworkRequestForItem(item, paperworkRequests) {
-  return (Array.isArray(paperworkRequests) ? paperworkRequests : []).some((request) => {
+  return Boolean(getPaperworkRequestForItem(item, paperworkRequests));
+}
+
+function getPaperworkRequestForItem(item, paperworkRequests) {
+  return (Array.isArray(paperworkRequests) ? paperworkRequests : []).find((request) => {
     if (item?.id && request.saleLineId === item.id) {
       return true;
     }
 
     return Boolean(item?.trackingUnitId && request.trackingUnitId === item.trackingUnitId);
-  });
+  }) || null;
 }
 
-function TrackingUnitPhotosInline({ item }) {
-  const attachments = item?.attachments || {};
+function getPaperworkStatusLabel(request) {
+  if (!request) return 'لم يتم تحديد حالة الأوراق';
+  if (request.status === 'done') return 'تم تسليم الأوراق';
+  return 'تم تحديد حالة الأوراق';
+}
 
+function getPaperworkEventLabel(event) {
+  if (!event) return 'حدث';
+  if (event.eventType === 'done' || event.newStatus === 'done') return 'تسليم الأوراق';
+  if (event.eventType === 'created') return 'إنشاء الطلب';
+  if (event.eventType === 'stage_changed') return 'تغيير المرحلة';
+  if (event.eventType === 'status_changed') return 'تغيير الحالة';
+  return event.eventType || event.newStatus || 'حدث';
+}
+
+function TrackingIdentifiersInline({ item }) {
   if (!item?.trackingUnitId) {
     return null;
   }
 
+  const identifiers = buildPaperProductDetails(item);
+
+  if (!identifiers.length && !item?.trackingUnit?.trackingNumber) {
+    return null;
+  }
+
   return (
-    <PaperProductAttachmentStatus attachments={attachments} compact />
+    <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] font-bold text-slate-500">
+      {identifiers.length ? identifiers.map((identifier, index) => (
+        <span
+          key={`${identifier.label}-${index}`}
+          className={`inline-flex max-w-full items-baseline gap-1 ${identifier.isMissing ? 'text-red-600' : 'text-slate-500'}`}
+          title={`${identifier.label}: ${identifier.value || 'فارغ'}`}
+        >
+          <span className="flex-shrink-0">{identifier.label}</span>
+          <span className={`max-w-[150px] truncate font-mono font-black ${identifier.isMissing ? 'text-red-700' : 'text-slate-800'}`} dir="ltr">
+            {identifier.value || 'فارغ'}
+          </span>
+        </span>
+      )) : (
+        <span className="inline-flex max-w-full items-baseline gap-1" title={`رقم التتبع: ${item.trackingUnit.trackingNumber}`}>
+          <span className="flex-shrink-0">رقم التتبع</span>
+          <span className="max-w-[150px] truncate font-mono font-black text-slate-800" dir="ltr">{item.trackingUnit.trackingNumber}</span>
+        </span>
+      )}
+    </div>
   );
 }
 
-function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUnit, onCreatePaperworkRequest }) {
+function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUnit, onCreatePaperworkRequest, onOpenPaperworkRequest }) {
   const saleItems = Array.isArray(items) ? items : [];
 
   if (!saleItems.length) {
@@ -335,7 +378,18 @@ function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUn
         const itemName = item.displayName || item.name || item.description || `منتج ${index + 1}`;
         const missingTrackingUnit = item.tracking === 'serial' && !item.trackingUnitId;
         const licenseSummary = getPaperLicenseSummary(item.license);
-        const missingPaperworkRequest = !hasPaperworkRequestForItem(item, paperworkRequests);
+        const paperworkRequest = getPaperworkRequestForItem(item, paperworkRequests);
+        const missingPaperworkRequest = !paperworkRequest;
+        const deliveryEventCreator = paperworkRequest?.deliveryEventCreatedByName || '';
+        const deliveryEventDate = paperworkRequest?.deliveryEventCreatedAt ? formatDate(paperworkRequest.deliveryEventCreatedAt) : '';
+        const deliveryEventNote = typeof paperworkRequest?.deliveryEventNotes === 'string'
+          ? paperworkRequest.deliveryEventNotes.trim()
+          : '';
+        const deliveryEventTitle = [
+          deliveryEventCreator ? `بواسطة: ${deliveryEventCreator}` : '',
+          deliveryEventDate,
+          deliveryEventNote ? `ملاحظة: ${deliveryEventNote}` : '',
+        ].filter(Boolean).join(' - ');
         const itemPrice = formatMoney(item.total || item.unitPrice);
 
         return (
@@ -360,7 +414,7 @@ function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUn
                         <span className="font-mono text-slate-400" dir="ltr"> x{item.quantity}</span>
                       ) : null}
                     </p>
-                    <TrackingUnitPhotosInline item={item} />
+                    <TrackingIdentifiersInline item={item} />
                   </>
                 ) : (
                   <>
@@ -391,7 +445,7 @@ function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUn
                         <span className="font-mono text-slate-400" dir="ltr"> x{item.quantity}</span>
                       ) : null}
                     </p>
-                    <TrackingUnitPhotosInline item={item} />
+                    <TrackingIdentifiersInline item={item} />
                   </>
                 )}
                 {missingTrackingUnit && attributesText ? (
@@ -407,19 +461,35 @@ function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUn
                     type="button"
                     onClick={() => onCreatePaperworkRequest?.(item)}
                     className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-black text-red-600 transition hover:bg-red-50 hover:text-red-700"
-                    title="إنشاء طلب أوراق لهذا المنتج"
+                    title="تحديد حالة الأوراق لهذا المنتج"
                   >
                     <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-red-500" aria-hidden="true" />
-                    <span className="truncate">لم يتم طلب عمل الأوراق</span>
+                    <span className="truncate">لم يتم تحديد حالة الأوراق</span>
                   </button>
                 ) : (
-                  <span
-                    className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-black text-emerald-700"
-                    title="تم طلب عمل الأوراق"
+                  <button
+                    type="button"
+                    onClick={() => onOpenPaperworkRequest?.(paperworkRequest)}
+                    className="grid min-w-0 justify-items-center gap-1 rounded-xl px-2 py-1 text-center transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    title={deliveryEventTitle || 'عرض طلب الأوراق والأحداث'}
                   >
-                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
-                    <span className="truncate">تم طلب عمل الأوراق</span>
-                  </span>
+                    <span
+                      className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-black text-emerald-700"
+                    >
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                      <span className="truncate">{getPaperworkStatusLabel(paperworkRequest)}</span>
+                    </span>
+                    {deliveryEventCreator ? (
+                      <span className="max-w-full truncate text-[10px] font-black text-slate-500" title={deliveryEventTitle}>
+                        بواسطة: {deliveryEventCreator}
+                      </span>
+                    ) : null}
+                    {deliveryEventNote ? (
+                      <span className="max-w-full truncate text-[10px] font-bold text-slate-500" title={deliveryEventNote}>
+                        ملاحظة: {deliveryEventNote}
+                      </span>
+                    ) : null}
+                  </button>
                 )}
               </div>
             </div>
@@ -784,6 +854,8 @@ function PaperworkDocumentMovesInline({ moves }) {
         const movedAtLabel = formatDate(move.movedAt || move.createdAt);
         const partyLabel = `${move.fromLabel || 'غير محدد'} -> ${move.toLabel || 'غير محدد'}`;
         const isOutMove = move.moveDirection === 'out';
+        const creatorLabel = move.createdByName || 'مستخدم غير محدد';
+        const noteText = typeof move.notes === 'string' ? move.notes.trim() : '';
 
         return (
           <div key={move.id} className="max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:border-slate-300 hover:shadow-[0_8px_20px_rgba(15,23,42,0.07)]">
@@ -805,6 +877,15 @@ function PaperworkDocumentMovesInline({ moves }) {
                   <span className="px-1 text-slate-300">إلى</span>
                   <span className="text-slate-700">{move.toLabel || 'غير محدد'}</span>
                 </p>
+                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold text-slate-400">
+                  <span className="min-w-0 max-w-full truncate" title={creatorLabel}>بواسطة: {creatorLabel}</span>
+                  {noteText ? (
+                    <>
+                      <span className="h-1 w-1 rounded-full bg-slate-300" aria-hidden="true" />
+                      <span className="min-w-0 max-w-full truncate text-slate-500" title={noteText}>ملاحظة: {noteText}</span>
+                    </>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
@@ -846,6 +927,8 @@ function PaperworkDocumentMoveCard({ move }) {
   const directionLabel = PAPERWORK_MOVE_DIRECTION_LABELS[move.moveDirection] || move.moveDirection || 'حركة';
   const sourceLabel = PAPERWORK_MOVE_SOURCE_LABELS[move.sourceType] || move.sourceType || 'غير محدد';
   const moveLabel = `${directionLabel} - ${sourceLabel}`;
+  const creatorLabel = move.createdByName || 'مستخدم غير محدد';
+  const noteText = typeof move.notes === 'string' ? move.notes.trim() : '';
 
   return (
     <article className="relative bg-white px-4 py-5 transition before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-slate-200 first:before:hidden hover:bg-blue-50/45">
@@ -865,6 +948,15 @@ function PaperworkDocumentMoveCard({ move }) {
           <span className="min-w-0 max-w-full truncate" title={move.fromLabel}>من: {move.fromLabel}</span>
           <span className="h-1 w-1 rounded-full bg-slate-300" aria-hidden="true" />
           <span className="min-w-0 max-w-full truncate" title={move.toLabel}>إلى: {move.toLabel}</span>
+        </div>
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold text-slate-500">
+          <span className="min-w-0 max-w-full truncate" title={creatorLabel}>بواسطة: {creatorLabel}</span>
+          {noteText ? (
+            <>
+              <span className="h-1 w-1 rounded-full bg-slate-300" aria-hidden="true" />
+              <span className="min-w-0 max-w-full truncate" title={noteText}>ملاحظة: {noteText}</span>
+            </>
+          ) : null}
         </div>
       </div>
     </article>
@@ -1555,40 +1647,50 @@ function TrackingUnitPickerSheet({ item, open, onOpenChange, tenantId, onAttach,
   );
 }
 
-function PaperworkRequestSheet({ item, open, onOpenChange, tenantId, onSaved }) {
-  const [requestType, setRequestType] = useState('new_document');
-  const [priority, setPriority] = useState('normal');
-  const [notes, setNotes] = useState('');
+const PAPERWORK_STATUS_OPTIONS = [
+  { id: 'delivered', label: 'تم تسليم الأوراق للعميل بالفعل', enabled: true },
+  { id: 'vault', label: 'الأوراق موجودة في الخزنة', enabled: false },
+  { id: 'in_progress', label: 'الأوراق تحت التنفيذ', enabled: false },
+  { id: 'not_requested_now', label: 'العميل لم يطلب الأوراق الآن', enabled: false },
+  { id: 'unknown', label: 'لا توجد معلومات كافية', enabled: false },
+];
+
+function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, onSaved }) {
+  const [step, setStep] = useState('status');
+  const [selectedStatus, setSelectedStatus] = useState('delivered');
+  const [confirmationNote, setConfirmationNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const itemName = item?.displayName || item?.name || item?.description || 'منتج غير محدد';
+  const customerName = item?.customerName || 'عميل غير محدد';
+  const customerPhone = item?.customerPhone || '';
 
   useEffect(() => {
     if (!open) return;
-    setRequestType('new_document');
-    setPriority('normal');
-    setNotes('');
+    setStep('status');
+    setSelectedStatus('delivered');
+    setConfirmationNote('');
     setError('');
     setIsSaving(false);
   }, [open, item?.id]);
 
   const save = async () => {
     if (!item) return;
+    if (selectedStatus !== 'delivered') return;
+
     setIsSaving(true);
     setError('');
 
     try {
-      await motoCustomerCareService.createPaperworkRequest({
+      await motoCustomerCareService.createLegacyDeliveredPaperworkRequest({
         tenantId,
         item,
-        requestType,
-        priority,
-        notes,
+        confirmationNote,
       });
       await onSaved?.();
       onOpenChange(false);
     } catch (saveError) {
-      setError(saveError?.message || 'تعذر إنشاء طلب الأوراق.');
+      setError(saveError?.message || 'تعذر تحديد حالة الأوراق.');
     } finally {
       setIsSaving(false);
     }
@@ -1598,68 +1700,203 @@ function PaperworkRequestSheet({ item, open, onOpenChange, tenantId, onSaved }) 
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-md" dir="rtl">
         <SheetDismissButton />
-        <SheetHeader className="pl-16 text-right">
-          <SheetTitle>إنشاء طلب أوراق</SheetTitle>
+        <SheetHeader className="bg-slate-950 px-5 py-5 pl-16 text-right text-white">
+          <p className="text-[11px] font-black uppercase text-slate-300">Paperwork Status</p>
+          <SheetTitle className="mt-1 text-xl font-black text-white">تحديد حالة الأوراق</SheetTitle>
+          <p className="mt-2 text-xs font-bold leading-5 text-slate-300">
+            بيع قديم بدون إنشاء مستندات أو حركات عهدة.
+          </p>
+          <div className="mt-4 grid gap-3 border-t border-white/10 pt-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black text-slate-400">العميل صاحب الفاتورة</p>
+              <p className="mt-1 truncate text-sm font-black text-white" title={customerName}>{customerName}</p>
+              {customerPhone ? (
+                <p className="mt-0.5 truncate font-mono text-xs font-bold text-slate-300" dir="ltr">{customerPhone}</p>
+              ) : null}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black text-slate-400">المنتج</p>
+              <p className="mt-1 truncate text-sm font-black text-white" title={itemName}>{itemName}</p>
+            </div>
+          </div>
         </SheetHeader>
 
-        <SheetBody className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-black text-slate-400">المنتج</p>
-            <p className="mt-1 truncate text-sm font-black text-slate-950" title={itemName}>{itemName}</p>
-            <p className="mt-1 text-[11px] font-bold text-slate-400">
-              سيتم ربط الطلب بسطر المنتج في الفاتورة.
-            </p>
-          </div>
+        <SheetBody className="space-y-5 px-5 py-5">
+          {step === 'status' ? (
+            <div className="divide-y divide-slate-200 border-y border-slate-200">
+              {PAPERWORK_STATUS_OPTIONS.map((option) => {
+                const active = selectedStatus === option.id;
 
-          <label className="block space-y-1.5">
-            <span className="text-xs font-black text-slate-500">نوع الطلب</span>
-            <select
-              value={requestType}
-              onChange={(event) => setRequestType(event.target.value)}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
-            >
-              {Object.entries(PAPERWORK_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs font-black text-slate-500">الأولوية</span>
-            <select
-              value={priority}
-              onChange={(event) => setPriority(event.target.value)}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
-            >
-              {Object.entries(PAPERWORK_PRIORITY_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs font-black text-slate-500">ملاحظات</span>
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              rows={4}
-              className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
-              placeholder="اكتب أي ملاحظة تخص طلب الأوراق"
-            />
-          </label>
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                  onClick={() => {
+                    if (option.enabled) {
+                      setSelectedStatus(option.id);
+                      setError('');
+                      setStep('confirmation');
+                    }
+                  }}
+                    disabled={!option.enabled || isSaving}
+                    className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-1 py-4 text-right transition ${
+                      active ? 'text-slate-950' : 'text-slate-700 hover:bg-slate-50'
+                    } disabled:cursor-not-allowed disabled:text-slate-400`}
+                  >
+                    <span className={`h-3 w-3 rounded-full border ${
+                      active ? 'border-slate-950 bg-slate-950' : 'border-slate-300 bg-white'
+                    }`} aria-hidden="true" />
+                    <span className="min-w-0 text-sm font-black">{option.label}</span>
+                    {!option.enabled ? (
+                      <span className="text-[10px] font-black text-slate-400">قريبًا</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <label className="block space-y-2">
+              <span className="text-xs font-black text-slate-500">ملحوظة التأكيد</span>
+              <textarea
+                value={confirmationNote}
+                onChange={(event) => {
+                  setConfirmationNote(event.target.value);
+                  setError('');
+                }}
+                rows={6}
+                className="w-full resize-none border-0 border-y border-slate-200 bg-white px-0 py-3 text-sm font-bold text-slate-900 outline-none placeholder:text-slate-300 focus:border-slate-400"
+                placeholder="مثال: تم التأكيد هاتفيًا مع العميل أنه استلم الأوراق."
+              />
+            </label>
+          )}
 
           {error ? (
-            <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-black text-red-700">
+            <div className="border-y border-red-200 bg-red-50 px-1 py-2 text-xs font-black text-red-700">
               {error}
             </div>
           ) : null}
         </SheetBody>
 
-        <SheetFooter>
-          <Button type="button" onClick={save} disabled={isSaving} className="w-full">
-            {isSaving ? 'جاري إنشاء الطلب...' : 'إنشاء طلب الأوراق'}
-          </Button>
+        <SheetFooter className="border-t border-slate-200 px-5 py-4">
+          {step === 'confirmation' ? (
+            <Button type="button" variant="secondary" onClick={() => setStep('status')} disabled={isSaving}>
+              رجوع
+            </Button>
+          ) : null}
+          {step === 'confirmation' ? (
+            <Button
+              type="button"
+              onClick={save}
+              disabled={isSaving || selectedStatus !== 'delivered'}
+              className="flex-1"
+            >
+              {isSaving ? 'جاري الحفظ...' : 'تأكيد'}
+            </Button>
+          ) : null}
         </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function PaperworkRequestDetailsSheet({ request, open, onOpenChange }) {
+  const events = Array.isArray(request?.events) ? request.events : [];
+  const requestStatusLabel = PAPERWORK_STATUS_LABELS[request?.status] || request?.status || '--';
+  const requestPriorityLabel = PAPERWORK_PRIORITY_LABELS[request?.priority] || request?.priority || '--';
+  const requestTypeLabel = PAPERWORK_TYPE_LABELS[request?.requestType] || request?.requestType || '--';
+  const productName = request?.productName || 'طلب أوراق';
+  const customerName = request?.customer?.name || request?.documentOwner?.name || 'عميل غير محدد';
+  const eventRows = events.length ? events : [{
+    id: 'request-created',
+    eventType: 'created',
+    newStatus: request?.status || '',
+    notes: request?.notes || '',
+    createdByName: '',
+    createdAt: request?.createdAt,
+  }];
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="max-w-lg" dir="rtl">
+        <SheetDismissButton />
+        <SheetHeader className="bg-slate-950 px-5 py-5 pl-16 text-right text-white">
+          <p className="text-[11px] font-black uppercase text-slate-300">Paperwork Request</p>
+          <SheetTitle className="mt-1 text-xl font-black text-white">طلب الأوراق والأحداث</SheetTitle>
+          <div className="mt-4 grid gap-3 border-t border-white/10 pt-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black text-slate-400">المنتج</p>
+              <p className="mt-1 truncate text-sm font-black text-white" title={productName}>{productName}</p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black text-slate-400">العميل</p>
+              <p className="mt-1 truncate text-sm font-black text-white" title={customerName}>{customerName}</p>
+            </div>
+          </div>
+        </SheetHeader>
+
+        <SheetBody className="space-y-5 px-5 py-5">
+          <section className="grid gap-3 border-y border-slate-200 py-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[10px] font-black text-slate-400">الحالة</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{requestStatusLabel}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400">الأولوية</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{requestPriorityLabel}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400">نوع الطلب</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{requestTypeLabel}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400">تاريخ الإنشاء</p>
+                <p className="mt-1 text-sm font-black text-slate-950">{formatDate(request?.createdAt)}</p>
+              </div>
+            </div>
+
+            {request?.notes ? (
+              <div>
+                <p className="text-[10px] font-black text-slate-400">ملاحظة الطلب</p>
+                <p className="mt-1 whitespace-pre-wrap text-xs font-bold leading-5 text-slate-700">{request.notes}</p>
+              </div>
+            ) : null}
+          </section>
+
+          <section>
+            <h3 className="text-sm font-black text-slate-950">الأحداث</h3>
+            <div className="mt-3 divide-y divide-slate-200 border-y border-slate-200">
+              {eventRows.map((event) => {
+                const eventLabel = getPaperworkEventLabel(event);
+                const eventStatusLabel = PAPERWORK_STATUS_LABELS[event.newStatus] || event.newStatus || '';
+                const eventCreator = event.createdByName || 'مستخدم غير محدد';
+                const eventNote = typeof event.notes === 'string' ? event.notes.trim() : '';
+
+                return (
+                  <article key={event.id} className="py-3">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-950" title={eventLabel}>{eventLabel}</p>
+                        <p className="mt-0.5 text-xs font-bold text-slate-500">بواسطة: {eventCreator}</p>
+                      </div>
+                      <div className="flex-shrink-0 text-left">
+                        <p className="text-[11px] font-black text-slate-400">{formatDate(event.createdAt)}</p>
+                        {eventStatusLabel ? (
+                          <p className="mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">{eventStatusLabel}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                    {eventNote ? (
+                      <p className="mt-2 whitespace-pre-wrap text-xs font-bold leading-5 text-slate-600">
+                        ملاحظة: {eventNote}
+                      </p>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );
@@ -2330,7 +2567,7 @@ function InvoiceInfo({ sale, invoiceDate }) {
   );
 }
 
-function SalesFollowUpCard({ sale, paperworkRequests = [], onRegisterTrackingUnit, onCreatePaperworkRequest }) {
+function SalesFollowUpCard({ sale, paperworkRequests = [], onRegisterTrackingUnit, onCreatePaperworkRequest, onOpenPaperworkRequest }) {
   const customerPhone = sale.customer?.phone || sale.customer?.phone1 || sale.customer?.phone2 || '--';
   const customerAddress = sale.customer?.address || '--';
   const invoiceDate = formatDate(sale.saleDate || sale.createdAt);
@@ -2357,10 +2594,14 @@ function SalesFollowUpCard({ sale, paperworkRequests = [], onRegisterTrackingUni
               items={sale.items}
               paperworkRequests={paperworkRequests}
               onRegisterTrackingUnit={onRegisterTrackingUnit}
+              onOpenPaperworkRequest={onOpenPaperworkRequest}
               onCreatePaperworkRequest={(item) => onCreatePaperworkRequest?.({
                 ...item,
+                tenantId: sale.tenantId,
                 branchId: sale.branchId,
                 customerId: sale.customerId,
+                customerName: sale.customer?.name || 'عميل غير محدد',
+                customerPhone: sale.customer?.phone || sale.customer?.phone1 || sale.customer?.phone2 || '',
               })}
             />
           </div>
@@ -2372,14 +2613,27 @@ function SalesFollowUpCard({ sale, paperworkRequests = [], onRegisterTrackingUni
 
 export function MotoCustomerCareSalesFollowUpListPage() {
   const [activeSection, setActiveSection] = useState('sales');
+  const [isMobileContentOpen, setIsMobileContentOpen] = useState(false);
+  const [isMobileContentClosing, setIsMobileContentClosing] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    return window.matchMedia('(max-width: 1023px)').matches;
+  });
+  const [hasRequestedMobileData, setHasRequestedMobileData] = useState(false);
   const [paperworkFilter, setPaperworkFilter] = useState('all');
   const [trackingSheetItem, setTrackingSheetItem] = useState(null);
   const [licenseSheetItem, setLicenseSheetItem] = useState(null);
   const [trackingUnitPickerItem, setTrackingUnitPickerItem] = useState(null);
   const [stockUnitSheetItem, setStockUnitSheetItem] = useState(null);
   const [paperworkRequestItem, setPaperworkRequestItem] = useState(null);
+  const [paperworkRequestDetails, setPaperworkRequestDetails] = useState(null);
   const [paperworkDocumentSheetOpen, setPaperworkDocumentSheetOpen] = useState(false);
   const [paperworkOutMoveDocument, setPaperworkOutMoveDocument] = useState(null);
+  const prefersReducedMotion = useReducedMotion();
+  const mobileCloseTimeoutRef = useRef(null);
   const { tenant_user: tenantUser } = useAuth();
   const {
     tenantId,
@@ -2390,7 +2644,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     isLoading,
     error,
     refresh,
-  } = useMotoCustomerCareSales({ limit: 250 });
+  } = useMotoCustomerCareSales({ limit: 250, enabled: !isMobileViewport || hasRequestedMobileData });
   const displayedSales = useMemo(() => {
     if (activeSection === 'papers') {
       return sales;
@@ -2418,6 +2672,49 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   }, [activeSection, paperworkDocumentMoves, paperworkFilter]);
 
   const activeSectionLabel = followUpSections.find((section) => section.id === activeSection)?.label || 'المبيعات';
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const syncViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    syncViewport();
+    mediaQuery.addEventListener('change', syncViewport);
+
+    return () => mediaQuery.removeEventListener('change', syncViewport);
+  }, []);
+
+  const handleSectionChange = (sectionId) => {
+    if (mobileCloseTimeoutRef.current) {
+      window.clearTimeout(mobileCloseTimeoutRef.current);
+      mobileCloseTimeoutRef.current = null;
+    }
+
+    setIsMobileContentClosing(false);
+    setActiveSection(sectionId);
+    setHasRequestedMobileData(true);
+    setIsMobileContentOpen(true);
+  };
+  const handleCloseMobileSection = () => {
+    if (prefersReducedMotion) {
+      setIsMobileContentOpen(false);
+      setIsMobileContentClosing(false);
+      return;
+    }
+
+    setIsMobileContentClosing(true);
+    mobileCloseTimeoutRef.current = window.setTimeout(() => {
+      setIsMobileContentOpen(false);
+      setIsMobileContentClosing(false);
+      mobileCloseTimeoutRef.current = null;
+    }, 220);
+  };
+  useEffect(
+    () => () => {
+      if (mobileCloseTimeoutRef.current) {
+        window.clearTimeout(mobileCloseTimeoutRef.current);
+      }
+    },
+    [],
+  );
   const attachTrackingUnitToPickerItem = async (unit) => {
     await motoCustomerCareService.attachSaleLineTrackingUnit({
       tenantId,
@@ -2443,34 +2740,51 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     setStockUnitSheetItem(null);
     await refresh();
   };
-
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden" dir="rtl">
-      {isLoading ? (
-        <LoadingSpinner title="جاري تحميل مبيعات الشو روم" description="يتم تجهيز كروت المتابعة من عمليات البيع الحالية." />
-      ) : null}
-
-      {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>
-      ) : null}
-
-      {!isLoading && !error ? (
-        <div className="grid min-h-0 flex-1 gap-6 overflow-hidden lg:grid-cols-[430px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
+      <style>{`
+        @keyframes customerCareMobilePageIn {
+          from { opacity: 0; transform: translateX(-100%); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes customerCareMobilePageOut {
+          from { opacity: 1; transform: translateX(0); }
+          to { opacity: 0; transform: translateX(-100%); }
+        }
+        @media (max-width: 1023px) {
+          .customer-care-mobile-page-in {
+            animation: customerCareMobilePageIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+          }
+          .customer-care-mobile-page-out {
+            animation: customerCareMobilePageOut 0.16s cubic-bezier(0.7, 0, 0.84, 0) both;
+          }
+        }
+      `}</style>
+      <div className="relative grid min-h-0 flex-1 gap-6 overflow-hidden lg:grid-cols-[430px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
           <FollowUpSectionsPanel
             activeSection={activeSection}
-            onSectionChange={setActiveSection}
+            onSectionChange={handleSectionChange}
             sales={sales}
             paperworkDocuments={paperworkDocuments}
+            isMobileContentOpen={isMobileContentOpen}
           />
 
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-t-[28px] border border-b-0 border-white/85 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.16)] lg:fixed lg:bottom-0 lg:left-4 lg:right-[500px] lg:top-5 lg:z-20 lg:h-auto">
-            <div className="relative z-10 flex items-center justify-between gap-4 border-b border-slate-300 bg-slate-200 px-6 py-6 text-slate-950 shadow-[0_10px_18px_-16px_rgba(15,23,42,0.75)] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-[-1px] after:h-px after:bg-white/80">
+          <section className={`${isMobileContentOpen || isMobileContentClosing ? `fixed inset-0 z-[70] flex h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none ${isMobileContentClosing ? 'customer-care-mobile-page-out' : 'customer-care-mobile-page-in'}` : 'hidden'} min-h-0 flex-col overflow-hidden bg-white lg:fixed lg:bottom-0 lg:left-4 lg:right-[500px] lg:top-5 lg:z-20 lg:flex lg:h-auto lg:w-auto lg:max-w-none lg:rounded-t-[28px] lg:border lg:border-b-0 lg:border-white/85 lg:shadow-[0_18px_48px_rgba(15,23,42,0.16)] lg:animate-none`}>
+            <div className="relative z-10 flex items-center justify-between gap-3 border-b border-slate-300 bg-slate-200 px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] text-slate-950 shadow-[0_10px_18px_-16px_rgba(15,23,42,0.75)] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-[-1px] after:h-px after:bg-white/80 sm:px-6 sm:py-6">
               <div className="flex min-w-0 items-center gap-4">
+                <button
+                  type="button"
+                  onClick={handleCloseMobileSection}
+                  className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 lg:hidden"
+                  aria-label="رجوع للأقسام"
+                >
+                  <ArrowRight className="h-5 w-5" />
+                </button>
                 <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm">
                   <FileText className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-2xl font-black leading-8 text-slate-950">{activeSectionLabel}</h3>
+                  <h3 className="text-xl font-black leading-7 text-slate-950 sm:text-2xl sm:leading-8">{activeSectionLabel}</h3>
                 </div>
               </div>
               {activeSection === 'papers' ? (
@@ -2505,7 +2819,11 @@ export function MotoCustomerCareSalesFollowUpListPage() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-              {activeSection === 'papers' && paperworkFilter === 'moves' && displayedPaperworkMoves.length ? (
+              {isLoading ? (
+                <LoadingSpinner title="جاري تحميل العمليات" description="يتم تجهيز بيانات القسم الحالي." />
+              ) : error ? (
+                <div className="m-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm font-bold text-red-700">{error}</div>
+              ) : activeSection === 'papers' && paperworkFilter === 'moves' && displayedPaperworkMoves.length ? (
                 displayedPaperworkMoves.map((move) => (
                   <PaperworkDocumentMoveCard key={move.id} move={move} />
                 ))
@@ -2521,6 +2839,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                     paperworkRequests={paperworkRequests}
                     onRegisterTrackingUnit={setTrackingUnitPickerItem}
                     onCreatePaperworkRequest={setPaperworkRequestItem}
+                    onOpenPaperworkRequest={setPaperworkRequestDetails}
                   />
                 ))
               ) : (
@@ -2540,8 +2859,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
               )}
             </div>
           </section>
-        </div>
-      ) : null}
+      </div>
 
       <TrackingIdentifiersSheet
         item={trackingSheetItem}
@@ -2585,7 +2903,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         lockProductSelection
         onSaved={handleStockUnitSaved}
       />
-      <PaperworkRequestSheet
+      <PaperworkStatusSheet
         item={paperworkRequestItem}
         open={Boolean(paperworkRequestItem)}
         onOpenChange={(open) => {
@@ -2593,6 +2911,13 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         }}
         tenantId={tenantId}
         onSaved={refresh}
+      />
+      <PaperworkRequestDetailsSheet
+        request={paperworkRequestDetails}
+        open={Boolean(paperworkRequestDetails)}
+        onOpenChange={(open) => {
+          if (!open) setPaperworkRequestDetails(null);
+        }}
       />
 
       <PaperworkDocumentSheet

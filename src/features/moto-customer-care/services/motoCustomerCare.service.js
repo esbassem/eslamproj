@@ -105,6 +105,17 @@ const PAPERWORK_DOCUMENT_MOVE_COLUMNS = `
   created_by,
   created_at
 `;
+const PAPERWORK_REQUEST_EVENT_COLUMNS = `
+  id,
+  tenant_id,
+  request_id,
+  event_type,
+  new_status,
+  new_stage_id,
+  notes,
+  created_by,
+  created_at
+`;
 const TENANT_USER_COLUMNS = 'id, full_name, email';
 const PAPERWORK_OUT_SOURCE_TYPES = new Set(['to_customer', 'to_supplier', 'to_processor', 'to_employee', 'lost', 'cancelled', 'other']);
 
@@ -1056,6 +1067,55 @@ async function loadTenantUsersByIdsMap(client, tenantId, userIds = []) {
   }, new Map());
 }
 
+async function loadPaperworkRequestEventsMap(client, tenantId, requests = []) {
+  const requestIds = Array.from(new Set(
+    (Array.isArray(requests) ? requests : [])
+      .map((request) => request?.id)
+      .filter(Boolean),
+  ));
+
+  if (!requestIds.length) {
+    return new Map();
+  }
+
+  const { data, error } = await client
+    .from('paperwork_request_events')
+    .select(PAPERWORK_REQUEST_EVENT_COLUMNS)
+    .eq('tenant_id', tenantId)
+    .in('request_id', requestIds)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const events = data || [];
+  const usersMap = await loadTenantUsersByIdsMap(
+    client,
+    tenantId,
+    events.map((event) => event.created_by).filter(Boolean),
+  );
+
+  return events.reduce((map, event) => {
+    const normalizedEvent = {
+      id: event.id,
+      tenantId: event.tenant_id,
+      requestId: event.request_id,
+      eventType: event.event_type || '',
+      newStatus: event.new_status || '',
+      newStageId: event.new_stage_id || null,
+      notes: event.notes || '',
+      createdBy: event.created_by,
+      createdByName: usersMap.get(event.created_by)?.name || '',
+      createdAt: event.created_at,
+    };
+    const current = map.get(event.request_id) || [];
+    current.push(normalizedEvent);
+    map.set(event.request_id, current);
+    return map;
+  }, new Map());
+}
+
 async function loadPaperworkDocumentAttachmentsMap(client, tenantId, documentIds = []) {
   const ids = Array.from(new Set((Array.isArray(documentIds) ? documentIds : []).filter(Boolean)));
 
@@ -1206,6 +1266,8 @@ function normalizePaperworkRequest(record, maps = {}) {
   const product = maps.productMap?.get(productProductId) || null;
   const trackingDetails = maps.trackingDetailsMap?.get(record.tracking_unit_id) || {};
   const productName = saleLine?.description || product?.displayName || product?.sku || 'طلب أوراق';
+  const events = maps.eventsMap?.get(record.id) || [];
+  const deliveryEvent = events.find((event) => event.eventType === 'done' || event.newStatus === 'done') || null;
   const trackingUnitDetails = trackingDetails.trackingUnit || (trackingUnit ? {
     id: trackingUnit.id,
     trackingNumber: trackingUnit.tracking_number || '',
@@ -1237,6 +1299,12 @@ function normalizePaperworkRequest(record, maps = {}) {
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     closedAt: record.closed_at,
+    events,
+    deliveryEvent,
+    deliveryEventCreatedBy: deliveryEvent?.createdBy || null,
+    deliveryEventCreatedByName: deliveryEvent?.createdByName || '',
+    deliveryEventCreatedAt: deliveryEvent?.createdAt || null,
+    deliveryEventNotes: deliveryEvent?.notes || '',
     customer: maps.partnersMap?.get(record.customer_id) || null,
     documentOwner: maps.partnersMap?.get(record.document_owner_partner_id) || null,
     processor: maps.partnersMap?.get(record.processor_partner_id) || null,
@@ -1308,11 +1376,12 @@ export const motoCustomerCareService = {
     }
 
     const requests = data || [];
-    const [partnersMap, stagesMap, saleLinesMap, trackingUnitsMap] = await Promise.all([
+    const [partnersMap, stagesMap, saleLinesMap, trackingUnitsMap, eventsMap] = await Promise.all([
       loadPaperworkPartnersMap(client, tenantId, requests),
       loadPaperworkStagesMap(client, tenantId, requests),
       loadPaperworkSaleLinesMap(client, tenantId, requests),
       loadPaperworkTrackingUnitsMap(client, tenantId, requests),
+      loadPaperworkRequestEventsMap(client, tenantId, requests),
     ]);
 
     const contextLines = requests.map((request) => {
@@ -1340,6 +1409,7 @@ export const motoCustomerCareService = {
       productMap,
       trackingDetailsMap,
       trackingUnitAttributesMap,
+      eventsMap,
     }));
   },
 
@@ -1944,6 +2014,30 @@ export const motoCustomerCareService = {
     }
 
     return true;
+  },
+
+  async createLegacyDeliveredPaperworkRequest({ tenantId, item, confirmationNote = '' } = {}) {
+    requireTenantId(tenantId);
+    if (!item?.saleId) {
+      throw new Error('تعذر تحديد الفاتورة المرتبطة بحالة الأوراق.');
+    }
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('create_legacy_delivered_paperwork_request', {
+      p_tenant_id: tenantId,
+      p_branch_id: item.branchId || null,
+      p_sale_id: item.saleId,
+      p_sale_line_id: item.id || null,
+      p_tracking_unit_id: item.trackingUnitId || null,
+      p_customer_id: item.customerId || null,
+      p_confirmation_note: String(confirmationNote || '').trim(),
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return Array.isArray(data) ? data[0] : data;
   },
 
   async getSaleDetails({ tenantId, saleId } = {}) {

@@ -58,7 +58,7 @@ export function LoginForm({ className = '', compact = false, footerOverride = nu
           autoCapitalize="none"
           autoCorrect="off"
           dir="ltr"
-          className="ltr-content"
+          className="ltr-content text-base sm:text-sm"
           value={formState.email}
           onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
           placeholder={t('auth.loginIdentifierPlaceholder')}
@@ -75,7 +75,7 @@ export function LoginForm({ className = '', compact = false, footerOverride = nu
           id="password"
           type="password"
           dir="ltr"
-          className="ltr-content"
+          className="ltr-content text-base sm:text-sm"
           value={formState.password}
           onChange={(event) => setFormState((current) => ({ ...current, password: event.target.value }))}
           placeholder={t('common.placeholders.password')}

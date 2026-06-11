@@ -7,6 +7,7 @@ export function SettingsLayout({
   description,
   activeSection,
   activeAccountingTab,
+  canManagePermissions,
   onSectionChange,
   onAccountingTabChange,
   children,
@@ -22,6 +23,7 @@ export function SettingsLayout({
         <SettingsSectionNav
           activeSection={activeSection}
           activeAccountingTab={activeAccountingTab}
+          canManagePermissions={canManagePermissions}
           onSectionChange={onSectionChange}
           onAccountingTabChange={onAccountingTabChange}
         />

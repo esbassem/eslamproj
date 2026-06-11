@@ -57,6 +57,7 @@ export function DashboardPage() {
   const { tenant } = useWorkspace();
   const { apps, appsStatus, appsError, installApp, uninstallApp } = useAppContext();
   const { user, tenant_user: tenantUser } = useAuth();
+  const isOwner = tenantUser?.role === 'owner';
   const navigate = useNavigate();
   const [launchingApp, setLaunchingApp] = useState(null);
   const launchTimeoutRef = useRef(null);
@@ -73,7 +74,7 @@ export function DashboardPage() {
   const [isImageUploadSheetOpen, setIsImageUploadSheetOpen] = useState(false);
   const [isStockUnitSheetOpen, setIsStockUnitSheetOpen] = useState(false);
   const dashboardApps = apps.filter((app) => app.code !== 'dashboard');
-  const launcherApps = dashboardApps.some((app) => app.code === 'settings')
+  const launcherApps = dashboardApps.some((app) => app.code === 'settings') || !isOwner
     ? dashboardApps
     : [
         ...dashboardApps,
@@ -94,6 +95,34 @@ export function DashboardPage() {
   const dateStr = now.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' });
 
   useEffect(() => {
+    const viewportMeta = document.querySelector('meta[name="viewport"]');
+    if (!viewportMeta) return undefined;
+
+    const previousViewport = viewportMeta.getAttribute('content') || 'width=device-width, initial-scale=1.0';
+    viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+
+    const preventPinchZoom = (event) => {
+      if (event.touches?.length > 1) {
+        event.preventDefault();
+      }
+    };
+    const preventGestureZoom = (event) => {
+      event.preventDefault();
+    };
+
+    document.addEventListener('touchmove', preventPinchZoom, { passive: false });
+    document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
+    document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
+
+    return () => {
+      viewportMeta.setAttribute('content', previousViewport);
+      document.removeEventListener('touchmove', preventPinchZoom);
+      document.removeEventListener('gesturestart', preventGestureZoom);
+      document.removeEventListener('gesturechange', preventGestureZoom);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!toast) return undefined;
 
     const timerId = window.setTimeout(() => setToast(null), 3600);
@@ -112,7 +141,7 @@ export function DashboardPage() {
   useEffect(() => {
     let mounted = true;
 
-    if (!tenant?.id) {
+    if (!tenant?.id || !isOwner) {
       setCatalogApps([]);
       setCatalogStatus('idle');
       setCatalogError(null);
@@ -145,7 +174,7 @@ export function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, [tenant?.id]);
+  }, [isOwner, tenant?.id]);
 
   const handleLaunchApp = (event, item) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
@@ -314,6 +343,7 @@ export function DashboardPage() {
                     const title = item.title ?? item.name ?? t(item.titleKey);
                     const isLaunching = launchingApp?.href === item.href;
                     const canUninstall =
+                      isOwner &&
                       item.isRemovable !== false &&
                       item.id &&
                       !String(item.id).startsWith('launcher-') &&

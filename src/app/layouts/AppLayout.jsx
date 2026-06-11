@@ -7,14 +7,38 @@ import { PageTransition } from '@/core/ui/page-transition';
 import { useAppContext } from '@/contexts/AppContext';
 import { AppSidebar } from '@/features/workspace/components/AppSidebar';
 import { AppTopbar } from '@/features/workspace/components/AppTopbar';
-import { getAppCodeFromPathname } from '@/utils/appResolver';
+import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
+import { getAppCodeFromPathname, resolveCurrentApp } from '@/utils/appResolver';
+
+function AccessDeniedAppPage() {
+  return (
+    <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4" dir="rtl">
+      <div className="max-w-lg rounded-xl border border-amber-200 bg-amber-50 px-6 py-5 text-center shadow-sm">
+        <h1 className="text-lg font-black text-amber-950">ليس لديك صلاحية لفتح هذا التطبيق</h1>
+        <p className="mt-2 text-sm font-semibold leading-6 text-amber-800">
+          هذا التطبيق غير متاح لحسابك الحالي. تواصل مع مالك الشركة لإضافة الصلاحية المناسبة.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function AppLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const outlet = useOutlet();
-  const { apps, setActiveApp, loadAppMenus, activeApp } = useAppContext();
+  const { apps, appsStatus, setActiveApp, loadAppMenus, activeApp } = useAppContext();
+  const { tenantUser } = useWorkspace();
   const currentAppCode = getAppCodeFromPathname(location.pathname);
+  const canOpenOwnerSettings = currentAppCode === 'settings' && tenantUser?.role === 'owner';
+  const currentAllowedApp = resolveCurrentApp(apps, currentAppCode);
+  const isCheckingAppAccess = appsStatus === 'idle' || appsStatus === 'loading';
+  const isAccessDenied =
+    Boolean(currentAppCode) &&
+    currentAppCode !== 'dashboard' &&
+    !canOpenOwnerSettings &&
+    appsStatus === 'ready' &&
+    !currentAllowedApp;
   const handleOpenSidebar = useCallback(() => setIsSidebarOpen(true), []);
   const appColor = activeApp?.iconColor || '#0f172a';
   
@@ -78,9 +102,14 @@ export function AppLayout() {
       return;
     }
 
+    if (isCheckingAppAccess || isAccessDenied) {
+      setActiveApp(null);
+      return;
+    }
+
     setActiveApp(appCode);
     loadAppMenus(appCode);
-  }, [apps, currentAppCode, loadAppMenus, setActiveApp]);
+  }, [apps, currentAppCode, isAccessDenied, isCheckingAppAccess, loadAppMenus, setActiveApp]);
 
   const showSidebar = !uiExperiments.homeLauncherNavigation || (currentAppCode && currentAppCode !== 'dashboard');
   const isLauncherHome = uiExperiments.homeLauncherNavigation && currentAppCode === 'dashboard';
@@ -126,7 +155,13 @@ export function AppLayout() {
           <main className={`relative overflow-x-clip ${isFullBleedApp || isLauncherHome ? 'py-0' : 'py-1'} ${shouldShowSidebar ? 'pl-2 lg:pl-4' : ''}`}>
             <div className={`mx-auto flex min-h-full w-full flex-col bg-transparent ${isFullBleedApp ? 'max-w-none gap-0' : isLauncherHome ? 'max-w-none gap-6' : 'max-w-7xl gap-6'}`}>
               <PageTransition pathname={location.pathname}>
-                <Suspense fallback={<AppContentFallback pathname={location.pathname} />}>{outlet}</Suspense>
+                {isCheckingAppAccess && currentAppCode !== 'dashboard' ? (
+                  <AppContentFallback pathname={location.pathname} />
+                ) : isAccessDenied ? (
+                  <AccessDeniedAppPage />
+                ) : (
+                  <Suspense fallback={<AppContentFallback pathname={location.pathname} />}>{outlet}</Suspense>
+                )}
               </PageTransition>
             </div>
           </main>
