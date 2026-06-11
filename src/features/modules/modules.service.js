@@ -86,8 +86,8 @@ function orderMenus(menus) {
 }
 
 export const modulesService = {
-  async loadInstalledModules(tenantId) {
-    const tenantModuleRows = await modulesApi.listInstalledTenantModules(tenantId);
+  async loadInstalledModules(tenantId, options = {}) {
+    const tenantModuleRows = await modulesApi.listInstalledTenantModules(tenantId, options);
     const modules = tenantModuleRows.map(normalizeModule).filter(Boolean);
     const moduleById = new Map(modules.map((module) => [module.id, module]));
     const menuRows = await modulesApi.listMenusByModuleIds(modules.map((module) => module.id));

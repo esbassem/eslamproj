@@ -11,9 +11,11 @@ export function EmptyState({ icon: Icon, title, description, actionLabel, onActi
         <h3 className="text-xl font-bold text-slate-950">{title}</h3>
         <p className="max-w-md text-sm leading-6 text-muted-foreground">{description}</p>
       </div>
-      <Button variant="secondary" className="border-slate-200 bg-slate-50 shadow-none" onClick={onAction} disabled={actionDisabled}>
-        {actionLabel}
-      </Button>
+      {actionLabel ? (
+        <Button variant="secondary" className="border-slate-200 bg-slate-50 shadow-none" onClick={onAction} disabled={actionDisabled}>
+          {actionLabel}
+        </Button>
+      ) : null}
     </div>
   );
 

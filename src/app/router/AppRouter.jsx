@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ROUTES } from '@/core/config/routes.config';
-import { PublicOnlyRoute, ProtectedRoute, SessionGate } from '@/app/router/RouteGuards';
+import { AppAccessRoute, PublicOnlyRoute, ProtectedRoute, SessionGate } from '@/app/router/RouteGuards';
 import { modeRoutes } from '@/routes';
 import { CheckingSessionPage } from '@/pages/system/CheckingSessionPage';
 import { RouteLoadingFallback } from '@/pages/system/RouteLoadingFallback';
@@ -65,22 +65,22 @@ export function AppRouter() {
               <Route path="/app" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/dashboard" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/team" element={<Navigate to={ROUTES.settingsTeam} replace />} />
-              <Route path="/app/showroom_point" element={<ShowroomWorkspaceLayout />}>
+              <Route path="/app/showroom_point" element={<AppAccessRoute appCode="showroom_point"><ShowroomWorkspaceLayout /></AppAccessRoute>}>
                 <Route index element={<ShowroomSellPage />} />
                 <Route path="new" element={<ShowroomSellPage />} />
                 <Route path="customers" element={<ShowroomSellPage />} />
                 <Route path="settings" element={<Navigate to="/app/showroom_point" replace />} />
                 <Route path="sale/:saleId" element={<ShowroomSaleDetailsPage />} />
               </Route>
-              <Route path="/app/moto_customer_care" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
-              <Route path="/app/moto-customer-care" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
-              <Route path="/app/moto_customer_care/dashboard" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
-              <Route path="/app/moto-customer-care/dashboard" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
-              <Route path="/app/moto_customer_care/sales" element={<Navigate to="/app/moto-customer-care/sales" replace />} />
-              <Route path="/app/moto_customer_care/sales/:saleId" element={<MotoCustomerCareWorkspaceLayout />}>
+              <Route path="/app/moto_customer_care" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
+              <Route path="/app/moto-customer-care" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
+              <Route path="/app/moto_customer_care/dashboard" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
+              <Route path="/app/moto-customer-care/dashboard" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
+              <Route path="/app/moto_customer_care/sales" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
+              <Route path="/app/moto_customer_care/sales/:saleId" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
                 <Route index element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
-              <Route path="/app/moto-customer-care/sales" element={<MotoCustomerCareWorkspaceLayout />}>
+              <Route path="/app/moto-customer-care/sales" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
                 <Route index element={<MotoCustomerCareSalesFollowUpListPage />} />
                 <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
@@ -88,7 +88,7 @@ export function AppRouter() {
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />
               </Route>
-              <Route path="/apps/moto-customer-care/sales" element={<MotoCustomerCareWorkspaceLayout />}>
+              <Route path="/apps/moto-customer-care/sales" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
                 <Route index element={<MotoCustomerCareSalesFollowUpListPage />} />
                 <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
@@ -96,7 +96,7 @@ export function AppRouter() {
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />
               </Route>
-              <Route path="/app/pos/:posId/session/:sessionId/sell" element={<PosPage />} />
+              <Route path="/app/pos/:posId/session/:sessionId/sell" element={<AppAccessRoute appCode="pos"><PosPage /></AppAccessRoute>} />
               <Route path="/app/:appCode" element={<AppLayout />}>
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />

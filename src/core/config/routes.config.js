@@ -18,6 +18,7 @@ export const ROUTES = {
   contracts: '/app/contracts',
   settings: '/app/settings',
   settingsTeam: '/app/settings/team',
+  settingsPermissions: '/app/settings/permissions',
   paymentSettings: '/app/settings?section=accounting&tab=methods',
   team: '/app/settings/team',
 };

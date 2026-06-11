@@ -1,4 +1,4 @@
-import { Building2, Landmark, Store, Users2, WalletCards } from 'lucide-react';
+import { Building2, Landmark, ShieldCheck, Store, Users2, WalletCards } from 'lucide-react';
 import { cn } from '@/core/utils/cn';
 
 const sections = [
@@ -6,6 +6,7 @@ const sections = [
   { key: 'accounting', title: 'المحاسبة', icon: Landmark },
   { key: 'pos', title: 'نقاط البيع', icon: Store },
   { key: 'team', title: 'المستخدمون والفريق', icon: Users2 },
+  { key: 'permissions', title: 'الأدوار والصلاحيات', icon: ShieldCheck, ownerOnly: true },
 ];
 
 const accountingTabs = [
@@ -15,10 +16,18 @@ const accountingTabs = [
   { key: 'journal-methods', title: 'ربط طرق الدفع بالجورنالات', icon: Landmark },
 ];
 
-export function SettingsSectionNav({ activeSection = 'general', activeAccountingTab = 'methods', onSectionChange, onAccountingTabChange }) {
+export function SettingsSectionNav({
+  activeSection = 'general',
+  activeAccountingTab = 'methods',
+  canManagePermissions = false,
+  onSectionChange,
+  onAccountingTabChange,
+}) {
+  const visibleSections = sections.filter((section) => !section.ownerOnly || canManagePermissions);
+
   return (
     <nav className="space-y-2" dir="rtl">
-      {sections.map((section) => {
+      {visibleSections.map((section) => {
         const Icon = section.icon;
         const isActive = activeSection === section.key;
         const isDisabled = section.active === false;

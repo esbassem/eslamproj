@@ -6,8 +6,10 @@ import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
-  const { tenant, ready } = useWorkspace();
+  const { tenant, tenantUser, ready } = useWorkspace();
   const tenantId = tenant?.id ?? null;
+  const userRole = tenantUser?.role ?? null;
+  const canManageApps = userRole === 'owner';
   const [apps, setApps] = useState([]);
   const [activeApp, setActiveAppState] = useState(null);
   const [activeMenus, setActiveMenus] = useState([]);
@@ -21,7 +23,7 @@ export function AppProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
-    if (!ready) {
+    if (!ready || (tenantId && !userRole)) {
       setAppsStatus('idle');
       return undefined;
     }
@@ -31,7 +33,7 @@ export function AppProvider({ children }) {
     setAppsError(null);
 
     appsService
-      .getApps({ tenantId })
+      .getApps({ tenantId, userRole })
       .then((loadedApps) => {
         if (!mounted || appsLoadRunRef.current !== runId) {
           return;
@@ -53,7 +55,7 @@ export function AppProvider({ children }) {
     return () => {
       mounted = false;
     };
-  }, [ready, tenantId]);
+  }, [ready, tenantId, userRole]);
 
   const setActiveApp = useCallback(
     (appOrCode) => {
@@ -70,7 +72,7 @@ export function AppProvider({ children }) {
       setMenusError(null);
 
       try {
-        const menus = await appsService.getAppMenus(appCode, { tenantId });
+        const menus = await appsService.getAppMenus(appCode, { tenantId, userRole });
 
         if (menusLoadRunRef.current !== runId) {
           return menus;
@@ -90,13 +92,17 @@ export function AppProvider({ children }) {
         return [];
       }
     },
-    [tenantId],
+    [tenantId, userRole],
   );
 
   const uninstallApp = useCallback(
     async (app) => {
       if (!tenantId || !app?.id) {
         throw new Error('تعذر تحديد التطبيق المطلوب إزالته.');
+      }
+
+      if (!canManageApps) {
+        throw new Error('إدارة التطبيقات متاحة لمالك الشركة فقط.');
       }
 
       const result = await appsService.uninstallAppByModuleId({ tenantId, moduleId: app.id });
@@ -109,13 +115,17 @@ export function AppProvider({ children }) {
 
       return result;
     },
-    [activeApp?.id, tenantId],
+    [activeApp?.id, canManageApps, tenantId],
   );
 
   const installApp = useCallback(
     async (app) => {
       if (!tenantId || !app?.id) {
         throw new Error('تعذر تحديد التطبيق المطلوب تثبيته.');
+      }
+
+      if (!canManageApps) {
+        throw new Error('تثبيت التطبيقات متاح لمالك الشركة فقط.');
       }
 
       const result = await appsService.installAppByModuleId({ tenantId, moduleId: app.id });
@@ -131,7 +141,7 @@ export function AppProvider({ children }) {
 
       return result;
     },
-    [tenantId],
+    [canManageApps, tenantId],
   );
 
   const value = useMemo(

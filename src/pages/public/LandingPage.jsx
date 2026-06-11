@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useI18n } from '@/core/i18n/useI18n';
 import { Logo } from '@/core/ui/logo';
@@ -12,14 +12,42 @@ export function LandingPage() {
 
   const appIconColors = ['#2563EB', '#0EA5E9', '#14B8A6', '#22C55E', '#F59E0B', '#F97316', '#A855F7', '#EC4899'];
 
+  useEffect(() => {
+    const viewportMeta = document.querySelector('meta[name="viewport"]');
+    if (!viewportMeta) return undefined;
+
+    const previousViewport = viewportMeta.getAttribute('content') || 'width=device-width, initial-scale=1.0';
+    viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+
+    const preventPinchZoom = (event) => {
+      if (event.touches?.length > 1) {
+        event.preventDefault();
+      }
+    };
+    const preventGestureZoom = (event) => {
+      event.preventDefault();
+    };
+
+    document.addEventListener('touchmove', preventPinchZoom, { passive: false });
+    document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
+    document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
+
+    return () => {
+      viewportMeta.setAttribute('content', previousViewport);
+      document.removeEventListener('touchmove', preventPinchZoom);
+      document.removeEventListener('gesturestart', preventGestureZoom);
+      document.removeEventListener('gesturechange', preventGestureZoom);
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-[#36A1D2] lg:h-screen lg:overflow-hidden" dir="rtl">
-      <div className="mx-auto grid min-h-screen w-full max-w-[1440px] gap-8 px-5 py-6 sm:px-8 lg:h-full lg:min-h-0 lg:grid-cols-[1.12fr_0.88fr] lg:px-14 lg:py-6">
+    <div className="h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#36A1D2] lg:h-screen lg:max-h-none lg:overflow-hidden" dir="rtl">
+      <div className="mx-auto grid h-full max-h-full min-h-0 w-full max-w-[1440px] gap-8 overflow-hidden px-0 py-0 sm:px-8 sm:py-6 lg:grid-cols-[1.12fr_0.88fr] lg:px-14">
         <motion.section
           initial={{ opacity: 0, x: -18 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.32, ease: 'easeOut' }}
-          className="relative order-2 flex flex-col justify-between p-6 text-white sm:p-8 lg:order-1 lg:p-12"
+          className="relative order-2 hidden flex-col justify-between p-6 text-white sm:flex sm:p-8 lg:order-1 lg:p-12"
         >
           <div className="mx-auto w-full max-w-2xl space-y-8">
             <Logo />
@@ -54,10 +82,16 @@ export function LandingPage() {
           initial={{ opacity: 0, x: 18 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.32, ease: 'easeOut', delay: 0.05 }}
-          className="order-1 flex items-center justify-center lg:order-2"
+          className="order-1 flex h-full max-h-full min-h-0 items-stretch justify-center overflow-hidden sm:items-center lg:order-2"
         >
-          <div className="w-full max-w-[380px] rounded-[28px] border border-white/30 bg-[#f4f6f9] p-5 shadow-[0_28px_70px_rgba(8,35,58,0.35)] sm:p-6">
-            <div className="mb-5 h-1.5 w-20 rounded-full bg-slate-900/15" />
+          <div className="relative flex h-full max-h-full min-h-0 w-full max-w-none flex-col justify-center overflow-hidden border-0 bg-[#f4f6f9] p-6 shadow-none sm:h-auto sm:max-w-[380px] sm:rounded-[28px] sm:border sm:border-white/30 sm:p-6 sm:shadow-[0_28px_70px_rgba(8,35,58,0.35)]">
+            <div className="absolute inset-x-6 top-[calc(env(safe-area-inset-top)+12px)] sm:hidden">
+              <div className="flex items-center justify-start gap-4">
+                <Logo className="[&>div:first-child]:h-11 [&>div:first-child]:w-11 [&>div:first-child]:rounded-2xl" />
+              </div>
+            </div>
+
+            <div className="mb-5 hidden h-1.5 w-20 rounded-full bg-slate-900/15 sm:block" />
 
             <div className="space-y-2 text-right">
               <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">ابدأ الآن</h2>
@@ -105,4 +139,3 @@ export function LandingPage() {
     </div>
   );
 }
-

@@ -84,6 +84,39 @@ function normalizeApp(row) {
   };
 }
 
+function normalizeAllowedApp(row) {
+  if (!row) {
+    return null;
+  }
+
+  const app = normalizeApp({
+    id: row.module_id,
+    technical_name: row.technical_name,
+    name: row.name,
+    description: row.summary ?? '',
+    icon: row.icon ?? '',
+    icon_color: row.icon_color ?? null,
+    route_path: row.route_path ?? '',
+    sequence: row.sequence ?? 10,
+    active: true,
+    installable: true,
+    is_removable: false,
+  });
+
+  return app
+    ? {
+        ...app,
+        tenantModuleId: row.tenant_module_id ?? null,
+        tenantState: row.state ?? 'installed',
+        isInstalled: (row.state ?? 'installed') === 'installed',
+      }
+    : null;
+}
+
+function isOwnerRole(role) {
+  return role === 'owner';
+}
+
 function normalizeCatalogApp(module, tenantModule = null) {
   const app = normalizeApp(module);
 
@@ -240,9 +273,64 @@ async function getInstalledApplicationRows(tenantId) {
   return (data ?? []).filter((row) => row.module?.application !== false && row.module?.technical !== true);
 }
 
+async function getAllowedInstalledApplicationRows(tenantId) {
+  if (!tenantId) {
+    return [];
+  }
+
+  const client = requireSupabase();
+  const { data: allowedApps, error: allowedAppsError } = await client.rpc('get_allowed_apps');
+
+  if (allowedAppsError) {
+    throw allowedAppsError;
+  }
+
+  const allowedAppByModuleId = new Map();
+
+  (allowedApps ?? []).forEach((row) => {
+    if (row?.module_id && !allowedAppByModuleId.has(row.module_id)) {
+      allowedAppByModuleId.set(row.module_id, row);
+    }
+  });
+
+  const moduleIds = Array.from(allowedAppByModuleId.keys());
+
+  if (!moduleIds.length) {
+    return [];
+  }
+
+  const { data: tenantModules, error: tenantModulesError } = await client
+    .from('tenant_modules')
+    .select('id, module_id, state')
+    .eq('tenant_id', tenantId)
+    .eq('state', 'installed')
+    .in('module_id', moduleIds);
+
+  if (tenantModulesError) {
+    throw tenantModulesError;
+  }
+
+  return (tenantModules ?? [])
+    .map((tenantModule) => {
+      const allowedApp = allowedAppByModuleId.get(tenantModule.module_id);
+
+      return allowedApp
+        ? {
+            ...allowedApp,
+            tenant_module_id: tenantModule.id,
+            state: tenantModule.state,
+          }
+        : null;
+    })
+    .filter(Boolean);
+}
+
 export async function getApps(options = {}) {
-  const rows = await getInstalledApplicationRows(options.tenantId);
-  const apps = rows.map(normalizeApp).filter((app) => app && isStandaloneApp(app)).sort(compareBySortOrder);
+  const rows = isOwnerRole(options.userRole)
+    ? await getInstalledApplicationRows(options.tenantId)
+    : await getAllowedInstalledApplicationRows(options.tenantId);
+  const normalize = isOwnerRole(options.userRole) ? normalizeApp : normalizeAllowedApp;
+  const apps = rows.map(normalize).filter((app) => app && isStandaloneApp(app)).sort(compareBySortOrder);
   return apps;
 }
 

@@ -95,12 +95,17 @@ export function WorkspaceProvider({ children }) {
       return undefined;
     }
 
+    if (!tenantUser?.role) {
+      setModulesStatus('idle');
+      return undefined;
+    }
+
     const runId = ++modulesLoadRunRef.current;
     setModulesStatus('loading');
     setModulesError(null);
 
     modulesService
-      .loadInstalledModules(tenant.id)
+      .loadInstalledModules(tenant.id, { userRole: tenantUser?.role })
       .then((result) => {
         if (!mounted || modulesLoadRunRef.current !== runId) {
           return;
@@ -124,7 +129,7 @@ export function WorkspaceProvider({ children }) {
     return () => {
       mounted = false;
     };
-  }, [tenant?.id]);
+  }, [tenant?.id, tenantUser?.role]);
 
   const value = useMemo(
     () => ({

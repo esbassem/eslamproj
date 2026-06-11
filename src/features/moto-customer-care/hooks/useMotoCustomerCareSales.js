@@ -25,7 +25,7 @@ function matchesSearch(sale, query) {
   return haystack.includes(query);
 }
 
-export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 150 } = {}) {
+export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 150, enabled = true } = {}) {
   const { tenant } = useWorkspace();
   const [sales, setSales] = useState([]);
   const [paperworkRequests, setPaperworkRequests] = useState([]);
@@ -42,6 +42,12 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
       setPaperworkRequests([]);
       setPaperworkDocuments([]);
       setPaperworkDocumentMoves([]);
+      setLoadStatus('idle');
+      setError('');
+      return () => {};
+    }
+
+    if (!enabled) {
       setLoadStatus('idle');
       setError('');
       return () => {};
@@ -82,7 +88,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     return () => {
       active = false;
     };
-  }, [limit, status, tenant?.id]);
+  }, [enabled, limit, status, tenant?.id]);
 
   useEffect(() => loadSales(), [loadSales]);
 

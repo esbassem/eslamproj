@@ -54,5 +54,6 @@ export const MENU_COMPONENTS = {
   '/app/contracts': lazyNamed(() => import('@/features/contracts/pages/ContractsPage'), 'ContractsPage'),
   '/app/settings': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
   '/app/settings/team': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
+  '/app/settings/permissions': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
   '/app/team': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
 };
