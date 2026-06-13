@@ -612,7 +612,7 @@ async function loadVariantAttributesMap(client, tenantId, lines) {
   }, new Map());
 }
 
-async function loadTrackingDetailsMap(client, tenantId, lines) {
+async function loadTrackingDetailsMap(client, tenantId, lines, { includeAttachments = true } = {}) {
   const trackingUnitIds = Array.from(new Set(
     (Array.isArray(lines) ? lines : [])
       .map((line) => line?.tracking_unit_id)
@@ -622,6 +622,17 @@ async function loadTrackingDetailsMap(client, tenantId, lines) {
   if (!trackingUnitIds.length) {
     return new Map();
   }
+
+  const attachmentQuery = includeAttachments
+    ? client
+      .from('ir_attachments')
+      .select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('related_model', 'stock_tracking_units')
+      .in('related_id', trackingUnitIds)
+      .in('document_type', ['chassis_photo', 'engine_photo'])
+      .eq('is_active', true)
+    : Promise.resolve({ data: [], error: null });
 
   const [
     { data: units, error: unitsError },
@@ -645,14 +656,7 @@ async function loadTrackingDetailsMap(client, tenantId, lines) {
       .eq('tenant_id', tenantId)
       .eq('is_current', true)
       .in('tracking_unit_id', trackingUnitIds),
-    client
-      .from('ir_attachments')
-      .select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, created_at')
-      .eq('tenant_id', tenantId)
-      .eq('related_model', 'stock_tracking_units')
-      .in('related_id', trackingUnitIds)
-      .in('document_type', ['chassis_photo', 'engine_photo'])
-      .eq('is_active', true),
+    attachmentQuery,
   ]);
 
   if (unitsError) {
@@ -827,7 +831,7 @@ async function loadCustomersMap(client, tenantId, sales) {
   }, new Map());
 }
 
-async function loadSaleLinesMap(client, tenantId, sales) {
+async function loadSaleLinesMap(client, tenantId, sales, { includeAttachments = true } = {}) {
   const saleIds = Array.from(new Set(
     (Array.isArray(sales) ? sales : [sales])
       .map((sale) => sale?.id)
@@ -854,7 +858,7 @@ async function loadSaleLinesMap(client, tenantId, sales) {
     loadProductsMap(client, tenantId, lines),
     loadLineAttributesMap(client, tenantId, lines),
     loadVariantAttributesMap(client, tenantId, lines),
-    loadTrackingDetailsMap(client, tenantId, lines),
+    loadTrackingDetailsMap(client, tenantId, lines, { includeAttachments }),
     loadTrackingUnitAttributesMap(client, tenantId, lines),
   ]);
 
@@ -1328,7 +1332,7 @@ function formatPaperAttributesTextForService(attributes) {
 }
 
 export const motoCustomerCareService = {
-  async listSales({ tenantId, status, limit = 150 } = {}) {
+  async listSales({ tenantId, status, limit = 150, includeAttachments = true } = {}) {
     requireTenantId(tenantId);
     const client = requireSupabase();
 
@@ -1353,7 +1357,7 @@ export const motoCustomerCareService = {
     const sales = data || [];
     const [customerMap, linesMap, paymentsMap] = await Promise.all([
       loadCustomersMap(client, tenantId, sales),
-      loadSaleLinesMap(client, tenantId, sales),
+      loadSaleLinesMap(client, tenantId, sales, { includeAttachments }),
       loadSalePaymentsMap(client, tenantId, sales),
     ]);
 
@@ -1991,7 +1995,7 @@ export const motoCustomerCareService = {
       throw new Error('لا توجد مرحلة أوراق نشطة لإنشاء الطلب.');
     }
 
-    const { error } = await client
+    const { data: request, error } = await client
       .from('paperwork_requests')
       .insert({
         tenant_id: tenantId,
@@ -2007,13 +2011,45 @@ export const motoCustomerCareService = {
         priority: priority || 'normal',
         notes: String(notes || '').trim() || null,
         created_by: currentTenantUserId,
-      });
+      })
+      .select('id')
+      .single();
 
     if (error) {
       throw error;
     }
 
-    return true;
+    return request?.id || true;
+  },
+
+  async createVaultPaperworkRequest({ tenantId, item, confirmationNote = '' } = {}) {
+    requireTenantId(tenantId);
+    if (!item?.saleId) {
+      throw new Error('تعذر تحديد الفاتورة المرتبطة بحالة الأوراق.');
+    }
+    if (!item?.id) {
+      throw new Error('تعذر تحديد سطر المنتج المطلوب.');
+    }
+    if (!item?.trackingUnitId) {
+      throw new Error('تعذر تحديد القطعة الفريدة المرتبطة بالورق.');
+    }
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('link_vault_paperwork_request', {
+      p_tenant_id: tenantId,
+      p_branch_id: item.branchId || null,
+      p_sale_id: item.saleId,
+      p_sale_line_id: item.id,
+      p_tracking_unit_id: item.trackingUnitId,
+      p_customer_id: item.customerId || null,
+      p_confirmation_note: String(confirmationNote || '').trim(),
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return Array.isArray(data) ? data[0] : data;
   },
 
   async createLegacyDeliveredPaperworkRequest({ tenantId, item, confirmationNote = '' } = {}) {

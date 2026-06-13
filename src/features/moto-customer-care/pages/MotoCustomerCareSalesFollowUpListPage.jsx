@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
-import { ArrowRight, Camera, Check, ChevronLeft, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, Search, UploadCloud, UserPlus } from 'lucide-react';
+import { ArrowRight, Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, Search, UploadCloud, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
@@ -181,117 +181,105 @@ function isCurrentPaperworkDocument(document) {
   return !inactiveDocumentStatuses.has(document?.status);
 }
 
-function getSectionReports(sectionId, sales, summary, paperworkDocuments = []) {
-  if (sectionId === 'papers') {
-    const currentDocuments = paperworkDocuments.filter(isCurrentPaperworkDocument);
-
-    return [
-      { label: 'كل الأوراق', value: paperworkDocuments.length },
-      { label: 'الموجودة حاليا', value: currentDocuments.length },
-    ];
-  }
-
-  return [
-    { label: 'عدد المبيعات', value: summary.count },
-    { label: 'إجمالي البيع', value: formatMoney(summary.totalAmount) },
-  ];
-}
-
-function buildSectionSummary(sales) {
-  return sales.reduce(
-    (accumulator, sale) => {
-      accumulator.count += 1;
-      accumulator.totalAmount += sale.totalAmount;
-      accumulator.paidAmount += sale.paidAmount;
-      accumulator.remainingAmount += sale.remainingAmount;
-
-      if (sale.remainingAmount > 0) {
-        accumulator.openCount += 1;
-      }
-
-      if (sale.status === 'completed' || sale.status === 'confirmed') {
-        accumulator.confirmedCount += 1;
-      }
-
-      return accumulator;
-    },
-    {
-      count: 0,
-      totalAmount: 0,
-      paidAmount: 0,
-      remainingAmount: 0,
-      openCount: 0,
-      confirmedCount: 0,
-    },
-  );
-}
-
-function ReportNumber({ label, value, active = false }) {
-  return (
-    <div className={`min-w-0 rounded-full bg-slate-50 px-3 py-2 text-center text-slate-950 ring-1 ring-slate-200/80 ${
-      active
-        ? 'lg:bg-slate-100 lg:text-slate-950 lg:ring-slate-200/80'
-        : 'lg:bg-white/[0.10] lg:text-white lg:ring-white/10'
-    }`}>
-      <p className={`truncate text-[10px] font-black text-slate-500 ${active ? 'lg:text-slate-500' : 'lg:text-blue-50/60'}`}>{label}</p>
-      <p className={`mt-0.5 truncate font-mono text-xs font-black text-slate-950 ${active ? 'lg:text-slate-950' : 'lg:text-white/90'}`} dir="ltr">{value}</p>
-    </div>
-  );
-}
-
 const followUpSections = [
   { id: 'sales', label: 'المبيعات', description: 'متابعة عمليات البيع بعد التسليم.' },
   { id: 'papers', label: 'الأوراق', description: 'إدارة الجوابات والحركات والتسليم.' },
 ];
 
-function FollowUpSectionsPanel({ activeSection, onSectionChange, sales, paperworkDocuments = [], isMobileContentOpen }) {
-  const sectionStats = useMemo(() => {
-    return {
-      sales: sales,
-      papers: paperworkDocuments,
-    };
-  }, [paperworkDocuments, sales]);
+function buildPaperworkSidebarReports(sales = [], paperworkRequests = []) {
+  return (Array.isArray(sales) ? sales : []).reduce(
+    (accumulator, sale) => {
+      const items = Array.isArray(sale?.items) ? sale.items : [];
+
+      items.forEach((item) => {
+        const request = getPaperworkRequestForItem(item, paperworkRequests);
+
+        if (!request) {
+          accumulator.missing += 1;
+          return;
+        }
+
+        if (request.status === 'done') {
+          accumulator.delivered += 1;
+          return;
+        }
+
+        if (isVaultPaperworkRequest(request)) {
+          accumulator.vault += 1;
+        }
+      });
+
+      return accumulator;
+    },
+    { missing: 0, vault: 0, delivered: 0 },
+  );
+}
+
+function FollowUpSectionsPanel({ activeSection, onSectionChange, sales = [], paperworkRequests = [], isMobileContentOpen }) {
+  const paperworkReports = useMemo(
+    () => buildPaperworkSidebarReports(sales, paperworkRequests),
+    [paperworkRequests, sales],
+  );
+  const reportItems = [
+    { id: 'missing', label: 'لم يتم تحديد حالة الورق', value: paperworkReports.missing, color: '#ef4444' },
+    { id: 'vault', label: 'أوراق موجودة', value: paperworkReports.vault, color: '#38bdf8' },
+    { id: 'delivered', label: 'تم تسليم الأوراق للعميل', value: paperworkReports.delivered, color: '#10b981' },
+  ];
 
   return (
-    <aside className={`${isMobileContentOpen ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col gap-3 overflow-y-auto px-1 py-1 sm:px-3 lg:pr-6`}>
-      {followUpSections.map((section) => {
-        const sectionRows = sectionStats[section.id] || [];
-        const sectionSales = section.id === 'papers' ? sales : sectionRows;
-        const sectionSummary = buildSectionSummary(sectionSales);
-        const reports = getSectionReports(section.id, sectionSales, sectionSummary, paperworkDocuments);
-        const isActive = activeSection === section.id;
-
-        return (
-          <button
-            key={section.id}
-            type="button"
-            onClick={() => onSectionChange(section.id)}
-            className={`group relative w-full overflow-hidden rounded-[1.65rem] border border-white/90 bg-white px-4 py-4 text-right text-slate-950 shadow-[0_16px_38px_rgba(15,23,42,0.10)] transition duration-200 active:scale-[0.985] lg:rounded-2xl lg:border lg:px-4 lg:py-4 lg:active:scale-100 ${
-              isActive
-                ? 'lg:border-white lg:bg-white lg:text-slate-950 lg:shadow-[0_18px_40px_rgba(15,23,42,0.18)]'
-                : 'lg:border-white/15 lg:bg-white/[0.10] lg:text-white/85 lg:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] lg:hover:border-white/30 lg:hover:bg-white/[0.16]'
-            }`}
-          >
-            <div className={`absolute inset-y-5 right-0 hidden w-1.5 rounded-l-full transition lg:block ${
-              isActive ? 'bg-[#2189ff]' : 'bg-transparent'
-            }`} aria-hidden="true" />
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className={`text-lg font-black leading-6 text-slate-950 ${isActive ? 'lg:text-slate-950' : 'lg:text-blue-50'}`}>{section.label}</p>
-                <p className={`mt-1 text-xs font-bold leading-5 text-slate-500 ${isActive ? 'lg:text-slate-500' : 'lg:text-blue-50/65'}`}>{section.description}</p>
-              </div>
-              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition group-active:bg-slate-200 lg:hidden">
-                <ChevronLeft className="h-5 w-5" />
+    <aside className={`${isMobileContentOpen ? 'hidden lg:flex' : 'flex'} mt-5 min-h-0 flex-col gap-0 overflow-y-auto px-0 py-1 sm:mt-6`}>
+      <div className="grid grid-cols-[max-content_max-content] gap-1.5 pr-3 sm:pr-4">
+        {reportItems.map((report) => {
+          return (
+            <button
+              type="button"
+              key={report.id}
+              className="group inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-white/20 bg-white/[0.12] px-2 py-1 text-right text-white shadow-[0_8px_18px_rgba(15,23,42,0.08)] backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/34 hover:bg-white/[0.18] hover:shadow-[0_12px_24px_rgba(15,23,42,0.11)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+              aria-label={`${report.label}: ${report.value}`}
+            >
+              <span
+                className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md px-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
+                style={{ backgroundColor: report.color }}
+              >
+                <span className="font-mono text-[9px] font-black leading-none" dir="ltr">{report.value}</span>
               </span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {reports.slice(0, 2).map((report) => (
-                <ReportNumber key={report.label} label={report.label} value={report.value} active={isActive} />
-              ))}
-            </div>
-          </button>
-        );
-      })}
+              <span className="min-w-0 text-[10px] font-black leading-3 text-white sm:text-[11px]">
+                {report.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-8">
+        <div className="mb-3 inline-flex rounded-xl border border-white/16 bg-white/[0.10] px-4 py-2 text-xs font-black text-white shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-md">
+          أقسام المتابعة
+        </div>
+        <div className="grid gap-2.5">
+        {followUpSections.map((section) => {
+          const isActive = activeSection === section.id;
+
+          return (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => onSectionChange(section.id)}
+              className={`group relative flex w-full items-center justify-between gap-3 rounded-2xl border px-3.5 py-3 text-right shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur-md transition hover:-translate-y-0.5 active:scale-[0.99] ${
+                isActive
+                  ? 'border-white/40 bg-white/[0.20] text-white'
+                  : 'border-white/12 bg-white/[0.08] text-blue-50 hover:border-white/25 hover:bg-white/[0.14]'
+              }`}
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className={`h-2 w-2 flex-shrink-0 rounded-full ${isActive ? 'bg-white' : 'bg-blue-100/55'}`} aria-hidden="true" />
+                <span className="truncate text-sm font-black">{section.label}</span>
+              </div>
+              <span className={`h-px w-8 flex-shrink-0 ${isActive ? 'bg-white/80' : 'bg-white/20'}`} aria-hidden="true" />
+            </button>
+          );
+        })}
+        </div>
+      </div>
     </aside>
   );
 }
@@ -310,10 +298,42 @@ function getPaperworkRequestForItem(item, paperworkRequests) {
   }) || null;
 }
 
+function getCurrentPaperworkDocumentForItem(item, paperworkDocuments) {
+  if (!item?.trackingUnitId) {
+    return null;
+  }
+
+  return (Array.isArray(paperworkDocuments) ? paperworkDocuments : []).find((document) => {
+    if (!isCurrentPaperworkDocument(document)) {
+      return false;
+    }
+
+    return document.trackingUnitId === item.trackingUnitId;
+  }) || null;
+}
+
+function getPaperworkDocumentLastInDate(document) {
+  const moves = Array.isArray(document?.moves) ? document.moves : [];
+  const lastInMove = moves.find((move) => move.moveDirection === 'in');
+
+  return lastInMove?.movedAt || document?.createdAt || '';
+}
+
 function getPaperworkStatusLabel(request) {
   if (!request) return 'لم يتم تحديد حالة الأوراق';
   if (request.status === 'done') return 'تم تسليم الأوراق';
+  if (isVaultPaperworkRequest(request)) {
+    return 'الورق موجود بالخزنة';
+  }
   return 'تم تحديد حالة الأوراق';
+}
+
+function isVaultPaperworkRequest(request) {
+  return Boolean(
+    request?.stage?.code === 'received_from_processor'
+      || String(request?.notes || '').includes('الورق موجود بالفعل في الخزنة')
+      || (Array.isArray(request?.events) && request.events.some((event) => String(event.notes || '').includes('الورق موجود بالفعل في الخزنة'))),
+  );
 }
 
 function getPaperworkEventLabel(event) {
@@ -359,7 +379,14 @@ function TrackingIdentifiersInline({ item }) {
   );
 }
 
-function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUnit, onCreatePaperworkRequest, onOpenPaperworkRequest }) {
+function SaleProductsCards({
+  items,
+  paperworkRequests = [],
+  paperworkDocuments = [],
+  onRegisterTrackingUnit,
+  onCreatePaperworkRequest,
+  onOpenPaperworkRequest,
+}) {
   const saleItems = Array.isArray(items) ? items : [];
 
   if (!saleItems.length) {
@@ -380,6 +407,11 @@ function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUn
         const licenseSummary = getPaperLicenseSummary(item.license);
         const paperworkRequest = getPaperworkRequestForItem(item, paperworkRequests);
         const missingPaperworkRequest = !paperworkRequest;
+        const currentPaperworkDocument = getCurrentPaperworkDocumentForItem(item, paperworkDocuments);
+        const vaultPaperworkRequest = isVaultPaperworkRequest(paperworkRequest);
+        const currentPaperworkDocumentName = currentPaperworkDocument?.documentTitle
+          || currentPaperworkDocument?.displayTitle
+          || '';
         const deliveryEventCreator = paperworkRequest?.deliveryEventCreatedByName || '';
         const deliveryEventDate = paperworkRequest?.deliveryEventCreatedAt ? formatDate(paperworkRequest.deliveryEventCreatedAt) : '';
         const deliveryEventNote = typeof paperworkRequest?.deliveryEventNotes === 'string'
@@ -457,28 +489,52 @@ function SaleProductsCards({ items, paperworkRequests = [], onRegisterTrackingUn
 
               <div className="flex w-44 flex-shrink-0 items-center justify-center px-3 py-2 text-center">
                 {missingPaperworkRequest ? (
-                  <button
-                    type="button"
-                    onClick={() => onCreatePaperworkRequest?.(item)}
-                    className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-black text-red-600 transition hover:bg-red-50 hover:text-red-700"
-                    title="تحديد حالة الأوراق لهذا المنتج"
-                  >
-                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-red-500" aria-hidden="true" />
-                    <span className="truncate">لم يتم تحديد حالة الأوراق</span>
-                  </button>
+                  <div className="grid min-w-0 justify-items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onCreatePaperworkRequest?.(item)}
+                      className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-black text-red-600 transition hover:bg-red-50 hover:text-red-700"
+                      title="تحديد حالة الأوراق لهذا المنتج"
+                    >
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+                      <span className="truncate">لم يتم تحديد حالة الأوراق</span>
+                    </button>
+                    {currentPaperworkDocument ? (
+                      <span
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-500 ring-1 ring-slate-200"
+                        title={currentPaperworkDocument.displayTitle || currentPaperworkDocument.documentTitle || 'ورق موجود حاليا'}
+                      >
+                        <FileText className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">تم العثور على ورق لهذه القطعة في الخزنة</span>
+                      </span>
+                    ) : null}
+                  </div>
                 ) : (
                   <button
                     type="button"
                     onClick={() => onOpenPaperworkRequest?.(paperworkRequest)}
-                    className="grid min-w-0 justify-items-center gap-1 rounded-xl px-2 py-1 text-center transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    className={`grid min-w-0 justify-items-center gap-1 rounded-xl px-2 py-1 text-center transition focus:outline-none focus:ring-2 ${
+                      vaultPaperworkRequest
+                        ? 'hover:bg-sky-50 focus:ring-sky-200'
+                        : 'hover:bg-emerald-50 focus:ring-emerald-200'
+                    }`}
                     title={deliveryEventTitle || 'عرض طلب الأوراق والأحداث'}
                   >
                     <span
-                      className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-black text-emerald-700"
+                      className={`inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-black ${
+                        vaultPaperworkRequest ? 'text-sky-700' : 'text-emerald-700'
+                      }`}
                     >
-                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                      <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+                        vaultPaperworkRequest ? 'bg-sky-500' : 'bg-emerald-500'
+                      }`} aria-hidden="true" />
                       <span className="truncate">{getPaperworkStatusLabel(paperworkRequest)}</span>
                     </span>
+                    {vaultPaperworkRequest && currentPaperworkDocumentName ? (
+                      <span className="max-w-full truncate text-[10px] font-bold text-slate-500" title={currentPaperworkDocumentName}>
+                        باسم: {currentPaperworkDocumentName}
+                      </span>
+                    ) : null}
                     {deliveryEventCreator ? (
                       <span className="max-w-full truncate text-[10px] font-black text-slate-500" title={deliveryEventTitle}>
                         بواسطة: {deliveryEventCreator}
@@ -1649,26 +1705,37 @@ function TrackingUnitPickerSheet({ item, open, onOpenChange, tenantId, onAttach,
 
 const PAPERWORK_STATUS_OPTIONS = [
   { id: 'delivered', label: 'تم تسليم الأوراق للعميل بالفعل', enabled: true },
-  { id: 'vault', label: 'الأوراق موجودة في الخزنة', enabled: false },
+  { id: 'vault', label: 'الأوراق موجودة في الخزنة', enabled: true },
   { id: 'in_progress', label: 'الأوراق تحت التنفيذ', enabled: false },
   { id: 'not_requested_now', label: 'العميل لم يطلب الأوراق الآن', enabled: false },
   { id: 'unknown', label: 'لا توجد معلومات كافية', enabled: false },
 ];
 
-function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, onSaved }) {
+function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDocuments = [], onSaved }) {
   const [step, setStep] = useState('status');
-  const [selectedStatus, setSelectedStatus] = useState('delivered');
+  const [selectedStatus, setSelectedStatus] = useState('');
   const [confirmationNote, setConfirmationNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const itemName = item?.displayName || item?.name || item?.description || 'منتج غير محدد';
   const customerName = item?.customerName || 'عميل غير محدد';
   const customerPhone = item?.customerPhone || '';
+  const currentPaperworkDocument = useMemo(
+    () => getCurrentPaperworkDocumentForItem(item, paperworkDocuments),
+    [item, paperworkDocuments],
+  );
+  const currentPaperworkDocumentTitle = currentPaperworkDocument?.documentTitle
+    || currentPaperworkDocument?.displayTitle
+    || 'ورقة بدون عنوان';
+  const currentPaperworkDocumentLastInDate = getPaperworkDocumentLastInDate(currentPaperworkDocument);
+  const confirmationPlaceholder = selectedStatus === 'vault'
+    ? 'مثال: تم العثور على الورق في الخزنة وسيتم ربطه بحالة الأوراق لهذا المنتج.'
+    : 'مثال: تم التأكيد هاتفيًا مع العميل أنه استلم الأوراق.';
 
   useEffect(() => {
     if (!open) return;
     setStep('status');
-    setSelectedStatus('delivered');
+    setSelectedStatus('');
     setConfirmationNote('');
     setError('');
     setIsSaving(false);
@@ -1676,17 +1743,29 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, onSaved }) {
 
   const save = async () => {
     if (!item) return;
-    if (selectedStatus !== 'delivered') return;
+    if (selectedStatus === 'vault' && !currentPaperworkDocument?.id) {
+      setError('لا توجد ورقة حالية مرتبطة بنفس القطعة الفريدة في الخزنة.');
+      return;
+    }
+    if (!['delivered', 'vault'].includes(selectedStatus)) return;
 
     setIsSaving(true);
     setError('');
 
     try {
-      await motoCustomerCareService.createLegacyDeliveredPaperworkRequest({
-        tenantId,
-        item,
-        confirmationNote,
-      });
+      if (selectedStatus === 'vault') {
+        await motoCustomerCareService.createVaultPaperworkRequest({
+          tenantId,
+          item,
+          confirmationNote,
+        });
+      } else {
+        await motoCustomerCareService.createLegacyDeliveredPaperworkRequest({
+          tenantId,
+          item,
+          confirmationNote,
+        });
+      }
       await onSaved?.();
       onOpenChange(false);
     } catch (saveError) {
@@ -1694,6 +1773,17 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, onSaved }) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const startVaultLink = () => {
+    if (!currentPaperworkDocument?.id) {
+      setError('لا يوجد ورق مسجل بالخزنة لهذا المنتج.');
+      return;
+    }
+
+    setError('');
+    setSelectedStatus('vault');
+    setStep('confirmation');
   };
 
   return (
@@ -1723,36 +1813,60 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, onSaved }) {
 
         <SheetBody className="space-y-5 px-5 py-5">
           {step === 'status' ? (
-            <div className="divide-y divide-slate-200 border-y border-slate-200">
-              {PAPERWORK_STATUS_OPTIONS.map((option) => {
-                const active = selectedStatus === option.id;
+            <div className="space-y-4">
+              {currentPaperworkDocument ? (
+                <div className="border-y border-slate-200 bg-slate-50 px-1 py-3">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <FileText className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-500" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-slate-700">تم العثور على ورق يمكن ربطه بحالة الأوراق.</p>
+                      <p className="mt-1 truncate text-xs font-bold text-slate-500" title={currentPaperworkDocumentTitle}>
+                        الاسم: <span className="font-black text-slate-700">{currentPaperworkDocumentTitle}</span>
+                      </p>
+                      <p className="mt-0.5 text-xs font-bold text-slate-500">
+                        آخر دخول: <span className="font-black text-slate-700">{formatDate(currentPaperworkDocumentLastInDate)}</span>
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={startVaultLink}
+                        disabled={isSaving}
+                        className="mt-3 h-8 rounded-full px-3 text-xs font-black"
+                      >
+                        ربط
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <div className="border-y border-slate-200">
+                {PAPERWORK_STATUS_OPTIONS.map((option) => {
+                  const optionEnabled = option.id === 'vault' ? Boolean(currentPaperworkDocument) : option.enabled;
 
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                  onClick={() => {
-                    if (option.enabled) {
-                      setSelectedStatus(option.id);
-                      setError('');
-                      setStep('confirmation');
-                    }
-                  }}
-                    disabled={!option.enabled || isSaving}
-                    className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-1 py-4 text-right transition ${
-                      active ? 'text-slate-950' : 'text-slate-700 hover:bg-slate-50'
-                    } disabled:cursor-not-allowed disabled:text-slate-400`}
-                  >
-                    <span className={`h-3 w-3 rounded-full border ${
-                      active ? 'border-slate-950 bg-slate-950' : 'border-slate-300 bg-white'
-                    }`} aria-hidden="true" />
-                    <span className="min-w-0 text-sm font-black">{option.label}</span>
-                    {!option.enabled ? (
-                      <span className="text-[10px] font-black text-slate-400">قريبًا</span>
-                    ) : null}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        if (optionEnabled) {
+                          setSelectedStatus(option.id);
+                          setError('');
+                          setStep('confirmation');
+                        }
+                      }}
+                      disabled={!optionEnabled || isSaving}
+                      className="grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-slate-200 bg-white px-1 py-4 text-right text-slate-700 transition last:border-b-0 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-white disabled:text-slate-400"
+                    >
+                      <span className="min-w-0 text-sm font-black">{option.label}</span>
+                      {!optionEnabled ? (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-400">
+                          {option.id === 'vault' ? 'لا يوجد ورق' : 'قريبًا'}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : (
             <label className="block space-y-2">
@@ -1765,7 +1879,7 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, onSaved }) {
                 }}
                 rows={6}
                 className="w-full resize-none border-0 border-y border-slate-200 bg-white px-0 py-3 text-sm font-bold text-slate-900 outline-none placeholder:text-slate-300 focus:border-slate-400"
-                placeholder="مثال: تم التأكيد هاتفيًا مع العميل أنه استلم الأوراق."
+                placeholder={confirmationPlaceholder}
               />
             </label>
           )}
@@ -1787,7 +1901,7 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, onSaved }) {
             <Button
               type="button"
               onClick={save}
-              disabled={isSaving || selectedStatus !== 'delivered'}
+              disabled={isSaving || !['delivered', 'vault'].includes(selectedStatus)}
               className="flex-1"
             >
               {isSaving ? 'جاري الحفظ...' : 'تأكيد'}
@@ -2567,7 +2681,14 @@ function InvoiceInfo({ sale, invoiceDate }) {
   );
 }
 
-function SalesFollowUpCard({ sale, paperworkRequests = [], onRegisterTrackingUnit, onCreatePaperworkRequest, onOpenPaperworkRequest }) {
+function SalesFollowUpCard({
+  sale,
+  paperworkRequests = [],
+  paperworkDocuments = [],
+  onRegisterTrackingUnit,
+  onCreatePaperworkRequest,
+  onOpenPaperworkRequest,
+}) {
   const customerPhone = sale.customer?.phone || sale.customer?.phone1 || sale.customer?.phone2 || '--';
   const customerAddress = sale.customer?.address || '--';
   const invoiceDate = formatDate(sale.saleDate || sale.createdAt);
@@ -2593,6 +2714,7 @@ function SalesFollowUpCard({ sale, paperworkRequests = [], onRegisterTrackingUni
             <SaleProductsCards
               items={sale.items}
               paperworkRequests={paperworkRequests}
+              paperworkDocuments={paperworkDocuments}
               onRegisterTrackingUnit={onRegisterTrackingUnit}
               onOpenPaperworkRequest={onOpenPaperworkRequest}
               onCreatePaperworkRequest={(item) => onCreatePaperworkRequest?.({
@@ -2644,7 +2766,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     isLoading,
     error,
     refresh,
-  } = useMotoCustomerCareSales({ limit: 250, enabled: !isMobileViewport || hasRequestedMobileData });
+    ensurePaperworkLoaded,
+  } = useMotoCustomerCareSales({ limit: 250, enabled: !isMobileViewport || hasRequestedMobileData, activeSection });
   const displayedSales = useMemo(() => {
     if (activeSection === 'papers') {
       return sales;
@@ -2682,6 +2805,21 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     return () => mediaQuery.removeEventListener('change', syncViewport);
   }, []);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const shouldHideAppBackButton = isMobileContentOpen || isMobileContentClosing;
+    document.documentElement.classList.toggle('customer-care-section-open', shouldHideAppBackButton);
+    document.body.classList.toggle('customer-care-section-open', shouldHideAppBackButton);
+
+    return () => {
+      document.documentElement.classList.remove('customer-care-section-open');
+      document.body.classList.remove('customer-care-section-open');
+    };
+  }, [isMobileContentClosing, isMobileContentOpen]);
+
   const handleSectionChange = (sectionId) => {
     if (mobileCloseTimeoutRef.current) {
       window.clearTimeout(mobileCloseTimeoutRef.current);
@@ -2692,6 +2830,10 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     setActiveSection(sectionId);
     setHasRequestedMobileData(true);
     setIsMobileContentOpen(true);
+  };
+  const handleOpenPaperworkStatus = (item) => {
+    setPaperworkRequestItem(item);
+    ensurePaperworkLoaded();
   };
   const handleCloseMobileSection = () => {
     if (prefersReducedMotion) {
@@ -2741,7 +2883,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     await refresh();
   };
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden" dir="rtl">
+    <section className="relative flex min-h-0 flex-1 flex-col items-stretch overflow-hidden text-white" dir="rtl">
       <style>{`
         @keyframes customerCareMobilePageIn {
           from { opacity: 0; transform: translateX(-100%); }
@@ -2759,32 +2901,74 @@ export function MotoCustomerCareSalesFollowUpListPage() {
             animation: customerCareMobilePageOut 0.16s cubic-bezier(0.7, 0, 0.84, 0) both;
           }
         }
+        .customer-care-operations-window {
+          font-size: 0.94rem;
+        }
+        .customer-care-operations-window .text-xs {
+          font-size: 0.72rem;
+          line-height: 1.1rem;
+        }
+        .customer-care-operations-window .text-sm {
+          font-size: 0.82rem;
+          line-height: 1.25rem;
+        }
+        .customer-care-operations-window .text-lg {
+          font-size: 1rem;
+          line-height: 1.5rem;
+        }
+        .customer-care-operations-window .text-xl {
+          font-size: 1.08rem;
+          line-height: 1.55rem;
+        }
+        .customer-care-operations-window .sm\\:text-2xl {
+          font-size: 1.2rem;
+          line-height: 1.7rem;
+        }
       `}</style>
-      <div className="relative grid min-h-0 flex-1 gap-6 overflow-hidden lg:grid-cols-[430px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
-          <FollowUpSectionsPanel
-            activeSection={activeSection}
-            onSectionChange={handleSectionChange}
-            sales={sales}
-            paperworkDocuments={paperworkDocuments}
-            isMobileContentOpen={isMobileContentOpen}
-          />
+      <div className="relative z-10 grid min-h-0 w-full max-w-none flex-1 gap-0 overflow-hidden lg:grid-cols-[minmax(18rem,0.72fr)_minmax(34rem,1.28fr)] lg:items-stretch lg:bg-[radial-gradient(circle_at_28%_18%,rgba(56,189,248,0.30)_0%,rgba(37,99,235,0.16)_32%,transparent_58%),linear-gradient(145deg,#164f86_0%,#123f72_52%,#0c2f59_100%)]">
+        <div className="customer-care-fade-up relative z-[45] min-h-0 overflow-hidden border-l border-white/12 bg-[radial-gradient(circle_at_45%_22%,rgba(56,189,248,0.30)_0%,rgba(37,99,235,0.18)_34%,transparent_58%),linear-gradient(145deg,#164f86_0%,#123f72_52%,#0c2f59_100%)] px-4 pt-16 text-right text-white shadow-[-18px_0_44px_rgba(15,23,42,0.16)] sm:px-10 sm:pt-20 lg:border-l-0 lg:bg-none lg:px-8 lg:pt-14 lg:shadow-none xl:px-10" style={{ animationDelay: '0s' }}>
+          <div className="pointer-events-none absolute inset-0 hidden sm:block">
+            <span className="absolute left-[10%] top-[11%] h-7 w-7 rounded-md bg-white/12 shadow-[92px_98px_0_rgba(255,255,255,0.08),148px_32px_0_rgba(125,211,252,0.12)]" />
+            <span className="absolute right-[13%] top-[34%] h-12 w-12 rounded-lg bg-white/10 shadow-[-38px_142px_0_rgba(125,211,252,0.10),92px_238px_0_rgba(255,255,255,0.08)]" />
+            <span className="absolute left-[27%] top-[22%] h-px w-36 rotate-12 bg-gradient-to-r from-transparent via-sky-200/30 to-transparent" />
+          </div>
+          <div className="pointer-events-none absolute inset-y-10 left-0 w-px bg-white/20" />
+          <div className="relative mt-4 lg:mt-5">
+            <p className="mb-2 text-xs font-semibold text-blue-100/80 sm:mb-3 sm:text-sm">Customer Care</p>
+            <h1 className="max-w-sm text-3xl font-bold leading-tight text-white sm:text-5xl">
+              خدمة عملاء الموتوسيكلات
+            </h1>
+            <p className="mt-3 max-w-md text-sm font-semibold leading-6 text-blue-50/74 sm:text-base sm:leading-7">
+              متابعة البيع، الأوراق، وحالة القطع بعد التسليم.
+            </p>
+          </div>
+          <div className="relative mt-6 min-h-0">
+            <FollowUpSectionsPanel
+              activeSection={activeSection}
+              onSectionChange={handleSectionChange}
+              sales={sales}
+              paperworkRequests={paperworkRequests}
+              isMobileContentOpen={isMobileContentOpen}
+            />
+          </div>
+        </div>
 
-          <section className={`${isMobileContentOpen || isMobileContentClosing ? `fixed inset-0 z-[70] flex h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none ${isMobileContentClosing ? 'customer-care-mobile-page-out' : 'customer-care-mobile-page-in'}` : 'hidden'} min-h-0 flex-col overflow-hidden bg-white lg:fixed lg:bottom-0 lg:left-4 lg:right-[500px] lg:top-5 lg:z-20 lg:flex lg:h-auto lg:w-auto lg:max-w-none lg:rounded-t-[28px] lg:border lg:border-b-0 lg:border-white/85 lg:shadow-[0_18px_48px_rgba(15,23,42,0.16)] lg:animate-none`}>
-            <div className="relative z-10 flex items-center justify-between gap-3 border-b border-slate-300 bg-slate-200 px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] text-slate-950 shadow-[0_10px_18px_-16px_rgba(15,23,42,0.75)] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-[-1px] after:h-px after:bg-white/80 sm:px-6 sm:py-6">
+          <section className={`${isMobileContentOpen || isMobileContentClosing ? `fixed inset-0 z-[120] flex h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none ${isMobileContentClosing ? 'customer-care-mobile-page-out' : 'customer-care-mobile-page-in'}` : 'hidden'} customer-care-operations-window customer-care-fade-up min-h-0 flex-col overflow-hidden bg-white lg:relative lg:z-[80] lg:m-0 lg:flex lg:h-full lg:w-full lg:max-w-none lg:justify-self-stretch lg:rounded-none lg:border-0 lg:border-r lg:border-white/70 lg:bg-white lg:shadow-[16px_0_34px_rgba(8,47,73,0.16),0_0_0_1px_rgba(255,255,255,0.36)] lg:before:pointer-events-none lg:before:absolute lg:before:inset-y-0 lg:before:right-0 lg:before:z-20 lg:before:w-px lg:before:bg-white/85 lg:animate-none`} style={{ animationDelay: '0.06s' }}>
+            <div className="relative z-10 flex min-h-[3.35rem] items-center justify-between gap-3 border-b border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-[-1px] after:h-px after:bg-white/80 sm:px-4 sm:py-3 lg:bg-gradient-to-b lg:from-slate-50 lg:to-slate-100">
               <div className="flex min-w-0 items-center gap-4">
                 <button
                   type="button"
                   onClick={handleCloseMobileSection}
-                  className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 lg:hidden"
+                  className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 lg:hidden"
                   aria-label="رجوع للأقسام"
                 >
                   <ArrowRight className="h-5 w-5" />
                 </button>
-                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 shadow-sm">
                   <FileText className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-xl font-black leading-7 text-slate-950 sm:text-2xl sm:leading-8">{activeSectionLabel}</h3>
+                  <h3 className="text-lg font-black leading-7 text-slate-950 sm:text-xl sm:leading-7">{activeSectionLabel}</h3>
                 </div>
               </div>
               {activeSection === 'papers' ? (
@@ -2837,8 +3021,9 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                     key={sale.id}
                     sale={sale}
                     paperworkRequests={paperworkRequests}
+                    paperworkDocuments={paperworkDocuments}
                     onRegisterTrackingUnit={setTrackingUnitPickerItem}
-                    onCreatePaperworkRequest={setPaperworkRequestItem}
+                    onCreatePaperworkRequest={handleOpenPaperworkStatus}
                     onOpenPaperworkRequest={setPaperworkRequestDetails}
                   />
                 ))
@@ -2910,6 +3095,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
           if (!open) setPaperworkRequestItem(null);
         }}
         tenantId={tenantId}
+        paperworkDocuments={paperworkDocuments}
         onSaved={refresh}
       />
       <PaperworkRequestDetailsSheet

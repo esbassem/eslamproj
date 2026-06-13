@@ -25,52 +25,61 @@ function matchesSearch(sale, query) {
   return haystack.includes(query);
 }
 
-export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 150, enabled = true } = {}) {
+export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 150, enabled = true, activeSection = 'sales' } = {}) {
   const { tenant } = useWorkspace();
   const [sales, setSales] = useState([]);
   const [paperworkRequests, setPaperworkRequests] = useState([]);
   const [paperworkDocuments, setPaperworkDocuments] = useState([]);
   const [paperworkDocumentMoves, setPaperworkDocumentMoves] = useState([]);
-  const [loadStatus, setLoadStatus] = useState('idle');
-  const [error, setError] = useState('');
+  const [sectionStatus, setSectionStatus] = useState({ sales: 'idle', papers: 'idle' });
+  const [sectionError, setSectionError] = useState({ sales: '', papers: '' });
+
+  const setLoadStatus = useCallback((sectionId, nextStatus) => {
+    setSectionStatus((current) => ({ ...current, [sectionId]: nextStatus }));
+  }, []);
+
+  const setLoadError = useCallback((sectionId, nextError) => {
+    setSectionError((current) => ({ ...current, [sectionId]: nextError }));
+  }, []);
+
+  const resetData = useCallback(() => {
+    setSales([]);
+    setPaperworkRequests([]);
+    setPaperworkDocuments([]);
+    setPaperworkDocumentMoves([]);
+    setSectionStatus({ sales: 'idle', papers: 'idle' });
+    setSectionError({ sales: '', papers: '' });
+  }, []);
 
   const loadSales = useCallback(() => {
     let active = true;
 
     if (!tenant?.id) {
-      setSales([]);
-      setPaperworkRequests([]);
-      setPaperworkDocuments([]);
-      setPaperworkDocumentMoves([]);
-      setLoadStatus('idle');
-      setError('');
+      resetData();
       return () => {};
     }
 
     if (!enabled) {
-      setLoadStatus('idle');
-      setError('');
+      setLoadStatus('sales', 'idle');
+      setLoadError('sales', '');
       return () => {};
     }
 
-    setLoadStatus('loading');
-    setError('');
+    setLoadStatus('sales', 'loading');
+    setLoadError('sales', '');
 
     Promise.all([
-      motoCustomerCareService.listSales({ tenantId: tenant.id, status, limit }),
+      motoCustomerCareService.listSales({ tenantId: tenant.id, status, limit, includeAttachments: false }),
       motoCustomerCareService.listPaperworkRequests({ tenantId: tenant.id, limit }),
-      motoCustomerCareService.listPaperworkDocuments({ tenantId: tenant.id, limit }),
     ])
-      .then(([rows, requests, paperworkInventory]) => {
+      .then(([rows, requests]) => {
         if (!active) {
           return;
         }
 
         setSales(rows);
         setPaperworkRequests(requests);
-        setPaperworkDocuments(paperworkInventory.documents || []);
-        setPaperworkDocumentMoves(paperworkInventory.moves || []);
-        setLoadStatus('ready');
+        setLoadStatus('sales', 'ready');
       })
       .catch((nextError) => {
         if (!active) {
@@ -79,18 +88,81 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
 
         setSales([]);
         setPaperworkRequests([]);
-        setPaperworkDocuments([]);
-        setPaperworkDocumentMoves([]);
-        setLoadStatus('error');
-        setError(nextError?.message || 'تعذر تحميل عمليات المتابعة.');
+        setLoadStatus('sales', 'error');
+        setLoadError('sales', nextError?.message || 'تعذر تحميل عمليات المبيعات.');
       });
 
     return () => {
       active = false;
     };
-  }, [enabled, limit, status, tenant?.id]);
+  }, [enabled, limit, resetData, setLoadError, setLoadStatus, status, tenant?.id]);
 
-  useEffect(() => loadSales(), [loadSales]);
+  const loadPaperwork = useCallback(() => {
+    let active = true;
+
+    if (!tenant?.id) {
+      resetData();
+      return () => {};
+    }
+
+    if (!enabled) {
+      setLoadStatus('papers', 'idle');
+      setLoadError('papers', '');
+      return () => {};
+    }
+
+    setLoadStatus('papers', 'loading');
+    setLoadError('papers', '');
+
+    motoCustomerCareService.listPaperworkDocuments({ tenantId: tenant.id, limit })
+      .then((paperworkInventory) => {
+        if (!active) {
+          return;
+        }
+
+        setPaperworkDocuments(paperworkInventory.documents || []);
+        setPaperworkDocumentMoves(paperworkInventory.moves || []);
+        setLoadStatus('papers', 'ready');
+      })
+      .catch((nextError) => {
+        if (!active) {
+          return;
+        }
+
+        setPaperworkDocuments([]);
+        setPaperworkDocumentMoves([]);
+        setLoadStatus('papers', 'error');
+        setLoadError('papers', nextError?.message || 'تعذر تحميل عمليات الأوراق.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [enabled, limit, resetData, setLoadError, setLoadStatus, tenant?.id]);
+
+  useEffect(() => {
+    if (activeSection === 'papers') {
+      return loadPaperwork();
+    }
+
+    return loadSales();
+  }, [activeSection, loadPaperwork, loadSales]);
+
+  const refresh = useCallback(() => {
+    if (activeSection === 'papers') {
+      return loadPaperwork();
+    }
+
+    return loadSales();
+  }, [activeSection, loadPaperwork, loadSales]);
+
+  const ensurePaperworkLoaded = useCallback(() => {
+    if (sectionStatus.papers === 'ready' || sectionStatus.papers === 'loading') {
+      return () => {};
+    }
+
+    return loadPaperwork();
+  }, [loadPaperwork, sectionStatus.papers]);
 
   const query = normalizeQuery(search);
 
@@ -133,6 +205,9 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     );
   }, [filteredSales]);
 
+  const currentSectionStatus = sectionStatus[activeSection] || 'idle';
+  const currentSectionError = sectionError[activeSection] || '';
+
   return {
     tenantId: tenant?.id ?? null,
     sales: filteredSales,
@@ -141,9 +216,11 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     paperworkDocuments,
     paperworkDocumentMoves,
     summary,
-    isLoading: loadStatus === 'loading',
-    error,
-    loadStatus,
-    refresh: loadSales,
+    isLoading: currentSectionStatus === 'loading',
+    error: currentSectionError,
+    loadStatus: currentSectionStatus,
+    sectionStatus,
+    refresh,
+    ensurePaperworkLoaded,
   };
 }
