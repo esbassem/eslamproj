@@ -22,6 +22,43 @@ function getLineConfiguredAttributes(item) {
     : [];
 }
 
+function getPaperworkGuardianshipLabel(note) {
+  const guardianshipCode = String(note || '').match(/حالة الوصاية:\s*([^\n]+)/)?.[1]?.trim();
+  return {
+    father_guardian: 'وصاية والده',
+    mother_guardian: 'وصاية والدته',
+  }[guardianshipCode] || guardianshipCode || '';
+}
+
+function getItemPaperworkInfo(item) {
+  const request = item?.paperworkRequest || item?.paperwork_request || null;
+
+  if (!request) {
+    return {
+      exists: false,
+      ownerName: 'غير محدد',
+      guardianshipLabel: '',
+      statusLabel: 'اضغط لتحديد طلب الورق',
+    };
+  }
+
+  const ownerStatus = request.documentOwnerStatus || request.document_owner_status || '';
+  const ownerName = request.documentOwnerName
+    || request.document_owner_name
+    || request.documentOwner?.name
+    || request.document_owner?.name
+    || (ownerStatus === 'later' ? 'سيتم تحديده لاحقًا' : 'غير محدد');
+
+  return {
+    exists: true,
+    ownerName,
+    guardianshipLabel: ownerStatus === 'later'
+      ? ''
+      : getPaperworkGuardianshipLabel(request.documentOwnerNote || request.document_owner_note),
+    statusLabel: ownerStatus === 'later' ? 'صاحب الورق سيتم تحديده لاحقًا' : 'احيانا قد يتاخر الورق حتي اسبوعان',
+  };
+}
+
 function SaleSheetSkeleton() {
   return (
     <div className="flex h-full items-center justify-center bg-slate-50 p-4" dir="rtl">
@@ -33,7 +70,16 @@ function SaleSheetSkeleton() {
   );
 }
 
-function SaleSheetContent({ sale, onContractOpen, onPayRemaining, onDelete, canDelete, isPayingRemaining, isDeleting }) {
+function SaleSheetContent({
+  sale,
+  onContractOpen,
+  onPayRemaining,
+  onDelete,
+  onPaperworkRequestOpen,
+  canDelete,
+  isPayingRemaining,
+  isDeleting,
+}) {
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
   const payments = Array.isArray(sale?.payments) ? sale.payments : [];
   const paymentsTotal = payments.length
@@ -126,6 +172,7 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, onDelete, canD
                     const itemQty = Number(item?.quantity ?? 1);
                     const itemTotal = Number(item?.total ?? item?.line_total ?? itemPrice * itemQty);
                     const configuredAttributes = getLineConfiguredAttributes(item);
+                    const paperworkInfo = getItemPaperworkInfo(item);
 
                     return (
                       <div key={item?.lineId || item?.lineUuid || item?.id || index} className="flex items-start justify-between gap-3 py-2.5">
@@ -149,8 +196,25 @@ function SaleSheetContent({ sale, onContractOpen, onPayRemaining, onDelete, canD
                               {configuredAttributes.map((attribute) => `${attribute.label}: ${attribute.value}`).join(' - ')}
                             </p>
                           ) : null}
-                          {item?.ownership_name && (
-                            <p className="mt-0.5 text-[0.7rem] text-slate-400">نقل ملكية: {item.ownership_name}</p>
+                          {paperworkInfo.exists ? (
+                            <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-[0.68rem] text-blue-950">
+                              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                <span className="font-bold text-slate-500">باسم</span>
+                                <span className="font-black">{paperworkInfo.ownerName}</span>
+                                {paperworkInfo.guardianshipLabel ? (
+                                  <span className="font-bold text-blue-700">· {paperworkInfo.guardianshipLabel}</span>
+                                ) : null}
+                              </div>
+                              <p className="mt-0.5 font-bold opacity-75">{paperworkInfo.statusLabel}</p>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onPaperworkRequestOpen?.(sale)}
+                              className="mt-2 w-full rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-right text-[0.68rem] font-black text-red-700 transition hover:bg-red-100 focus:outline-none focus:ring-4 focus:ring-red-100"
+                            >
+                              طلب الورق غير محدد — اضغط لتحديده
+                            </button>
                           )}
                         </div>
                         <p className="shrink-0 font-mono text-[0.72rem] font-bold text-slate-500">{formatMoney(itemTotal)}</p>
@@ -370,7 +434,7 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
   );
 }
 
-export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted }) {
+export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted, onPaperworkRequestOpen }) {
   const { tenant, tenantUser } = useWorkspace();
   const { currentShowroomConfigId } = useShowroomConfig();
   const canDeleteSale = tenantUser?.role === 'owner';
@@ -558,6 +622,7 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted }) {
                 onContractOpen={() => setIsContractOpen(true)}
                 onPayRemaining={handleOpenPaymentStep}
                 onDelete={handleDeleteSale}
+                onPaperworkRequestOpen={onPaperworkRequestOpen}
                 canDelete={canDeleteSale}
                 isPayingRemaining={isPayingRemaining}
                 isDeleting={isDeletingSale}
