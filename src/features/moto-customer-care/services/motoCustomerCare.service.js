@@ -56,8 +56,17 @@ const PAPERWORK_REQUEST_COLUMNS = `
   tracking_unit_id,
   customer_id,
   document_owner_partner_id,
+  document_owner_name,
+  document_owner_national_id,
+  document_owner_status,
+  document_owner_note,
   processor_partner_id,
-  current_stage_id,
+  customer_confirmed,
+  customer_confirmed_at,
+  customer_confirmed_by,
+  tracking_photos_ignored,
+  tracking_photos_ignore_reason,
+  current_stage,
   stage_entered_at,
   assigned_to,
   status,
@@ -111,13 +120,28 @@ const PAPERWORK_REQUEST_EVENT_COLUMNS = `
   request_id,
   event_type,
   new_status,
-  new_stage_id,
+  old_stage,
+  new_stage,
   notes,
   created_by,
   created_at
 `;
 const TENANT_USER_COLUMNS = 'id, full_name, email';
 const PAPERWORK_OUT_SOURCE_TYPES = new Set(['to_customer', 'to_supplier', 'to_processor', 'to_employee', 'lost', 'cancelled', 'other']);
+const PAPERWORK_STAGE_LABELS = {
+  preparation: 'تجهيز بيانات الورق',
+  owner_confirmation: 'تحديد صاحب الورق',
+  sent_to_processor: 'تم الإرسال للجهة',
+  processor_ready: 'الورق جاهز عند الجهة',
+  received_from_processor: 'تم استلام الورق من الجهة',
+  client_notified: 'تم إبلاغ العميل',
+  delivered: 'تم التسليم للعميل',
+  cancelled: 'ملغي',
+};
+
+function getPaperworkStageLabel(stageCode) {
+  return PAPERWORK_STAGE_LABELS[stageCode] || stageCode || 'مرحلة غير محددة';
+}
 
 function requireTenantId(tenantId) {
   if (!tenantId) {
@@ -642,7 +666,7 @@ async function loadTrackingDetailsMap(client, tenantId, lines, { includeAttachme
   ] = await Promise.all([
     client
       .from('stock_tracking_units')
-      .select('id, tracking_number, status')
+      .select('id, tracking_number, status, paperwork_processor_partner_id')
       .eq('tenant_id', tenantId)
       .in('id', trackingUnitIds),
     client
@@ -697,6 +721,7 @@ async function loadTrackingDetailsMap(client, tenantId, lines, { includeAttachme
         id: unit.id,
         trackingNumber: unit.tracking_number || '',
         status: unit.status || '',
+        paperworkProcessorPartnerId: unit.paperwork_processor_partner_id || null,
       },
       trackingIdentifiers: [],
     });
@@ -932,41 +957,6 @@ async function loadPaperworkPartnersMap(client, tenantId, requests) {
   }, new Map());
 }
 
-async function loadPaperworkStagesMap(client, tenantId, requests) {
-  const stageIds = Array.from(new Set(
-    (Array.isArray(requests) ? requests : [])
-      .map((request) => request?.current_stage_id)
-      .filter(Boolean),
-  ));
-
-  if (!stageIds.length) {
-    return new Map();
-  }
-
-  const { data, error } = await client
-    .from('paperwork_stages')
-    .select('id, code, name, sequence, is_start, is_done, is_cancel')
-    .eq('tenant_id', tenantId)
-    .in('id', stageIds);
-
-  if (error) {
-    throw error;
-  }
-
-  return (data || []).reduce((map, stage) => {
-    map.set(stage.id, {
-      id: stage.id,
-      code: stage.code || '',
-      name: stage.name || 'مرحلة غير محددة',
-      sequence: Number(stage.sequence) || 0,
-      isStart: stage.is_start ?? false,
-      isDone: stage.is_done ?? false,
-      isCancel: stage.is_cancel ?? false,
-    });
-    return map;
-  }, new Map());
-}
-
 async function loadPaperworkSaleLinesMap(client, tenantId, requests) {
   const saleLineIds = Array.from(new Set(
     (Array.isArray(requests) ? requests : [])
@@ -1107,7 +1097,8 @@ async function loadPaperworkRequestEventsMap(client, tenantId, requests = []) {
       requestId: event.request_id,
       eventType: event.event_type || '',
       newStatus: event.new_status || '',
-      newStageId: event.new_stage_id || null,
+      oldStage: event.old_stage || '',
+      newStage: event.new_stage || '',
       notes: event.notes || '',
       createdBy: event.created_by,
       createdByName: usersMap.get(event.created_by)?.name || '',
@@ -1162,6 +1153,48 @@ async function loadPaperworkDocumentAttachmentsMap(client, tenantId, documentIds
     if (!map.has(attachment.documentId)) {
       map.set(attachment.documentId, attachment);
     }
+    return map;
+  }, new Map());
+}
+
+async function loadPaperworkRequestOwnerAttachmentsMap(client, tenantId, requestIds = []) {
+  const ids = Array.from(new Set((Array.isArray(requestIds) ? requestIds : []).filter(Boolean)));
+
+  if (!ids.length) {
+    return new Map();
+  }
+
+  const { data, error } = await client
+    .from('ir_attachments')
+    .select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, created_at')
+    .eq('tenant_id', tenantId)
+    .eq('related_model', 'paperwork_requests')
+    .in('document_type', ['document_owner_id_card', 'document_owner_id_front', 'document_owner_id_back'])
+    .in('related_id', ids)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const rowsWithUrls = await Promise.all((data || []).map(async (row) => {
+    const bucket = row.bucket_name || TENANT_FILES_BUCKET;
+    const { data: signedData } = await client.storage.from(bucket).createSignedUrl(row.file_path, SIGNED_URL_EXPIRES_IN);
+
+    return {
+      id: row.id,
+      requestId: row.related_id,
+      documentType: row.document_type,
+      name: row.original_file_name || '',
+      signedUrl: signedData?.signedUrl || '',
+    };
+  }));
+
+  return rowsWithUrls.reduce((map, attachment) => {
+    const current = map.get(attachment.requestId) || {};
+    current[attachment.documentType] = attachment;
+    map.set(attachment.requestId, current);
     return map;
   }, new Map());
 }
@@ -1289,8 +1322,18 @@ function normalizePaperworkRequest(record, maps = {}) {
     trackingUnitId: record.tracking_unit_id,
     customerId: record.customer_id,
     documentOwnerPartnerId: record.document_owner_partner_id,
+    documentOwnerName: record.document_owner_name || '',
+    documentOwnerNationalId: record.document_owner_national_id || '',
+    documentOwnerStatus: record.document_owner_status || '',
+    documentOwnerNote: record.document_owner_note || '',
     processorPartnerId: record.processor_partner_id,
-    currentStageId: record.current_stage_id,
+    customerConfirmed: Boolean(record.customer_confirmed),
+    customerConfirmedAt: record.customer_confirmed_at || null,
+    customerConfirmedBy: record.customer_confirmed_by || null,
+    customerConfirmedByName: maps.usersMap?.get(record.customer_confirmed_by)?.name || '',
+    trackingPhotosIgnored: Boolean(record.tracking_photos_ignored),
+    trackingPhotosIgnoreReason: record.tracking_photos_ignore_reason || '',
+    currentStage: record.current_stage || '',
     stageEnteredAt: record.stage_entered_at,
     assignedTo: record.assigned_to,
     status: record.status || 'open',
@@ -1312,7 +1355,10 @@ function normalizePaperworkRequest(record, maps = {}) {
     customer: maps.partnersMap?.get(record.customer_id) || null,
     documentOwner: maps.partnersMap?.get(record.document_owner_partner_id) || null,
     processor: maps.partnersMap?.get(record.processor_partner_id) || null,
-    stage: maps.stagesMap?.get(record.current_stage_id) || null,
+    stage: record.current_stage ? {
+      code: record.current_stage,
+      name: getPaperworkStageLabel(record.current_stage),
+    } : null,
     productProductId,
     productName,
     attributes: maps.trackingUnitAttributesMap?.get(record.tracking_unit_id) || [],
@@ -1321,6 +1367,7 @@ function normalizePaperworkRequest(record, maps = {}) {
     trackingIdentifiers: mergeTrackingIdentifiers(product?.expectedTrackingIdentifiers || [], trackingDetails.trackingIdentifiers || []),
     license: trackingDetails.license || null,
     attachments: trackingDetails.attachments || {},
+    ownerAttachments: maps.ownerAttachmentsMap?.get(record.id) || {},
   };
 }
 
@@ -1332,6 +1379,63 @@ function formatPaperAttributesTextForService(attributes) {
 }
 
 export const motoCustomerCareService = {
+  async getPaperworkReportCounts({ tenantId } = {}) {
+    requireTenantId(tenantId);
+    const client = requireSupabase();
+
+    const [
+      saleLinesResult,
+      requestsResult,
+    ] = await Promise.all([
+      client
+        .from('showroom_sale_lines')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId),
+      client
+        .from('paperwork_requests')
+        .select('id, sale_line_id, status, current_stage, notes')
+        .eq('tenant_id', tenantId)
+        .not('sale_line_id', 'is', null),
+    ]);
+
+    if (saleLinesResult.error) {
+      throw saleLinesResult.error;
+    }
+
+    if (requestsResult.error) {
+      throw requestsResult.error;
+    }
+
+    const requests = requestsResult.data || [];
+    const requestedSaleLineIds = new Set();
+    const sentPendingReceiptSaleLineIds = new Set();
+    const vaultSaleLineIds = new Set();
+
+    requests.forEach((request) => {
+      if (!request?.sale_line_id) {
+        return;
+      }
+
+      requestedSaleLineIds.add(request.sale_line_id);
+
+      if (['sent_to_processor', 'processor_ready'].includes(request.current_stage)) {
+        sentPendingReceiptSaleLineIds.add(request.sale_line_id);
+        return;
+      }
+
+      const hasVaultNote = String(request.notes || '').includes('الورق موجود بالفعل في الخزنة');
+      if (request.current_stage === 'received_from_processor' || hasVaultNote) {
+        vaultSaleLineIds.add(request.sale_line_id);
+      }
+    });
+
+    return {
+      missing: Math.max((saleLinesResult.count || 0) - requestedSaleLineIds.size, 0),
+      vault: vaultSaleLineIds.size,
+      sentPendingReceipt: sentPendingReceiptSaleLineIds.size,
+    };
+  },
+
   async listSales({ tenantId, status, limit = 150, includeAttachments = true } = {}) {
     requireTenantId(tenantId);
     const client = requireSupabase();
@@ -1380,12 +1484,17 @@ export const motoCustomerCareService = {
     }
 
     const requests = data || [];
-    const [partnersMap, stagesMap, saleLinesMap, trackingUnitsMap, eventsMap] = await Promise.all([
+    const [partnersMap, saleLinesMap, trackingUnitsMap, eventsMap, ownerAttachmentsMap, usersMap] = await Promise.all([
       loadPaperworkPartnersMap(client, tenantId, requests),
-      loadPaperworkStagesMap(client, tenantId, requests),
       loadPaperworkSaleLinesMap(client, tenantId, requests),
       loadPaperworkTrackingUnitsMap(client, tenantId, requests),
       loadPaperworkRequestEventsMap(client, tenantId, requests),
+      loadPaperworkRequestOwnerAttachmentsMap(client, tenantId, requests.map((request) => request.id)),
+      loadTenantUsersByIdsMap(
+        client,
+        tenantId,
+        requests.map((request) => request.customer_confirmed_by).filter(Boolean),
+      ),
     ]);
 
     const contextLines = requests.map((request) => {
@@ -1407,13 +1516,14 @@ export const motoCustomerCareService = {
 
     return requests.map((request) => normalizePaperworkRequest(request, {
       partnersMap,
-      stagesMap,
       saleLinesMap,
       trackingUnitsMap,
       productMap,
       trackingDetailsMap,
       trackingUnitAttributesMap,
       eventsMap,
+      ownerAttachmentsMap,
+      usersMap,
     }));
   },
 
@@ -1966,7 +2076,15 @@ export const motoCustomerCareService = {
     }));
   },
 
-  async createPaperworkRequest({ tenantId, item, requestType = 'new_document', priority = 'normal', notes = '' } = {}) {
+  async createPaperworkRequest({
+    tenantId,
+    item,
+    requestType = 'new_document',
+    priority = 'normal',
+    notes = '',
+    documentOwnerPartnerId = null,
+    processorPartnerId = null,
+  } = {}) {
     requireTenantId(tenantId);
     if (!item?.saleId) {
       throw new Error('تعذر تحديد الفاتورة المرتبطة بطلب الأوراق.');
@@ -1977,23 +2095,6 @@ export const motoCustomerCareService = {
 
     const client = requireSupabase();
     const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
-    const { data: stage, error: stageError } = await client
-      .from('paperwork_stages')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('active', true)
-      .order('is_start', { ascending: false })
-      .order('sequence', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (stageError) {
-      throw stageError;
-    }
-
-    if (!stage?.id) {
-      throw new Error('لا توجد مرحلة أوراق نشطة لإنشاء الطلب.');
-    }
 
     const { data: request, error } = await client
       .from('paperwork_requests')
@@ -2006,7 +2107,9 @@ export const motoCustomerCareService = {
         sale_line_id: item.id,
         tracking_unit_id: item.trackingUnitId || null,
         customer_id: item.customerId || null,
-        current_stage_id: stage.id,
+        document_owner_partner_id: documentOwnerPartnerId || item.customerId || null,
+        processor_partner_id: processorPartnerId || null,
+        current_stage: 'sent_to_processor',
         status: 'open',
         priority: priority || 'normal',
         notes: String(notes || '').trim() || null,
@@ -2264,6 +2367,369 @@ export const motoCustomerCareService = {
     }
 
     return true;
+  },
+
+  async updateTrackingUnitPaperworkProcessor({
+    tenantId,
+    trackingUnitId,
+    processorPartnerId,
+    paperworkRequestId = null,
+  } = {}) {
+    requireTenantId(tenantId);
+    if (!trackingUnitId) {
+      throw new Error('تعذر تحديد القطعة الفريدة.');
+    }
+    if (!processorPartnerId) {
+      throw new Error('اختر جهة إصدار الأوراق.');
+    }
+
+    const client = requireSupabase();
+    const { error } = await client
+      .from('stock_tracking_units')
+      .update({
+        paperwork_processor_partner_id: processorPartnerId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tenant_id', tenantId)
+      .eq('id', trackingUnitId);
+
+    if (error) {
+      throw error;
+    }
+
+    if (paperworkRequestId) {
+      const { error: requestError } = await client
+        .from('paperwork_requests')
+        .update({
+          processor_partner_id: processorPartnerId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('tenant_id', tenantId)
+        .eq('id', paperworkRequestId);
+
+      if (requestError) {
+        throw requestError;
+      }
+    }
+
+    return true;
+  },
+
+  async confirmPaperworkRequestWithCustomer({ tenantId, requestId } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) {
+      throw new Error('تعذر تحديد طلب الأوراق.');
+    }
+
+    const client = requireSupabase();
+    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
+    const confirmedAt = new Date().toISOString();
+    const { data: updatedRequest, error: updateError } = await client
+      .from('paperwork_requests')
+      .update({
+        customer_confirmed: true,
+        customer_confirmed_at: confirmedAt,
+        customer_confirmed_by: currentTenantUserId,
+        updated_at: confirmedAt,
+      })
+      .eq('tenant_id', tenantId)
+      .eq('id', requestId)
+      .eq('customer_confirmed', false)
+      .select('id, customer_confirmed, customer_confirmed_at, customer_confirmed_by')
+      .maybeSingle();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    if (!updatedRequest) {
+      const { data: existingRequest, error: existingError } = await client
+        .from('paperwork_requests')
+        .select('id, customer_confirmed, customer_confirmed_at, customer_confirmed_by')
+        .eq('tenant_id', tenantId)
+        .eq('id', requestId)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+      if (!existingRequest) throw new Error('طلب الأوراق غير موجود.');
+      if (!existingRequest.customer_confirmed) throw new Error('تعذر تأكيد الطلب مع العميل.');
+
+      const existingUsers = await loadTenantUsersByIdsMap(client, tenantId, [existingRequest.customer_confirmed_by]);
+      return {
+        customerConfirmed: true,
+        customerConfirmedAt: existingRequest.customer_confirmed_at,
+        customerConfirmedBy: existingRequest.customer_confirmed_by,
+        customerConfirmedByName: existingUsers.get(existingRequest.customer_confirmed_by)?.name || '',
+        event: null,
+      };
+    }
+
+    const eventNotes = 'تم التأكيد مع العميل على بيانات إصدار الأوراق.';
+    const { data: event, error: eventError } = await client
+      .from('paperwork_request_events')
+      .insert({
+        tenant_id: tenantId,
+        request_id: requestId,
+        event_type: 'note',
+        notes: eventNotes,
+        created_by: currentTenantUserId,
+      })
+      .select('id, tenant_id, request_id, event_type, notes, created_by, created_at')
+      .single();
+
+    if (eventError) {
+      await client
+        .from('paperwork_requests')
+        .update({
+          customer_confirmed: false,
+          customer_confirmed_at: null,
+          customer_confirmed_by: null,
+        })
+        .eq('tenant_id', tenantId)
+        .eq('id', requestId)
+        .eq('customer_confirmed_by', currentTenantUserId)
+        .eq('customer_confirmed_at', confirmedAt);
+      throw eventError;
+    }
+
+    const usersMap = await loadTenantUsersByIdsMap(client, tenantId, [currentTenantUserId]);
+    const employeeName = usersMap.get(currentTenantUserId)?.name || '';
+
+    return {
+      customerConfirmed: true,
+      customerConfirmedAt: updatedRequest.customer_confirmed_at,
+      customerConfirmedBy: currentTenantUserId,
+      customerConfirmedByName: employeeName,
+      event: {
+        id: event.id,
+        tenantId: event.tenant_id,
+        requestId: event.request_id,
+        eventType: event.event_type,
+        notes: event.notes,
+        createdBy: event.created_by,
+        createdByName: employeeName,
+        createdAt: event.created_at,
+      },
+    };
+  },
+
+  async sendPaperworkRequestToProcessor({ tenantId, requestId, notes = '' } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) {
+      throw new Error('تعذر تحديد طلب الأوراق.');
+    }
+
+    const client = requireSupabase();
+    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
+    const { data: request, error: requestError } = await client
+      .from('paperwork_requests')
+      .select(`
+        id,
+        tracking_unit_id,
+        document_owner_status,
+        document_owner_name,
+        document_owner_partner_id,
+        processor_partner_id,
+        customer_confirmed,
+        tracking_photos_ignored,
+        current_stage,
+        status,
+        blocked_reason
+      `)
+      .eq('tenant_id', tenantId)
+      .eq('id', requestId)
+      .maybeSingle();
+
+    if (requestError) throw requestError;
+    if (!request) throw new Error('طلب الأوراق غير موجود.');
+
+    const [{ data: ownerAttachments, error: ownerAttachmentsError }, { data: trackingAttachments, error: trackingAttachmentsError }] = await Promise.all([
+      client
+        .from('ir_attachments')
+        .select('document_type')
+        .eq('tenant_id', tenantId)
+        .eq('related_model', 'paperwork_requests')
+        .eq('related_id', requestId)
+        .eq('document_type', 'document_owner_id_card')
+        .eq('is_active', true),
+      request.tracking_unit_id
+        ? client
+          .from('ir_attachments')
+          .select('document_type')
+          .eq('tenant_id', tenantId)
+          .eq('related_model', 'stock_tracking_units')
+          .eq('related_id', request.tracking_unit_id)
+          .in('document_type', ['chassis_photo', 'engine_photo'])
+          .eq('is_active', true)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (ownerAttachmentsError) throw ownerAttachmentsError;
+    if (trackingAttachmentsError) throw trackingAttachmentsError;
+
+    const ownerIsReady = request.document_owner_status === 'later'
+      || (
+        request.document_owner_status === 'confirmed'
+        && Boolean(request.document_owner_name || request.document_owner_partner_id)
+        && Boolean(ownerAttachments?.length)
+      );
+    const trackingDocumentTypes = new Set((trackingAttachments || []).map((attachment) => attachment.document_type));
+    const trackingPhotosAreReady = request.tracking_photos_ignored
+      || (trackingDocumentTypes.has('chassis_photo') && trackingDocumentTypes.has('engine_photo'));
+
+    if (!request.customer_confirmed) throw new Error('يجب التأكيد مع العميل أولًا.');
+    if (!request.processor_partner_id) throw new Error('يجب تحديد جهة إصدار الأوراق.');
+    if (!ownerIsReady) throw new Error('بيانات صاحب الورق أو صورة البطاقة غير مكتملة.');
+    if (!trackingPhotosAreReady) throw new Error('صور الشاسيه والموتور غير مكتملة.');
+    if (request.blocked_reason) throw new Error(request.blocked_reason);
+    if (request.current_stage !== 'preparation') throw new Error('الطلب ليس في مرحلة التجهيز.');
+    if (request.status !== 'open') throw new Error('لا يمكن إرسال طلب غير مفتوح.');
+
+    const updatedAt = new Date().toISOString();
+    const { data: updatedRequest, error: updateError } = await client
+      .from('paperwork_requests')
+      .update({
+        current_stage: 'sent_to_processor',
+        updated_at: updatedAt,
+      })
+      .eq('tenant_id', tenantId)
+      .eq('id', requestId)
+      .eq('current_stage', 'preparation')
+      .eq('customer_confirmed', true)
+      .not('processor_partner_id', 'is', null)
+      .select('id, current_stage, updated_at')
+      .maybeSingle();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    if (!updatedRequest) {
+      throw new Error('تعذر إرسال الطلب. راجع مرحلة الطلب والتأكيد مع العميل وجهة الإصدار.');
+    }
+
+    const additionalNotes = String(notes || '').trim();
+    const eventNotes = [
+      'تم إرسال طلب الأوراق إلى الجهة المختصة.',
+      additionalNotes,
+    ].filter(Boolean).join('\n');
+    const { data: event, error: eventError } = await client
+      .from('paperwork_request_events')
+      .insert({
+        tenant_id: tenantId,
+        request_id: requestId,
+        event_type: 'sent_to_supplier',
+        old_stage: 'preparation',
+        new_stage: 'sent_to_processor',
+        notes: eventNotes,
+        created_by: currentTenantUserId,
+      })
+      .select('id, tenant_id, request_id, event_type, old_stage, new_stage, notes, created_by, created_at')
+      .single();
+
+    if (eventError) {
+      await client
+        .from('paperwork_requests')
+        .update({
+          current_stage: 'preparation',
+          updated_at: updatedAt,
+        })
+        .eq('tenant_id', tenantId)
+        .eq('id', requestId)
+        .eq('current_stage', 'sent_to_processor')
+        .eq('updated_at', updatedAt);
+      throw eventError;
+    }
+
+    const usersMap = await loadTenantUsersByIdsMap(client, tenantId, [currentTenantUserId]);
+    const employeeName = usersMap.get(currentTenantUserId)?.name || '';
+
+    return {
+      currentStage: 'sent_to_processor',
+      updatedAt: updatedRequest.updated_at,
+      event: {
+        id: event.id,
+        tenantId: event.tenant_id,
+        requestId: event.request_id,
+        eventType: event.event_type,
+        oldStage: event.old_stage,
+        newStage: event.new_stage,
+        notes: event.notes,
+        createdBy: event.created_by,
+        createdByName: employeeName,
+        createdAt: event.created_at,
+      },
+    };
+  },
+
+  async receivePaperworkRequestsFromProcessor({
+    tenantId,
+    requestIds = [],
+    imagesByRequestId = {},
+  } = {}) {
+    requireTenantId(tenantId);
+    const ids = [...new Set((Array.isArray(requestIds) ? requestIds : []).filter(Boolean))];
+
+    if (!ids.length) {
+      throw new Error('حدد طلبًا واحدًا على الأقل.');
+    }
+
+    const client = requireSupabase();
+    const results = await Promise.allSettled(ids.map(async (requestId) => {
+      const { data, error } = await client.rpc('receive_paperwork_request_from_processor', {
+        p_tenant_id: tenantId,
+        p_request_id: requestId,
+      });
+
+      if (error) throw error;
+      return {
+        requestId: data?.request_id || requestId,
+        documentId: data?.document_id || null,
+        oldStage: data?.old_stage || '',
+        currentStage: data?.current_stage || 'received_from_processor',
+        updatedAt: data?.updated_at || null,
+      };
+    }));
+
+    const succeeded = [];
+    const failed = [];
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        succeeded.push(result.value);
+      } else {
+        failed.push({
+          requestId: ids[index],
+          message: result.reason?.message || 'تعذر استلام الطلب.',
+        });
+      }
+    });
+
+    const imageResults = await Promise.allSettled(succeeded.map(async (item) => {
+      const file = imagesByRequestId[item.requestId] || null;
+      if (!file) return null;
+
+      await motoCustomerCareService.savePaperworkDocumentAttachment({
+        tenantId,
+        documentId: item.documentId,
+        documentType: 'jawab_photo',
+        file,
+      });
+
+      return item.requestId;
+    }));
+    const imageFailed = [];
+
+    imageResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        imageFailed.push({
+          requestId: succeeded[index].requestId,
+          message: result.reason?.message || 'تم استلام الجواب لكن تعذر رفع صورته.',
+        });
+      }
+    });
+
+    return { succeeded, failed, imageFailed };
   },
 
   async saveTrackingUnitLicense({ tenantId, trackingUnitId, license = {} } = {}) {

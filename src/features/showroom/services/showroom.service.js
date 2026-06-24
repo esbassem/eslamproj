@@ -2,6 +2,9 @@ import { requireSupabase } from '@/core/lib/supabase';
 import { resolveCurrentTenantUserId } from '@/features/workspace/api/currentTenantUser.api';
 import { isInventoryInstalled } from '@/core/lib/inventoryGuard';
 
+const TENANT_FILES_BUCKET = 'tenant-files';
+const SIGNED_URL_EXPIRES_IN = 60 * 60;
+
 const SALE_SELECT = `
   id,
   tenant_id,
@@ -30,6 +33,56 @@ function todayISODate() {
 function toMoney(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function getFileExtension(file) {
+  const nameExtension = String(file?.name || '').split('.').pop();
+  const mimeExtension = String(file?.type || '').split('/').pop();
+  return (nameExtension && nameExtension !== file?.name ? nameExtension : mimeExtension || 'jpg')
+    .replace(/[^a-z0-9]/gi, '')
+    .toLowerCase() || 'jpg';
+}
+
+function assertTrackingUnitImage(file) {
+  if (!file) return;
+  if (!file.type?.startsWith('image/')) {
+    throw new Error('يمكن رفع صور فقط لصورة الشاسيه أو الموتور.');
+  }
+}
+
+function assertPaperworkRequestImage(file) {
+  if (!file) return;
+  if (!file.type?.startsWith('image/')) {
+    throw new Error('يمكن رفع صور فقط لمرفقات طلب الأوراق.');
+  }
+}
+
+function normalizeStoragePath(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/^tenant-files\//, '');
+}
+
+async function buildTrackingAttachmentWithUrl(client, row) {
+  const bucket = row.bucket_name || row.bucket || TENANT_FILES_BUCKET;
+  const path = row.file_path || row.path || '';
+  const { data } = path
+    ? await client.storage.from(bucket).createSignedUrl(path, SIGNED_URL_EXPIRES_IN)
+    : { data: null };
+
+  return {
+    id: row.id || null,
+    trackingUnitId: row.related_id || row.trackingUnitId || null,
+    documentType: row.document_type || row.documentType || '',
+    bucket,
+    path,
+    name: row.original_file_name || row.name || '',
+    mimeType: row.mime_type || row.mimeType || '',
+    size: row.file_size || row.size || null,
+    createdAt: row.created_at || row.createdAt || null,
+    signedUrl: data?.signedUrl || row.signedUrl || '',
+  };
 }
 
 function normalizeConfigCode(value) {
@@ -399,10 +452,14 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
     return saleLines;
   }
 
-  const [{ data: units, error: unitsError }, { data: identifierRows, error: identifiersError }] = await Promise.all([
+  const [
+    { data: units, error: unitsError },
+    { data: identifierRows, error: identifiersError },
+    { data: attachmentRows, error: attachmentsError },
+  ] = await Promise.all([
     client
       .from('stock_tracking_units')
-      .select('id, tracking_number, status')
+      .select('id, tracking_number, status, paperwork_processor_partner_id')
       .eq('tenant_id', tenantId)
       .in('id', trackingUnitIds),
     client
@@ -410,10 +467,19 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
       .select('id, tracking_unit_id, identifier_type_id, value, is_not_available')
       .eq('tenant_id', tenantId)
       .in('tracking_unit_id', trackingUnitIds),
+    client
+      .from('ir_attachments')
+      .select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('related_model', 'stock_tracking_units')
+      .in('related_id', trackingUnitIds)
+      .in('document_type', ['chassis_photo', 'engine_photo'])
+      .eq('is_active', true),
   ]);
 
   if (unitsError) throw unitsError;
   if (identifiersError) throw identifiersError;
+  if (attachmentsError) throw attachmentsError;
 
   const identifierTypeIds = [...new Set((identifierRows || []).map((row) => row.identifier_type_id).filter(Boolean))];
   const { data: identifierTypes, error: typesError } = identifierTypeIds.length
@@ -429,6 +495,7 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
   const unitsById = new Map((units || []).map((unit) => [unit.id, unit]));
   const typesById = new Map((identifierTypes || []).map((type) => [type.id, type]));
   const identifiersByUnitId = new Map();
+  const attachmentsByUnitId = new Map();
 
   (identifierRows || []).forEach((row) => {
     const current = identifiersByUnitId.get(row.tracking_unit_id) || [];
@@ -446,9 +513,20 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
     identifiersByUnitId.set(row.tracking_unit_id, current);
   });
 
+  const attachmentsWithUrls = await Promise.all((attachmentRows || []).map((row) => buildTrackingAttachmentWithUrl(client, row)));
+
+  attachmentsWithUrls.forEach((attachment) => {
+    const current = attachmentsByUnitId.get(attachment.trackingUnitId) || {};
+    attachmentsByUnitId.set(attachment.trackingUnitId, {
+      ...current,
+      [attachment.documentType]: attachment,
+    });
+  });
+
   return saleLines.map((line) => {
     const unit = unitsById.get(line.tracking_unit_id);
     const trackingIdentifiers = identifiersByUnitId.get(line.tracking_unit_id) || [];
+    const attachments = attachmentsByUnitId.get(line.tracking_unit_id) || {};
 
     return {
       ...line,
@@ -456,9 +534,12 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
         id: unit.id,
         trackingNumber: unit.tracking_number || '',
         status: unit.status || '',
+        paperworkProcessorPartnerId: unit.paperwork_processor_partner_id || null,
+        paperwork_processor_partner_id: unit.paperwork_processor_partner_id || null,
       } : null,
       serialNumber: unit?.tracking_number || '',
       trackingIdentifiers,
+      attachments,
     };
   });
 }
@@ -466,6 +547,75 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
 async function attachLineDetails(client, tenantId, lines) {
   const linesWithAttributes = await attachLineAttributes(client, tenantId, lines || []);
   return attachLineTrackingIdentifiers(client, tenantId, linesWithAttributes);
+}
+
+async function attachLinePaperworkRequests(client, tenantId, lines) {
+  const saleLines = Array.isArray(lines) ? lines : [];
+  const lineIds = saleLines.map((line) => line.id).filter(Boolean);
+
+  if (!lineIds.length) {
+    return saleLines;
+  }
+
+  const { data: requests, error } = await client
+    .from('paperwork_requests')
+    .select(`
+      id,
+      sale_line_id,
+      current_stage,
+      status,
+      document_owner_partner_id,
+      document_owner_name,
+      document_owner_status,
+      document_owner_note,
+      processor_partner_id
+    `)
+    .eq('tenant_id', tenantId)
+    .in('sale_line_id', lineIds)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+
+  const ownerPartnerIds = [...new Set((requests || []).map((request) => request.document_owner_partner_id).filter(Boolean))];
+  const { data: ownerPartners, error: ownerPartnersError } = ownerPartnerIds.length
+    ? await client
+      .from('partners')
+      .select('id, name')
+      .eq('tenant_id', tenantId)
+      .in('id', ownerPartnerIds)
+    : { data: [], error: null };
+
+  if (ownerPartnersError) throw ownerPartnersError;
+
+  const ownerPartnersById = new Map((ownerPartners || []).map((partner) => [partner.id, partner]));
+  const requestsByLineId = new Map();
+
+  (requests || []).forEach((request) => {
+    if (requestsByLineId.has(request.sale_line_id)) return;
+    const ownerPartner = ownerPartnersById.get(request.document_owner_partner_id) || null;
+    requestsByLineId.set(request.sale_line_id, {
+      id: request.id,
+      currentStage: request.current_stage || '',
+      current_stage: request.current_stage || '',
+      status: request.status || '',
+      documentOwnerPartnerId: request.document_owner_partner_id || null,
+      document_owner_partner_id: request.document_owner_partner_id || null,
+      documentOwnerName: request.document_owner_name || ownerPartner?.name || '',
+      document_owner_name: request.document_owner_name || ownerPartner?.name || '',
+      documentOwnerStatus: request.document_owner_status || '',
+      document_owner_status: request.document_owner_status || '',
+      documentOwnerNote: request.document_owner_note || '',
+      document_owner_note: request.document_owner_note || '',
+      processorPartnerId: request.processor_partner_id || null,
+      processor_partner_id: request.processor_partner_id || null,
+      documentOwner: ownerPartner,
+    });
+  });
+
+  return saleLines.map((line) => ({
+    ...line,
+    paperworkRequest: requestsByLineId.get(line.id) || null,
+  }));
 }
 
 async function restoreQuantityStock(client, { tenantId, productProductId, quantity }) {
@@ -598,10 +748,11 @@ async function attachSaleLines(client, tenantId, sales, showroomConfigId) {
 
   if (error) throw error;
 
-  const linesWithAttributes = await attachLineDetails(client, tenantId, lines || []);
+  const linesWithDetails = await attachLineDetails(client, tenantId, lines || []);
+  const linesWithPaperwork = await attachLinePaperworkRequests(client, tenantId, linesWithDetails);
   const linesBySaleId = new Map();
 
-  linesWithAttributes.forEach((line) => {
+  linesWithPaperwork.forEach((line) => {
     const current = linesBySaleId.get(line.sale_id) || [];
     current.push(line);
     linesBySaleId.set(line.sale_id, current);
@@ -833,6 +984,230 @@ export const showroomService = {
     return showroomService.getSales(params);
   },
 
+  async saveTrackingUnitAttachment({ tenantId, trackingUnitId, documentType, file, userId } = {}) {
+    requireTenantId(tenantId);
+    if (!trackingUnitId) throw new Error('تعذر تحديد القطعة الفريدة.');
+    if (!documentType) throw new Error('تعذر تحديد نوع الصورة.');
+    if (!file) throw new Error('اختر صورة أولاً.');
+
+    assertTrackingUnitImage(file);
+
+    const client = requireSupabase();
+    const { data: unit, error: unitError } = await client
+      .from('stock_tracking_units')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('id', trackingUnitId)
+      .maybeSingle();
+
+    if (unitError) throw unitError;
+    if (!unit) throw new Error('القطعة الفريدة غير موجودة.');
+
+    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
+    const extension = getFileExtension(file);
+    const path = `${tenantId}/tracking-units/${trackingUnitId}/${documentType}-${crypto.randomUUID()}.${extension}`;
+
+    const { error: uploadError } = await client.storage.from(TENANT_FILES_BUCKET).upload(path, file, {
+      cacheControl: '3600',
+      contentType: file.type || 'image/jpeg',
+      upsert: false,
+    });
+
+    if (uploadError) {
+      throw new Error(uploadError.message || 'تعذر رفع صورة القطعة.');
+    }
+
+    const { data: attachment, error: attachmentError } = await client.from('ir_attachments').insert({
+      tenant_id: tenantId,
+      bucket_name: TENANT_FILES_BUCKET,
+      file_path: path,
+      document_type: documentType,
+      related_model: 'stock_tracking_units',
+      related_id: trackingUnitId,
+      original_file_name: file.name || null,
+      mime_type: file.type || null,
+      file_size: file.size || null,
+      created_by: createdBy,
+    }).select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, file_size, created_at').single();
+
+    if (attachmentError) {
+      await client.storage.from(TENANT_FILES_BUCKET).remove([path]);
+      throw new Error(attachmentError.message || 'تم رفع الصورة لكن تعذر ربطها بالقطعة.');
+    }
+
+    return buildTrackingAttachmentWithUrl(client, attachment);
+  },
+
+  async linkExistingTrackingUnitAttachment({ tenantId, trackingUnitId, documentType, source, userId } = {}) {
+    requireTenantId(tenantId);
+    if (!trackingUnitId) throw new Error('تعذر تحديد القطعة الفريدة.');
+    if (!documentType) throw new Error('تعذر تحديد نوع الصورة.');
+    if (!source?.path) throw new Error('اختر صورة موجودة أولاً.');
+
+    const path = normalizeStoragePath(source.path);
+    if (!path.startsWith(`${tenantId}/`)) {
+      throw new Error('لا يمكن ربط صورة من مساحة شركة أخرى.');
+    }
+
+    const client = requireSupabase();
+    const { data: unit, error: unitError } = await client
+      .from('stock_tracking_units')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('id', trackingUnitId)
+      .maybeSingle();
+
+    if (unitError) throw unitError;
+    if (!unit) throw new Error('القطعة الفريدة غير موجودة.');
+
+    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
+    const { data: attachment, error: attachmentError } = await client.from('ir_attachments').insert({
+      tenant_id: tenantId,
+      bucket_name: source.bucket || source.bucketName || TENANT_FILES_BUCKET,
+      file_path: path,
+      document_type: documentType,
+      related_model: 'stock_tracking_units',
+      related_id: trackingUnitId,
+      original_file_name: source.name || source.originalFileName || path.split('/').pop() || null,
+      mime_type: source.mimeType || null,
+      file_size: source.size || null,
+      created_by: createdBy,
+    }).select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, file_size, created_at').single();
+
+    if (attachmentError) {
+      throw new Error(attachmentError.message || 'تعذر ربط الصورة الموجودة بالقطعة.');
+    }
+
+    return buildTrackingAttachmentWithUrl(client, attachment);
+  },
+
+  async removeTrackingUnitAttachment({ tenantId, trackingUnitId, attachmentId } = {}) {
+    requireTenantId(tenantId);
+    if (!trackingUnitId) throw new Error('تعذر تحديد القطعة الفريدة.');
+    if (!attachmentId) throw new Error('تعذر تحديد الصورة.');
+
+    const client = requireSupabase();
+    const { error } = await client
+      .from('ir_attachments')
+      .update({ is_active: false })
+      .eq('tenant_id', tenantId)
+      .eq('id', attachmentId)
+      .eq('related_model', 'stock_tracking_units')
+      .eq('related_id', trackingUnitId);
+
+    if (error) {
+      throw new Error(error.message || 'تعذر حذف الصورة.');
+    }
+
+    return true;
+  },
+
+  async savePaperworkOwnerConfirmation({
+    tenantId,
+    sale,
+    item,
+    ownerStatus,
+    ownerName,
+    ownerNationalId = '',
+    ownerNote = '',
+    identityFile = null,
+    identitySource = null,
+    trackingPhotosIgnored = false,
+    trackingPhotosIgnoreReason = '',
+    userId,
+  } = {}) {
+    requireTenantId(tenantId);
+    if (!sale?.id && !item?.saleId) {
+      throw new Error('تعذر تحديد الفاتورة المرتبطة بطلب الأوراق.');
+    }
+    if (!item?.id) {
+      throw new Error('تعذر تحديد المنتج المطلوب.');
+    }
+
+    const normalizedStatus = ownerStatus === 'later' ? 'later' : 'confirmed';
+    const safeOwnerName = String(ownerName || '').trim();
+    const client = requireSupabase();
+    let uploadedPath = null;
+    let ownerAttachment = null;
+
+    if (identityFile) {
+      assertPaperworkRequestImage(identityFile);
+      const extension = getFileExtension(identityFile);
+      uploadedPath = `${tenantId}/paperwork-requests/sale-lines/${item.id}/document-owner-id-card-${crypto.randomUUID()}.${extension}`;
+
+      const { error: uploadError } = await client.storage.from(TENANT_FILES_BUCKET).upload(uploadedPath, identityFile, {
+        cacheControl: '3600',
+        contentType: identityFile.type || 'image/jpeg',
+        upsert: false,
+      });
+
+      if (uploadError) {
+        throw new Error(uploadError.message || 'تعذر رفع صورة بطاقة صاحب الورق.');
+      }
+
+      ownerAttachment = {
+        bucket_name: TENANT_FILES_BUCKET,
+        file_path: uploadedPath,
+        document_type: 'document_owner_id_card',
+        original_file_name: identityFile.name || null,
+        mime_type: identityFile.type || null,
+        file_size: identityFile.size || null,
+      };
+    } else if (identitySource?.path) {
+      const path = normalizeStoragePath(identitySource.path);
+      if (!path.startsWith(`${tenantId}/`)) {
+        throw new Error('لا يمكن ربط صورة من مساحة شركة أخرى.');
+      }
+
+      ownerAttachment = {
+        bucket_name: identitySource.bucket || identitySource.bucketName || TENANT_FILES_BUCKET,
+        file_path: path,
+        document_type: 'document_owner_id_card',
+        original_file_name: identitySource.name || identitySource.originalFileName || path.split('/').pop() || null,
+        mime_type: identitySource.mimeType || null,
+        file_size: identitySource.size || null,
+      };
+    }
+
+    try {
+      const { data, error } = await client.rpc('confirm_sale_paperwork_request', {
+        p_tenant_id: tenantId,
+        p_branch_id: item.branchId || sale?.branchId || sale?.branch_id || null,
+        p_sale_id: item.saleId || sale?.id,
+        p_sale_line_id: item.id,
+        p_tracking_unit_id: item.trackingUnitId || item.tracking_unit_id || item.trackingUnit?.id || null,
+        p_customer_id: item.customerId || sale?.customerId || sale?.customer_id || null,
+        p_document_owner_status: normalizedStatus,
+        p_document_owner_name: normalizedStatus === 'later' ? null : safeOwnerName || null,
+        p_document_owner_national_id: String(ownerNationalId || '').trim() || null,
+        p_document_owner_note: String(ownerNote || '').trim() || null,
+        p_owner_attachment: ownerAttachment,
+        p_tracking_photos_ignored: Boolean(trackingPhotosIgnored),
+        p_tracking_photos_ignore_reason: String(trackingPhotosIgnoreReason || '').trim() || null,
+      });
+
+      if (error) throw error;
+
+      return {
+        id: data?.id || null,
+        currentStage: data?.current_stage || 'preparation',
+        status: data?.status || 'open',
+        documentOwnerName: data?.document_owner_name || null,
+        documentOwnerNationalId: data?.document_owner_national_id || null,
+        documentOwnerStatus: data?.document_owner_status || null,
+        documentOwnerNote: data?.document_owner_note || null,
+        trackingPhotosIgnored: Boolean(data?.tracking_photos_ignored),
+        trackingPhotosIgnoreReason: data?.tracking_photos_ignore_reason || null,
+        created: Boolean(data?.created),
+      };
+    } catch (saveError) {
+      if (uploadedPath) {
+        await client.storage.from(TENANT_FILES_BUCKET).remove([uploadedPath]);
+      }
+      throw new Error(saveError?.message || 'تعذر حفظ طلب الأوراق بالكامل.');
+    }
+  },
+
   async createSale({
     tenantId,
     customerId,
@@ -1060,11 +1435,12 @@ export const showroomService = {
     if (paymentsError) throw paymentsError;
 
     const saleWithCustomer = await attachCustomers(client, tenantId, sale);
-    const linesWithAttributes = await attachLineDetails(client, tenantId, lines || []);
+    const linesWithDetails = await attachLineDetails(client, tenantId, lines || []);
+    const linesWithPaperwork = await attachLinePaperworkRequests(client, tenantId, linesWithDetails);
 
     return {
       ...saleWithCustomer,
-      lines: linesWithAttributes,
+      lines: linesWithPaperwork,
       payments: payments || [],
     };
   },

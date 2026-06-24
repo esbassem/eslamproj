@@ -1,3 +1,10 @@
+alter table public.paperwork_requests
+  add column if not exists current_stage text;
+
+alter table public.paperwork_request_events
+  add column if not exists old_stage text,
+  add column if not exists new_stage text;
+
 create or replace function public.create_legacy_delivered_paperwork_request(
   p_tenant_id uuid,
   p_branch_id uuid,
@@ -14,7 +21,6 @@ set search_path = public
 as $$
 declare
   v_current_tenant_user_id uuid;
-  v_done_stage_id uuid;
   v_request_id uuid;
   v_event_notes text;
 begin
@@ -28,25 +34,6 @@ begin
 
   if v_current_tenant_user_id is null then
     raise exception 'تعذر تحديد مستخدم الشركة الحالي.';
-  end if;
-
-  select ps.id
-    into v_done_stage_id
-  from public.paperwork_stages ps
-  where ps.tenant_id = p_tenant_id
-    and ps.active = true
-    and (ps.code in ('delivered', 'done') or ps.is_done = true)
-  order by
-    case
-      when ps.code in ('delivered', 'done') then 0
-      when ps.is_done = true then 1
-      else 2
-    end,
-    ps.sequence asc
-  limit 1;
-
-  if v_done_stage_id is null then
-    raise exception 'لا توجد مرحلة أوراق منتهية لتسجيل تسليم الأوراق.';
   end if;
 
   v_event_notes := concat_ws(
@@ -65,7 +52,7 @@ begin
     tracking_unit_id,
     customer_id,
     document_owner_partner_id,
-    current_stage_id,
+    current_stage,
     status,
     closed_at,
     created_by,
@@ -81,7 +68,7 @@ begin
     p_tracking_unit_id,
     p_customer_id,
     p_customer_id,
-    v_done_stage_id,
+    'delivered',
     'done',
     now(),
     v_current_tenant_user_id,
@@ -94,7 +81,7 @@ begin
     request_id,
     event_type,
     new_status,
-    new_stage_id,
+    new_stage,
     created_by,
     notes
   )
@@ -103,7 +90,7 @@ begin
     v_request_id,
     'done',
     'done',
-    v_done_stage_id,
+    'delivered',
     v_current_tenant_user_id,
     v_event_notes
   );

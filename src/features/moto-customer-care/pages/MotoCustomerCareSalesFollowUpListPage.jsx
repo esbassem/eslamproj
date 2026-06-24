@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { useReducedMotion } from 'framer-motion';
-import { ArrowRight, Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, Search, UploadCloud, UserPlus } from 'lucide-react';
+import { ArrowRight, Building2, Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, PhoneCall, Search, UploadCloud, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
@@ -18,6 +19,8 @@ import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormShee
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { QuickStockUnitSheet } from '@/features/dashboard/components/QuickStockUnitSheet';
 import { inventoryService } from '@/features/inventory/api/inventory.api';
+import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
+import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
 
@@ -182,6 +185,7 @@ function isCurrentPaperworkDocument(document) {
 }
 
 const followUpSections = [
+  { id: 'requests', label: 'طلبات الأوراق', description: 'متابعة طلبات تنفيذ الأوراق ومراحلها.' },
   { id: 'sales', label: 'المبيعات', description: 'متابعة عمليات البيع بعد التسليم.' },
   { id: 'papers', label: 'الأوراق', description: 'إدارة الجوابات والحركات والتسليم.' },
 ];
@@ -199,8 +203,8 @@ function buildPaperworkSidebarReports(sales = [], paperworkRequests = []) {
           return;
         }
 
-        if (request.status === 'done') {
-          accumulator.delivered += 1;
+        if (['sent_to_processor', 'processor_ready'].includes(request.currentStage)) {
+          accumulator.sentPendingReceipt += 1;
           return;
         }
 
@@ -211,37 +215,164 @@ function buildPaperworkSidebarReports(sales = [], paperworkRequests = []) {
 
       return accumulator;
     },
-    { missing: 0, vault: 0, delivered: 0 },
+    { missing: 0, vault: 0, sentPendingReceipt: 0 },
   );
 }
 
-function FollowUpSectionsPanel({ activeSection, onSectionChange, sales = [], paperworkRequests = [], isMobileContentOpen }) {
-  const paperworkReports = useMemo(
-    () => buildPaperworkSidebarReports(sales, paperworkRequests),
-    [paperworkRequests, sales],
+function saleMatchesPaperworkReportFilter(sale, paperworkRequests = [], filterId) {
+  if (!filterId) {
+    return true;
+  }
+
+  const items = Array.isArray(sale?.items) ? sale.items : [];
+
+  return items.some((item) => {
+    const request = getPaperworkRequestForItem(item, paperworkRequests);
+
+    if (filterId === 'missing') {
+      return !request;
+    }
+
+    if (filterId === 'vault') {
+      return Boolean(request && isVaultPaperworkRequest(request));
+    }
+
+    return true;
+  });
+}
+
+function filterSalesByPaperworkReport(sales = [], paperworkRequests = [], filterId) {
+  if (!filterId) {
+    return sales;
+  }
+
+  return (Array.isArray(sales) ? sales : []).filter((sale) => saleMatchesPaperworkReportFilter(sale, paperworkRequests, filterId));
+}
+
+function LatestMobileSalesList({
+  sales = [],
+  paperworkRequests = [],
+  paperworkDocuments = [],
+  isLoading = false,
+  isFiltering = false,
+  onRegisterTrackingUnit,
+  onCreatePaperworkRequest,
+  onOpenPaperworkRequest,
+  onViewAll,
+}) {
+  const latestSales = (Array.isArray(sales) ? sales : []).slice(0, 10);
+
+  return (
+    <div className="mt-8 lg:hidden">
+      <div className="mb-2 flex items-center justify-between gap-3 px-4 text-white sm:px-10">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-black leading-5">آخر عمليات البيع</h2>
+          <span className="flex items-center gap-1" aria-hidden="true">
+            <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
+            <span className="h-1.5 w-1.5 rounded-full bg-sky-200/70" />
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onViewAll}
+          className="rounded-full border border-white/18 bg-white/[0.10] px-3 py-1 text-[11px] font-black text-white/92 shadow-[0_8px_18px_rgba(15,23,42,0.08)] backdrop-blur-md transition hover:bg-white/[0.16] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25"
+        >
+          عرض الكل
+        </button>
+      </div>
+      <div className="relative grid gap-0 pt-2 before:absolute before:inset-x-0 before:top-0 before:h-2 before:rounded-t-[1.35rem] before:bg-white before:shadow-[0_-10px_24px_rgba(255,255,255,0.10)]">
+        {isLoading || isFiltering ? (
+          <div className="mx-4 rounded-2xl border border-white/12 bg-white/[0.08] px-3.5 py-3 text-xs font-black text-blue-50/80 backdrop-blur-md sm:mx-10 lg:mx-0">
+            جاري تجهيز العمليات...
+          </div>
+        ) : latestSales.length ? (
+          latestSales.map((sale, index) => (
+            <div
+              key={sale.id}
+              className="customer-care-mobile-sale-entry overflow-hidden bg-white shadow-[0_16px_34px_rgba(15,23,42,0.12)]"
+              style={{ animationDelay: `${index * 22}ms` }}
+            >
+              <SalesFollowUpCard
+                sale={sale}
+                paperworkRequests={paperworkRequests}
+                paperworkDocuments={paperworkDocuments}
+                onRegisterTrackingUnit={onRegisterTrackingUnit}
+                onCreatePaperworkRequest={onCreatePaperworkRequest}
+                onOpenPaperworkRequest={onOpenPaperworkRequest}
+              />
+            </div>
+          ))
+        ) : (
+          <div className="mx-4 rounded-2xl border border-white/12 bg-white/[0.08] px-3.5 py-3 text-xs font-black text-blue-50/80 backdrop-blur-md sm:mx-10 lg:mx-0">
+            لا توجد عمليات مبيعات حديثة.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FollowUpSectionsPanel({
+  activeSection,
+  activeReportFilter,
+  onSectionChange,
+  onReportFilterChange,
+  paperworkReports,
+  isReportsLoading = false,
+  sales = [],
+  paperworkRequests = [],
+  paperworkDocuments = [],
+  isMobileContentOpen,
+  isLoading = false,
+  isFiltering = false,
+  onRegisterTrackingUnit,
+  onCreatePaperworkRequest,
+  onOpenPaperworkRequest,
+}) {
+  const resolvedPaperworkReports = paperworkReports || buildPaperworkSidebarReports(sales, paperworkRequests);
+  const filteredMobileSales = useMemo(
+    () => filterSalesByPaperworkReport(sales, paperworkRequests, activeReportFilter),
+    [activeReportFilter, paperworkRequests, sales],
   );
   const reportItems = [
-    { id: 'missing', label: 'لم يتم تحديد حالة الورق', value: paperworkReports.missing, color: '#ef4444' },
-    { id: 'vault', label: 'أوراق موجودة', value: paperworkReports.vault, color: '#38bdf8' },
-    { id: 'delivered', label: 'تم تسليم الأوراق للعميل', value: paperworkReports.delivered, color: '#10b981' },
+    { id: 'missing', label: 'لم يتم تحديد حالة الورق', value: resolvedPaperworkReports.missing, color: '#ef4444' },
+    { id: 'vault', label: 'أوراق موجودة', value: resolvedPaperworkReports.vault, color: '#38bdf8' },
+    {
+      id: 'sent_pending_receipt',
+      label: 'أوراق بانتظار استلامها من الجهات',
+      value: resolvedPaperworkReports.sentPendingReceipt,
+      color: '#3b82f6',
+    },
   ];
 
   return (
     <aside className={`${isMobileContentOpen ? 'hidden lg:flex' : 'flex'} mt-5 min-h-0 flex-col gap-0 overflow-y-auto px-0 py-1 sm:mt-6`}>
-      <div className="grid grid-cols-[max-content_max-content] gap-1.5 pr-3 sm:pr-4">
+      <div className="grid grid-cols-[max-content_max-content] gap-1.5 px-4 pr-7 sm:px-10 sm:pr-14 lg:px-0 lg:pr-3 xl:pr-4">
         {reportItems.map((report) => {
+          const isActiveReport = activeReportFilter === report.id;
+
           return (
             <button
               type="button"
               key={report.id}
-              className="group inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-white/20 bg-white/[0.12] px-2 py-1 text-right text-white shadow-[0_8px_18px_rgba(15,23,42,0.08)] backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/34 hover:bg-white/[0.18] hover:shadow-[0_12px_24px_rgba(15,23,42,0.11)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+              onClick={() => onReportFilterChange?.(isActiveReport ? null : report.id)}
+              className={`group inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-2 py-1 text-right text-white backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/34 hover:bg-white/[0.18] hover:shadow-[0_12px_24px_rgba(15,23,42,0.11)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/30 ${
+                isActiveReport
+                  ? 'border-white/45 bg-white/[0.22] shadow-[0_12px_26px_rgba(15,23,42,0.16),inset_0_1px_0_rgba(255,255,255,0.20)]'
+                  : 'border-white/20 bg-white/[0.12] shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+              }`}
               aria-label={`${report.label}: ${report.value}`}
+              aria-pressed={isActiveReport}
             >
               <span
                 className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md px-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
                 style={{ backgroundColor: report.color }}
               >
-                <span className="font-mono text-[9px] font-black leading-none" dir="ltr">{report.value}</span>
+                {isReportsLoading ? (
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/45 border-t-white" aria-hidden="true" />
+                ) : (
+                  <span className="font-mono text-[9px] font-black leading-none" dir="ltr">{report.value}</span>
+                )}
               </span>
               <span className="min-w-0 text-[10px] font-black leading-3 text-white sm:text-[11px]">
                 {report.label}
@@ -251,7 +382,22 @@ function FollowUpSectionsPanel({ activeSection, onSectionChange, sales = [], pap
         })}
       </div>
 
-      <div className="mt-8">
+      <LatestMobileSalesList
+        sales={filteredMobileSales}
+        paperworkRequests={paperworkRequests}
+        paperworkDocuments={paperworkDocuments}
+        isLoading={isLoading}
+        isFiltering={isFiltering}
+        onRegisterTrackingUnit={onRegisterTrackingUnit}
+        onCreatePaperworkRequest={onCreatePaperworkRequest}
+        onOpenPaperworkRequest={onOpenPaperworkRequest}
+        onViewAll={() => {
+          onReportFilterChange?.(null);
+          onSectionChange('sales');
+        }}
+      />
+
+      <div className="mt-8 hidden lg:block">
         <div className="mb-3 inline-flex rounded-xl border border-white/16 bg-white/[0.10] px-4 py-2 text-xs font-black text-white shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-md">
           أقسام المتابعة
         </div>
@@ -398,7 +544,7 @@ function SaleProductsCards({
   }
 
   return (
-    <div className="grid justify-items-start gap-2">
+    <div className="grid w-full justify-items-stretch gap-2 lg:justify-items-start">
       {saleItems.map((item, index) => {
         const attributes = item.trackingUnitId && Array.isArray(item.trackingUnitAttributes) ? item.trackingUnitAttributes : [];
         const attributesText = formatAttributesText(attributes);
@@ -425,9 +571,9 @@ function SaleProductsCards({
         const itemPrice = formatMoney(item.total || item.unitPrice);
 
         return (
-          <div key={item.id || index} className="max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:border-slate-300 hover:shadow-[0_8px_20px_rgba(15,23,42,0.07)]">
+          <div key={item.id || index} className="w-full max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:border-slate-300 hover:shadow-[0_8px_20px_rgba(15,23,42,0.07)] lg:w-auto">
             <div className="flex min-w-0 flex-wrap items-stretch divide-x divide-x-reverse divide-slate-200/80" dir="rtl">
-              <div className="min-w-[280px] max-w-[560px] flex-shrink-0 px-3 py-2">
+              <div className="min-w-0 flex-1 basis-full px-3 py-2 sm:min-w-[280px] sm:basis-auto lg:max-w-[560px]">
                 {missingTrackingUnit ? (
                   <>
                     <button
@@ -487,7 +633,7 @@ function SaleProductsCards({
                 ) : null}
               </div>
 
-              <div className="flex w-44 flex-shrink-0 items-center justify-center px-3 py-2 text-center">
+              <div className="flex w-full flex-shrink-0 items-center justify-center px-3 py-2 text-center sm:w-44">
                 {missingPaperworkRequest ? (
                   <div className="grid min-w-0 justify-items-center gap-1">
                     <button
@@ -716,67 +862,188 @@ function PaperProductCard({ item, onEditTracking, onEditLicense }) {
   );
 }
 
-function PaperworkRequestCard({ request, onEditTracking, onEditLicense }) {
-  const licenseSummary = getPaperLicenseSummary(request.license);
-  const stageLabel = request.stage?.name || 'مرحلة غير محددة';
-  const statusLabel = PAPERWORK_STATUS_LABELS[request.status] || request.status || '--';
-  const priorityLabel = PAPERWORK_PRIORITY_LABELS[request.priority] || request.priority || '--';
-  const typeLabel = PAPERWORK_TYPE_LABELS[request.requestType] || request.requestType || 'طلب أوراق';
-  const customerName = request.customer?.name || request.documentOwner?.name || 'عميل غير محدد';
+const PAPERWORK_JOURNEY_STATIONS = [
+  {
+    id: 'preparation',
+    label: 'إعداد الأوراق',
+    icon: FileText,
+    stages: ['preparation', 'owner_confirmation'],
+  },
+  {
+    id: 'processor',
+    label: 'عند الجهة',
+    icon: Building2,
+    stages: ['sent_to_processor', 'processor_ready', 'received_from_processor'],
+  },
+  {
+    id: 'customer',
+    label: 'بانتظار العميل',
+    icon: PhoneCall,
+    stages: ['client_notified'],
+  },
+  {
+    id: 'finished',
+    label: 'منتهي',
+    icon: CircleCheck,
+    stages: ['delivered', 'cancelled'],
+  },
+];
+
+const PAPERWORK_INTERNAL_STAGE_LABELS = {
+  preparation: 'تجهيز بيانات الورق',
+  owner_confirmation: 'تحديد صاحب الورق',
+  sent_to_processor: 'تم الإرسال للجهة',
+  processor_ready: 'الورق جاهز عند الجهة',
+  received_from_processor: 'تم استلام الورق من الجهة',
+  client_notified: 'تم إبلاغ العميل',
+  delivered: 'تم التسليم للعميل',
+  cancelled: 'ملغي',
+};
+
+function PaperworkJourneyStations({ currentStage }) {
+  const currentStationIndex = PAPERWORK_JOURNEY_STATIONS.findIndex((station) => station.stages.includes(currentStage));
+  const currentStageLabel = PAPERWORK_INTERNAL_STAGE_LABELS[currentStage] || currentStage || '';
 
   return (
-    <article className="relative bg-white px-4 py-5 transition before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-slate-200 first:before:hidden hover:bg-blue-50/45">
-      <div className="min-w-0">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h2 className="min-w-0 max-w-full truncate text-sm font-black text-slate-950" title={request.productName}>
-            {request.productName}
-          </h2>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">
-            {typeLabel}
-          </span>
-          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-black text-blue-700">
-            {stageLabel}
-          </span>
-          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
-            {statusLabel}
-          </span>
-          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-700">
-            {priorityLabel}
-          </span>
-        </div>
-        <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-xs font-black text-slate-500">
-          <span className="min-w-0 max-w-full truncate" title={customerName}>{customerName}</span>
-          {request.attributesText ? (
-            <span className="min-w-0 max-w-full truncate border-r border-slate-300 pr-2" title={request.attributesText}>
-              {request.attributesText}
+    <div
+      className="mt-3 min-w-0 border-t border-slate-100 pt-3 lg:mt-0 lg:flex lg:h-full lg:items-center lg:border-r lg:border-t-0 lg:border-slate-200 lg:pr-5 lg:pt-0"
+      aria-label="مراحل طلب الأوراق"
+    >
+      <div className="grid min-w-0 flex-1 grid-cols-4 gap-1 rounded-xl border border-slate-200/80 bg-slate-50 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+        {PAPERWORK_JOURNEY_STATIONS.map((station, index) => {
+          const Icon = station.icon;
+          const isCompleted = currentStationIndex > index;
+          const isCurrent = currentStationIndex === index;
+
+          return (
+            <div
+              key={station.id}
+              className={`relative flex min-w-0 flex-col items-center justify-center rounded-lg px-1 py-2 text-center transition ${
+                isCompleted
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : isCurrent
+                    ? 'bg-blue-600 text-white shadow-[0_5px_14px_rgba(37,99,235,0.24)]'
+                    : 'text-slate-400'
+              }`}
+              aria-current={isCurrent ? 'step' : undefined}
+            >
+              {isCurrent ? (
+                <span
+                  className="absolute inset-x-2 -top-px h-0.5 rounded-full bg-sky-300"
+                  aria-hidden="true"
+                />
+              ) : null}
+              <span
+                className={`mb-1 flex h-5 w-5 items-center justify-center rounded-md ${
+                  isCompleted
+                    ? 'bg-emerald-600 text-white'
+                    : isCurrent
+                      ? 'bg-white/16 text-white'
+                      : 'bg-slate-200/70 text-slate-400'
+                }`}
+              >
+                {isCompleted ? <Check className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
+              </span>
+              <span className="max-w-full truncate text-[9px] font-black leading-3 sm:text-[10px]">
+                {station.label}
+              </span>
+              {isCurrent && currentStageLabel ? (
+                <span className="mt-1 hidden max-w-full truncate text-[8px] font-bold leading-3 text-blue-100 sm:block">
+                  {currentStageLabel}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {currentStageLabel ? (
+        <p className="mt-1.5 truncate text-[9px] font-bold text-slate-400 sm:hidden">
+          الحالية: <span className="font-black text-blue-700">{currentStageLabel}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PaperworkRequestCard({ request, onOpen }) {
+  const processorName = request.processor?.name || '';
+  const licenseSummary = request.license?.status === 'jawab'
+    ? `جواب تاجر: ${processorName || 'لم تحدد جهة الإصدار'}`
+    : getPaperLicenseSummary(request.license);
+  const currentStage = request.currentStage || request.stage?.code || '';
+  const documentOwnerName = request.documentOwnerName
+    || request.documentOwner?.name
+    || (request.documentOwnerStatus === 'later' ? 'يُحدد لاحقًا' : 'غير محدد');
+  const identifiers = Array.isArray(request.trackingIdentifiers) ? request.trackingIdentifiers : [];
+  const chassis = identifiers.find((identifier) => (
+    /chassis|شاسيه/i.test(`${identifier.code || ''} ${identifier.label || ''}`)
+  ));
+  const engine = identifiers.find((identifier) => (
+    /engine|motor|موتور|محرك/i.test(`${identifier.code || ''} ${identifier.label || ''}`)
+  ));
+  const identifiersText = [
+    chassis?.value ? `شاسيه ${chassis.value}` : '',
+    engine?.value ? `موتور ${engine.value}` : '',
+  ].filter(Boolean).join(' · ') || 'لا توجد أرقام تعريف';
+  const guardianshipCode = String(request.documentOwnerNote || '').match(/حالة الوصاية:\s*([^\n]+)/)?.[1]?.trim();
+  const guardianshipLabel = {
+    father_guardian: 'وصاية والده',
+    mother_guardian: 'وصاية والدته',
+    none: 'بدون وصاية',
+  }[guardianshipCode] || guardianshipCode || '';
+
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen?.(request)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen?.(request);
+        }
+      }}
+      className="relative cursor-pointer bg-white px-4 py-5 outline-none transition before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-slate-200 first:before:hidden hover:bg-blue-50/55 focus-visible:bg-blue-50/55 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      aria-label={`عرض تفاصيل طلب أوراق ${request.productName || ''}`}
+    >
+      <div className="flex min-w-0 flex-col lg:min-h-[5.75rem] lg:flex-row lg:items-stretch lg:gap-5">
+        <div className="min-w-0 lg:w-[18rem] lg:shrink-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <h2 className="min-w-0 truncate text-sm font-black text-slate-950" title={request.productName}>
+              {request.productName}
+            </h2>
+            <span className="shrink-0 text-[10px] font-bold text-slate-500">
+              باسم: {documentOwnerName}
             </span>
-          ) : null}
-          {request.trackingUnitId ? (
-            <button
-              type="button"
-              onClick={() => onEditLicense(request)}
-              className={`min-w-0 max-w-full truncate border-r pr-2 text-right transition hover:text-slate-900 ${
-                request.license ? 'border-slate-300 text-slate-500' : 'border-amber-200 text-amber-600'
+            {request.documentOwnerStatus !== 'later' && guardianshipLabel ? (
+              <span className="shrink-0 text-[9px] font-bold text-slate-400">· {guardianshipLabel}</span>
+            ) : null}
+          </div>
+          <p className="mt-1 truncate text-[10px] font-bold text-slate-400" title={identifiersText}>
+            {identifiersText}
+          </p>
+          <div className="mt-1">
+            <span
+              className={`inline-flex max-w-full truncate rounded-md border px-2 py-0.5 text-xs font-black leading-5 shadow-sm ${
+                request.license
+                  ? 'border-blue-200 bg-blue-50 text-blue-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
               }`}
               title={licenseSummary}
             >
               {licenseSummary}
-            </button>
-          ) : (
-            <span className="min-w-0 max-w-full truncate border-r border-red-200 pr-2 text-red-600">
-              لم يتم تحديد القطعة الفريدة
-          </span>
-        )}
-      </div>
-        {request.trackingUnitId ? (
-          <PaperProductActionCards item={request} />
-        ) : null}
-        {request.trackingUnitId ? (
-          <PaperProductDetailsGrid item={request} onEditTracking={onEditTracking} />
-        ) : null}
-        {request.notes ? (
-          <p className="mt-2 line-clamp-2 text-xs font-bold leading-5 text-slate-500">{request.notes}</p>
-        ) : null}
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] font-bold text-slate-400">
+            ضمن الفاتورة
+            <span className="mr-1 font-black text-slate-600">
+              {request.customer?.name || 'عميل غير محدد'}
+            </span>
+          </p>
+        </div>
+        <div className="min-w-0 flex-1">
+          <PaperworkJourneyStations currentStage={currentStage} />
+        </div>
       </div>
     </article>
   );
@@ -1706,7 +1973,7 @@ function TrackingUnitPickerSheet({ item, open, onOpenChange, tenantId, onAttach,
 const PAPERWORK_STATUS_OPTIONS = [
   { id: 'delivered', label: 'تم تسليم الأوراق للعميل بالفعل', enabled: true },
   { id: 'vault', label: 'الأوراق موجودة في الخزنة', enabled: true },
-  { id: 'in_progress', label: 'الأوراق تحت التنفيذ', enabled: false },
+  { id: 'in_progress', label: 'تم إرسال طلب تنفيذ الأوراق إلى جهة الإصدار', enabled: true },
   { id: 'not_requested_now', label: 'العميل لم يطلب الأوراق الآن', enabled: false },
   { id: 'unknown', label: 'لا توجد معلومات كافية', enabled: false },
 ];
@@ -1714,12 +1981,40 @@ const PAPERWORK_STATUS_OPTIONS = [
 function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDocuments = [], onSaved }) {
   const [step, setStep] = useState('status');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedProcessor, setSelectedProcessor] = useState(null);
+  const [resolvedProcessor, setResolvedProcessor] = useState(null);
+  const [processorOptions, setProcessorOptions] = useState([]);
+  const [isProcessorConfirmOpen, setIsProcessorConfirmOpen] = useState(false);
+  const [isProcessorOptionsLoading, setIsProcessorOptionsLoading] = useState(false);
+  const [isProcessorSaving, setIsProcessorSaving] = useState(false);
+  const [selectedDocumentOwner, setSelectedDocumentOwner] = useState(null);
+  const [documentOwnerMode, setDocumentOwnerMode] = useState('');
+  const [documentOwnerSearch, setDocumentOwnerSearch] = useState('');
+  const [documentOwnerOptions, setDocumentOwnerOptions] = useState([]);
+  const [isDocumentOwnersLoading, setIsDocumentOwnersLoading] = useState(false);
+  const [isDocumentOwnerSheetOpen, setIsDocumentOwnerSheetOpen] = useState(false);
+  const [isDocumentOwnerSubmitting, setIsDocumentOwnerSubmitting] = useState(false);
   const [confirmationNote, setConfirmationNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const itemName = item?.displayName || item?.name || item?.description || 'منتج غير محدد';
   const customerName = item?.customerName || 'عميل غير محدد';
   const customerPhone = item?.customerPhone || '';
+  const invoiceCustomerOwnerOption = item?.customerId
+    ? {
+        id: item.customerId,
+        name: customerName,
+        phone: customerPhone,
+        subtitle: 'عميل الفاتورة',
+      }
+    : null;
+  const processorPartnerId = selectedProcessor?.id
+    || item?.trackingUnit?.paperworkProcessorPartnerId
+    || item?.trackingUnit?.paperwork_processor_partner_id
+    || item?.paperworkProcessorPartnerId
+    || item?.paperwork_processor_partner_id
+    || null;
+  const displayedProcessor = selectedProcessor || resolvedProcessor;
   const currentPaperworkDocument = useMemo(
     () => getCurrentPaperworkDocumentForItem(item, paperworkDocuments),
     [item, paperworkDocuments],
@@ -1728,18 +2023,164 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
     || currentPaperworkDocument?.displayTitle
     || 'ورقة بدون عنوان';
   const currentPaperworkDocumentLastInDate = getPaperworkDocumentLastInDate(currentPaperworkDocument);
+  const hasPaperworkProcessor = Boolean(
+    processorPartnerId,
+  );
+  const missingPaperworkProcessor = selectedStatus === 'in_progress' && !hasPaperworkProcessor;
+  const missingDocumentOwner = selectedStatus === 'in_progress' && !selectedDocumentOwner?.id;
+  const displayedDocumentOwnerOptions = useMemo(() => {
+    const ownerSearchText = documentOwnerSearch.trim().toLocaleLowerCase('ar-EG');
+    const invoiceOwnerMatchesSearch = !ownerSearchText
+      || String(invoiceCustomerOwnerOption?.name || '').toLocaleLowerCase('ar-EG').includes(ownerSearchText)
+      || String(invoiceCustomerOwnerOption?.phone || '').includes(ownerSearchText);
+    const rows = invoiceCustomerOwnerOption && invoiceOwnerMatchesSearch
+      ? [invoiceCustomerOwnerOption]
+      : [];
+    documentOwnerOptions.forEach((owner) => {
+      if (owner.id && owner.id !== invoiceCustomerOwnerOption?.id) {
+        rows.push(owner);
+      }
+    });
+    return rows;
+  }, [documentOwnerOptions, documentOwnerSearch, invoiceCustomerOwnerOption]);
   const confirmationPlaceholder = selectedStatus === 'vault'
     ? 'مثال: تم العثور على الورق في الخزنة وسيتم ربطه بحالة الأوراق لهذا المنتج.'
-    : 'مثال: تم التأكيد هاتفيًا مع العميل أنه استلم الأوراق.';
+    : selectedStatus === 'in_progress'
+      ? 'مثال: تم إرسال طلب تنفيذ الأوراق إلى جهة الإصدار وجاري المتابعة.'
+      : 'مثال: تم التأكيد هاتفيًا مع العميل أنه استلم الأوراق.';
 
   useEffect(() => {
     if (!open) return;
     setStep('status');
     setSelectedStatus('');
+    setSelectedProcessor(null);
+    setResolvedProcessor(null);
+    setIsProcessorConfirmOpen(false);
+    setProcessorOptions([]);
+    setSelectedDocumentOwner(null);
+    setDocumentOwnerMode('');
+    setDocumentOwnerSearch('');
+    setDocumentOwnerOptions([]);
+    setIsDocumentOwnerSheetOpen(false);
     setConfirmationNote('');
     setError('');
     setIsSaving(false);
+    setIsProcessorSaving(false);
+    setIsProcessorOptionsLoading(false);
+    setIsDocumentOwnersLoading(false);
+    setIsDocumentOwnerSubmitting(false);
   }, [open, item?.id]);
+
+  const loadProcessorOptions = useCallback(async () => {
+    if (!tenantId) return;
+
+    setIsProcessorOptionsLoading(true);
+    setError('');
+
+    try {
+      const suppliers = await partnersService.getPartners({
+        tenantId,
+        filterType: 'supplier',
+        status: 'active',
+      });
+      const childrenMap = await partnersService.getChildContacts({
+        tenantId,
+        parentIds: suppliers.map((partner) => partner.id),
+        status: 'active',
+      });
+      const options = suppliers.flatMap((supplier) => {
+        const children = childrenMap.get(supplier.id) || [];
+        return [
+          {
+            id: supplier.id,
+            name: supplier.name || 'مورد بدون اسم',
+            phone: supplier.phone || '',
+            subtitle: 'المورد الرئيسي',
+            parentName: '',
+          },
+          ...children.map((child) => ({
+            id: child.id,
+            name: child.name || 'جهة تابعة بدون اسم',
+            phone: child.phone || '',
+            subtitle: child.functionTitle || 'جهة اتصال تابعة',
+            parentName: supplier.name || '',
+          })),
+        ];
+      });
+
+      setProcessorOptions(options);
+    } catch (loadError) {
+      setProcessorOptions([]);
+      setError(loadError?.message || 'تعذر تحميل جهات إصدار الأوراق.');
+    } finally {
+      setIsProcessorOptionsLoading(false);
+    }
+  }, [tenantId]);
+
+  const loadDocumentOwnerOptions = useCallback(async (search = '') => {
+    if (!tenantId) return;
+
+    setIsDocumentOwnersLoading(true);
+    setError('');
+
+    try {
+      const partners = await partnersService.getPartners({
+        tenantId,
+        filterType: 'all',
+        search,
+        status: 'active',
+      });
+      setDocumentOwnerOptions(partners.map((partner) => ({
+        id: partner.id,
+        name: partner.name || 'جهة بدون اسم',
+        phone: partner.phone || partner.phone1 || partner.phone2 || '',
+        subtitle: partner.parentName ? `تابع لـ ${partner.parentName}` : partner.isCompany ? 'شركة / جهة رئيسية' : 'شخص',
+      })));
+    } catch (loadError) {
+      setDocumentOwnerOptions([]);
+      setError(loadError?.message || 'تعذر تحميل أسماء أصحاب الورق.');
+    } finally {
+      setIsDocumentOwnersLoading(false);
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (!open || step !== 'owner' || documentOwnerMode !== 'other') return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      loadDocumentOwnerOptions(documentOwnerSearch);
+    }, 220);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [documentOwnerMode, documentOwnerSearch, loadDocumentOwnerOptions, open, step]);
+
+  useEffect(() => {
+    if (!open || step !== 'owner' || !tenantId || !processorPartnerId || selectedProcessor?.id === processorPartnerId) {
+      return undefined;
+    }
+
+    let active = true;
+
+    partnersService.getPartnerById({ tenantId, id: processorPartnerId })
+      .then((partner) => {
+        if (!active) return;
+        setResolvedProcessor(partner ? {
+          id: partner.id,
+          name: partner.name || 'جهة إصدار غير محددة الاسم',
+          phone: partner.phone || partner.phone1 || partner.phone2 || '',
+          subtitle: partner.functionTitle || (partner.parentName ? 'جهة اتصال تابعة' : 'جهة إصدار'),
+          parentName: partner.parentName || '',
+        } : null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setResolvedProcessor(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [open, processorPartnerId, selectedProcessor?.id, step, tenantId]);
 
   const save = async () => {
     if (!item) return;
@@ -1747,7 +2188,15 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
       setError('لا توجد ورقة حالية مرتبطة بنفس القطعة الفريدة في الخزنة.');
       return;
     }
-    if (!['delivered', 'vault'].includes(selectedStatus)) return;
+    if (selectedStatus === 'in_progress' && !hasPaperworkProcessor) {
+      setError('لم يتم تحديد جهة إصدار الأوراق لهذه القطعة. حدد جهة الإصدار أولا من بيانات القطعة.');
+      return;
+    }
+    if (selectedStatus === 'in_progress' && !selectedDocumentOwner?.id) {
+      setError('حدد اسم صاحب الورق أولا.');
+      return;
+    }
+    if (!['delivered', 'vault', 'in_progress'].includes(selectedStatus)) return;
 
     setIsSaving(true);
     setError('');
@@ -1759,11 +2208,25 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
           item,
           confirmationNote,
         });
-      } else {
+      } else if (selectedStatus === 'delivered') {
         await motoCustomerCareService.createLegacyDeliveredPaperworkRequest({
           tenantId,
           item,
           confirmationNote,
+        });
+      } else {
+        await motoCustomerCareService.createPaperworkRequest({
+          tenantId,
+          item,
+          requestType: 'new_document',
+          priority: 'normal',
+          documentOwnerPartnerId: selectedDocumentOwner.id,
+          processorPartnerId,
+          notes: [
+            'تم إرسال طلب تنفيذ الأوراق إلى جهة الإصدار.',
+            selectedDocumentOwner?.name ? `اسم صاحب الورق: ${selectedDocumentOwner.name}` : '',
+            String(confirmationNote || '').trim() ? `ملاحظة: ${String(confirmationNote || '').trim()}` : '',
+          ].filter(Boolean).join('\n'),
         });
       }
       await onSaved?.();
@@ -1772,6 +2235,35 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
       setError(saveError?.message || 'تعذر تحديد حالة الأوراق.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const confirmProcessorSelection = async () => {
+    if (!selectedProcessor?.id) {
+      setError('اختر جهة إصدار الأوراق أولا.');
+      return;
+    }
+    if (!item?.trackingUnitId) {
+      setError('تعذر تحديد القطعة الفريدة المرتبطة بهذا المنتج.');
+      return;
+    }
+
+    setIsProcessorSaving(true);
+    setError('');
+
+    try {
+      await motoCustomerCareService.updateTrackingUnitPaperworkProcessor({
+        tenantId,
+        trackingUnitId: item.trackingUnitId,
+        processorPartnerId: selectedProcessor.id,
+      });
+      setIsProcessorConfirmOpen(false);
+      setStep('owner');
+      loadDocumentOwnerOptions(documentOwnerSearch);
+    } catch (saveError) {
+      setError(saveError?.message || 'تعذر ربط جهة إصدار الأوراق بالقطعة.');
+    } finally {
+      setIsProcessorSaving(false);
     }
   };
 
@@ -1786,17 +2278,49 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
     setStep('confirmation');
   };
 
+  const selectDocumentOwner = (owner) => {
+    setSelectedDocumentOwner(owner);
+    setError('');
+    setStep('confirmation');
+  };
+
+  const createDocumentOwner = async (payload) => {
+    if (!tenantId) {
+      return { ok: false, error: 'لا توجد شركة نشطة.' };
+    }
+
+    try {
+      setIsDocumentOwnerSubmitting(true);
+      const createdPartner = await partnersService.createPartner({
+        tenantId,
+        ...payload,
+      });
+      const owner = {
+        id: createdPartner.id,
+        name: createdPartner.name || 'جهة بدون اسم',
+        phone: createdPartner.phone || createdPartner.phone1 || createdPartner.phone2 || '',
+        subtitle: createdPartner.parentName ? `تابع لـ ${createdPartner.parentName}` : createdPartner.isCompany ? 'شركة / جهة رئيسية' : 'شخص',
+      };
+      setDocumentOwnerOptions((current) => [owner, ...current.filter((itemOption) => itemOption.id !== owner.id)]);
+      setDocumentOwnerMode('other');
+      selectDocumentOwner(owner);
+      setIsDocumentOwnerSheetOpen(false);
+      return { ok: true };
+    } catch (createError) {
+      return { ok: false, error: createError?.message || 'تعذر إضافة الشريك.' };
+    } finally {
+      setIsDocumentOwnerSubmitting(false);
+    }
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-md" dir="rtl">
         <SheetDismissButton />
-        <SheetHeader className="bg-slate-950 px-5 py-5 pl-16 text-right text-white">
-          <p className="text-[11px] font-black uppercase text-slate-300">Paperwork Status</p>
+        <SheetHeader className="bg-gradient-to-br from-[#0f5f9f] via-[#0d76b7] to-[#0b4f86] px-5 py-5 pl-16 text-right text-white">
+          <p className="text-[11px] font-black uppercase text-blue-100/85">Paperwork Status</p>
           <SheetTitle className="mt-1 text-xl font-black text-white">تحديد حالة الأوراق</SheetTitle>
-          <p className="mt-2 text-xs font-bold leading-5 text-slate-300">
-            بيع قديم بدون إنشاء مستندات أو حركات عهدة.
-          </p>
-          <div className="mt-4 grid gap-3 border-t border-white/10 pt-4">
+          <div className="mt-4 grid grid-cols-2 gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-black text-slate-400">العميل صاحب الفاتورة</p>
               <p className="mt-1 truncate text-sm font-black text-white" title={customerName}>{customerName}</p>
@@ -1850,8 +2374,19 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
                       onClick={() => {
                         if (optionEnabled) {
                           setSelectedStatus(option.id);
+                          setSelectedDocumentOwner(null);
+                          setDocumentOwnerMode('');
+                          setDocumentOwnerSearch('');
                           setError('');
-                          setStep('confirmation');
+                          if (option.id === 'in_progress' && !hasPaperworkProcessor) {
+                            setStep('processor');
+                            loadProcessorOptions();
+                          } else if (option.id === 'in_progress') {
+                            setStep('owner');
+                            loadDocumentOwnerOptions('');
+                          } else {
+                            setStep('confirmation');
+                          }
                         }
                       }}
                       disabled={!optionEnabled || isSaving}
@@ -1868,20 +2403,206 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
                 })}
               </div>
             </div>
+          ) : step === 'processor' ? (
+            <div className="space-y-4">
+              <div className="border-y border-red-200 bg-red-50 px-1 py-3 text-xs font-black leading-5 text-red-700">
+                لم يتم تحديد جهة إصدار الأوراق لهذه القطعة. اختر المورد أو الموظف التابع المسؤول عن إصدار الأوراق.
+              </div>
+
+              <div className="border-y border-slate-200">
+                {isProcessorOptionsLoading ? (
+                  <div className="px-1 py-5 text-sm font-black text-slate-500">جاري تحميل الموردين وجهات الاتصال التابعة...</div>
+                ) : processorOptions.length ? (
+                  processorOptions.map((option) => {
+                    const isSelected = selectedProcessor?.id === option.id;
+
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProcessor(option);
+                          setError('');
+                          setIsProcessorConfirmOpen(true);
+                        }}
+                        className={`grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-slate-200 px-1 py-3 text-right transition last:border-b-0 ${
+                          isSelected ? 'bg-blue-50 text-blue-900' : 'bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-black">{option.name}</span>
+                          <span className="mt-0.5 block truncate text-xs font-bold text-slate-500">
+                            {[option.subtitle, option.parentName ? `تابع لـ ${option.parentName}` : '', option.phone].filter(Boolean).join(' - ')}
+                          </span>
+                        </span>
+                        {isSelected ? (
+                          <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white">مختار</span>
+                        ) : null}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="px-1 py-6 text-center text-sm font-black text-slate-400">
+                    لا توجد موردون متاحون لاختيار جهة إصدار الأوراق.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : step === 'owner' ? (
+            <div className="space-y-4">
+              {displayedProcessor?.name ? (
+                <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-sky-50 px-4 py-3 shadow-[0_12px_28px_rgba(14,116,144,0.10)]">
+                  <p className="text-[10px] font-black text-blue-600">جهة إصدار الأوراق المختارة</p>
+                  <p className="mt-1 truncate text-base font-black text-slate-950" title={displayedProcessor.name}>
+                    {displayedProcessor.name}
+                  </p>
+                  {displayedProcessor.parentName || displayedProcessor.phone || displayedProcessor.subtitle ? (
+                    <p className="mt-1 truncate text-xs font-bold text-slate-500">
+                      {[displayedProcessor.subtitle, displayedProcessor.parentName ? `تابع لـ ${displayedProcessor.parentName}` : '', displayedProcessor.phone].filter(Boolean).join(' - ')}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="border-y border-blue-200 bg-blue-50 px-1 py-3 text-xs font-black leading-5 text-blue-800">
+                هل سيتم عمل الورق بنفس اسم عميل الفاتورة أم باسم شخص آخر؟
+              </div>
+
+              <div className="border-y border-slate-200">
+                {invoiceCustomerOwnerOption ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDocumentOwnerMode('invoice_customer');
+                      selectDocumentOwner(invoiceCustomerOwnerOption);
+                    }}
+                    className="grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-slate-200 bg-white px-1 py-3 text-right text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-black">نفس عميل الفاتورة</span>
+                      <span className="mt-0.5 block truncate text-xs font-bold text-slate-500">
+                        {[invoiceCustomerOwnerOption.name, invoiceCustomerOwnerOption.phone].filter(Boolean).join(' - ')}
+                      </span>
+                    </span>
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700">
+                      اختيار
+                    </span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocumentOwnerMode('other');
+                    setSelectedDocumentOwner(null);
+                    setError('');
+                    loadDocumentOwnerOptions(documentOwnerSearch);
+                  }}
+                  className={`grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-slate-200 px-1 py-3 text-right transition last:border-b-0 ${
+                    documentOwnerMode === 'other' ? 'bg-blue-50 text-blue-900' : 'bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black">شخص آخر</span>
+                    <span className="mt-0.5 block truncate text-xs font-bold text-slate-500">
+                      ابحث واختر صاحب الورق من جهات الاتصال
+                    </span>
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
+                    بحث
+                  </span>
+                </button>
+              </div>
+
+              {documentOwnerMode === 'other' ? (
+                <>
+                  <div className="flex gap-2">
+                    <div className="relative min-w-0 flex-1">
+                      <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        value={documentOwnerSearch}
+                        onChange={(event) => {
+                          setDocumentOwnerSearch(event.target.value);
+                          setError('');
+                        }}
+                        placeholder="ابحث باسم صاحب الورق"
+                        className="h-11 pr-10 text-sm font-bold"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsDocumentOwnerSheetOpen(true)}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                      aria-label="إضافة شريك جديد"
+                      title="إضافة شريك جديد"
+                    >
+                      <UserPlus className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <div className="border-y border-slate-200">
+                    {isDocumentOwnersLoading ? (
+                      <div className="px-1 py-5 text-sm font-black text-slate-500">جاري تحميل أصحاب الورق...</div>
+                    ) : displayedDocumentOwnerOptions.length ? (
+                      displayedDocumentOwnerOptions.map((owner) => (
+                    <button
+                      key={owner.id}
+                      type="button"
+                      onClick={() => {
+                        setDocumentOwnerMode('other');
+                        selectDocumentOwner(owner);
+                      }}
+                      className="grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-slate-200 bg-white px-1 py-3 text-right text-slate-700 transition last:border-b-0 hover:bg-slate-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-black">{owner.name}</span>
+                        <span className="mt-0.5 block truncate text-xs font-bold text-slate-500">
+                          {[owner.subtitle, owner.phone].filter(Boolean).join(' - ')}
+                        </span>
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
+                        اختيار
+                      </span>
+                    </button>
+                      ))
+                    ) : (
+                      <div className="px-1 py-6 text-center text-sm font-black text-slate-400">
+                        لا توجد جهات مطابقة.
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
           ) : (
-            <label className="block space-y-2">
-              <span className="text-xs font-black text-slate-500">ملحوظة التأكيد</span>
-              <textarea
-                value={confirmationNote}
-                onChange={(event) => {
-                  setConfirmationNote(event.target.value);
-                  setError('');
-                }}
-                rows={6}
-                className="w-full resize-none border-0 border-y border-slate-200 bg-white px-0 py-3 text-sm font-bold text-slate-900 outline-none placeholder:text-slate-300 focus:border-slate-400"
-                placeholder={confirmationPlaceholder}
-              />
-            </label>
+            <div className="space-y-3">
+              {missingPaperworkProcessor ? (
+                <div className="border-y border-red-200 bg-red-50 px-1 py-3 text-xs font-black leading-5 text-red-700">
+                  لم يتم تحديد جهة إصدار الأوراق لهذه القطعة. حدد جهة الإصدار أولا من بيانات القطعة.
+                </div>
+              ) : null}
+              {missingDocumentOwner ? (
+                <div className="border-y border-red-200 bg-red-50 px-1 py-3 text-xs font-black leading-5 text-red-700">
+                  حدد اسم صاحب الورق أولا.
+                </div>
+              ) : null}
+              {selectedStatus === 'in_progress' && selectedDocumentOwner?.name ? (
+                <div className="border-y border-slate-200 bg-slate-50 px-1 py-3 text-xs font-black leading-5 text-slate-700">
+                  سيتم عمل الورق باسم: <span className="text-slate-950">{selectedDocumentOwner.name}</span>
+                </div>
+              ) : null}
+              <label className="block space-y-2">
+                <span className="text-xs font-black text-slate-500">ملحوظة التأكيد</span>
+                <textarea
+                  value={confirmationNote}
+                  onChange={(event) => {
+                    setConfirmationNote(event.target.value);
+                    setError('');
+                  }}
+                  rows={6}
+                  className="w-full resize-none border-0 border-y border-slate-200 bg-white px-0 py-3 text-sm font-bold text-slate-900 outline-none placeholder:text-slate-300 focus:border-slate-400"
+                  placeholder={confirmationPlaceholder}
+                />
+              </label>
+            </div>
           )}
 
           {error ? (
@@ -1891,9 +2612,15 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
           ) : null}
         </SheetBody>
 
-        <SheetFooter className="border-t border-slate-200 px-5 py-4">
-          {step === 'confirmation' ? (
-            <Button type="button" variant="secondary" onClick={() => setStep('status')} disabled={isSaving}>
+        {step === 'processor' ? null : (
+          <SheetFooter className="border-t border-slate-200 px-5 py-4">
+          {step !== 'status' ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setStep(step === 'confirmation' && selectedStatus === 'in_progress' ? 'owner' : 'status')}
+              disabled={isSaving}
+            >
               رجوع
             </Button>
           ) : null}
@@ -1901,117 +2628,76 @@ function PaperworkStatusSheet({ item, open, onOpenChange, tenantId, paperworkDoc
             <Button
               type="button"
               onClick={save}
-              disabled={isSaving || !['delivered', 'vault'].includes(selectedStatus)}
+              disabled={isSaving || missingPaperworkProcessor || missingDocumentOwner || !['delivered', 'vault', 'in_progress'].includes(selectedStatus)}
               className="flex-1"
             >
               {isSaving ? 'جاري الحفظ...' : 'تأكيد'}
             </Button>
           ) : null}
-        </SheetFooter>
+          </SheetFooter>
+        )}
       </SheetContent>
-    </Sheet>
-  );
-}
-
-function PaperworkRequestDetailsSheet({ request, open, onOpenChange }) {
-  const events = Array.isArray(request?.events) ? request.events : [];
-  const requestStatusLabel = PAPERWORK_STATUS_LABELS[request?.status] || request?.status || '--';
-  const requestPriorityLabel = PAPERWORK_PRIORITY_LABELS[request?.priority] || request?.priority || '--';
-  const requestTypeLabel = PAPERWORK_TYPE_LABELS[request?.requestType] || request?.requestType || '--';
-  const productName = request?.productName || 'طلب أوراق';
-  const customerName = request?.customer?.name || request?.documentOwner?.name || 'عميل غير محدد';
-  const eventRows = events.length ? events : [{
-    id: 'request-created',
-    eventType: 'created',
-    newStatus: request?.status || '',
-    notes: request?.notes || '',
-    createdByName: '',
-    createdAt: request?.createdAt,
-  }];
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="max-w-lg" dir="rtl">
-        <SheetDismissButton />
-        <SheetHeader className="bg-slate-950 px-5 py-5 pl-16 text-right text-white">
-          <p className="text-[11px] font-black uppercase text-slate-300">Paperwork Request</p>
-          <SheetTitle className="mt-1 text-xl font-black text-white">طلب الأوراق والأحداث</SheetTitle>
-          <div className="mt-4 grid gap-3 border-t border-white/10 pt-4">
-            <div className="min-w-0">
-              <p className="text-[10px] font-black text-slate-400">المنتج</p>
-              <p className="mt-1 truncate text-sm font-black text-white" title={productName}>{productName}</p>
+      <Dialog.Root open={isProcessorConfirmOpen} onOpenChange={setIsProcessorConfirmOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[70] bg-slate-950/35 backdrop-blur-sm" />
+          <Dialog.Content
+            dir="rtl"
+            className="fixed left-1/2 top-1/2 z-[71] w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200 bg-white p-5 text-right shadow-[0_24px_70px_rgba(15,23,42,0.24)] outline-none"
+          >
+            <Dialog.Title className="text-base font-black text-slate-950">تأكيد جهة إصدار الأوراق</Dialog.Title>
+            <Dialog.Description className="mt-3 text-sm font-bold leading-6 text-slate-600">
+              سيتم ربط جهة إصدار الأوراق بهذه القطعة على اسم{' '}
+              <span className="font-black text-slate-950">{selectedProcessor?.name || 'جهة غير محددة'}</span>
+              {selectedProcessor?.parentName ? (
+                <span> — تابع لـ {selectedProcessor.parentName}</span>
+              ) : null}
+            </Dialog.Description>
+            <div className="mt-5 flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsProcessorConfirmOpen(false)}
+                disabled={isProcessorSaving}
+              >
+                إلغاء
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmProcessorSelection}
+                disabled={isProcessorSaving || !selectedProcessor?.id}
+                className="flex-1"
+              >
+                {isProcessorSaving ? 'جاري الربط...' : 'تأكيد والمتابعة'}
+              </Button>
             </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black text-slate-400">العميل</p>
-              <p className="mt-1 truncate text-sm font-black text-white" title={customerName}>{customerName}</p>
-            </div>
-          </div>
-        </SheetHeader>
-
-        <SheetBody className="space-y-5 px-5 py-5">
-          <section className="grid gap-3 border-y border-slate-200 py-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[10px] font-black text-slate-400">الحالة</p>
-                <p className="mt-1 text-sm font-black text-slate-950">{requestStatusLabel}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-slate-400">الأولوية</p>
-                <p className="mt-1 text-sm font-black text-slate-950">{requestPriorityLabel}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-slate-400">نوع الطلب</p>
-                <p className="mt-1 text-sm font-black text-slate-950">{requestTypeLabel}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-slate-400">تاريخ الإنشاء</p>
-                <p className="mt-1 text-sm font-black text-slate-950">{formatDate(request?.createdAt)}</p>
-              </div>
-            </div>
-
-            {request?.notes ? (
-              <div>
-                <p className="text-[10px] font-black text-slate-400">ملاحظة الطلب</p>
-                <p className="mt-1 whitespace-pre-wrap text-xs font-bold leading-5 text-slate-700">{request.notes}</p>
-              </div>
-            ) : null}
-          </section>
-
-          <section>
-            <h3 className="text-sm font-black text-slate-950">الأحداث</h3>
-            <div className="mt-3 divide-y divide-slate-200 border-y border-slate-200">
-              {eventRows.map((event) => {
-                const eventLabel = getPaperworkEventLabel(event);
-                const eventStatusLabel = PAPERWORK_STATUS_LABELS[event.newStatus] || event.newStatus || '';
-                const eventCreator = event.createdByName || 'مستخدم غير محدد';
-                const eventNote = typeof event.notes === 'string' ? event.notes.trim() : '';
-
-                return (
-                  <article key={event.id} className="py-3">
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-slate-950" title={eventLabel}>{eventLabel}</p>
-                        <p className="mt-0.5 text-xs font-bold text-slate-500">بواسطة: {eventCreator}</p>
-                      </div>
-                      <div className="flex-shrink-0 text-left">
-                        <p className="text-[11px] font-black text-slate-400">{formatDate(event.createdAt)}</p>
-                        {eventStatusLabel ? (
-                          <p className="mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">{eventStatusLabel}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                    {eventNote ? (
-                      <p className="mt-2 whitespace-pre-wrap text-xs font-bold leading-5 text-slate-600">
-                        ملاحظة: {eventNote}
-                      </p>
-                    ) : null}
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        </SheetBody>
-      </SheetContent>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      <PartnerFormSheet
+        open={isDocumentOwnerSheetOpen}
+        onOpenChange={setIsDocumentOwnerSheetOpen}
+        initialValues={{
+          name: documentOwnerSearch,
+          phone: '',
+          notes: 'تم الإضافة بغرض استخراج أوراق.',
+          isCustomer: true,
+          isSupplier: false,
+          isCompany: false,
+          contactType: 'person',
+        }}
+        onSubmit={createDocumentOwner}
+        isSubmitting={isDocumentOwnerSubmitting}
+        side="right"
+        hideTypeFields
+        hideCompanyFields
+        hideNotesField
+        hideAccountingFields
+        hideFooterNote
+        hideCancelButton
+        accentHeader
+        hideDismissButton
+        inlineSubmit
+      />
     </Sheet>
   );
 }
@@ -2746,35 +3432,43 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   });
   const [hasRequestedMobileData, setHasRequestedMobileData] = useState(false);
   const [paperworkFilter, setPaperworkFilter] = useState('all');
+  const [activeReportFilter, setActiveReportFilter] = useState(null);
+  const [isReportFilterLoading, setIsReportFilterLoading] = useState(false);
   const [trackingSheetItem, setTrackingSheetItem] = useState(null);
   const [licenseSheetItem, setLicenseSheetItem] = useState(null);
   const [trackingUnitPickerItem, setTrackingUnitPickerItem] = useState(null);
   const [stockUnitSheetItem, setStockUnitSheetItem] = useState(null);
   const [paperworkRequestItem, setPaperworkRequestItem] = useState(null);
   const [paperworkRequestDetails, setPaperworkRequestDetails] = useState(null);
+  const [pendingProcessorPaperworkOpen, setPendingProcessorPaperworkOpen] = useState(false);
   const [paperworkDocumentSheetOpen, setPaperworkDocumentSheetOpen] = useState(false);
   const [paperworkOutMoveDocument, setPaperworkOutMoveDocument] = useState(null);
   const prefersReducedMotion = useReducedMotion();
   const mobileCloseTimeoutRef = useRef(null);
+  const reportFilterTimeoutRef = useRef(null);
   const { tenant_user: tenantUser } = useAuth();
+  const salesLimit = isMobileViewport && !hasRequestedMobileData ? 10 : 250;
   const {
     tenantId,
     sales,
     paperworkRequests,
     paperworkDocuments,
     paperworkDocumentMoves,
+    paperworkReports,
+    isReportsLoading,
     isLoading,
     error,
     refresh,
+    updatePaperworkRequestLocally,
     ensurePaperworkLoaded,
-  } = useMotoCustomerCareSales({ limit: 250, enabled: !isMobileViewport || hasRequestedMobileData, activeSection });
+  } = useMotoCustomerCareSales({ limit: salesLimit, enabled: true, activeSection });
   const displayedSales = useMemo(() => {
-    if (activeSection === 'papers') {
-      return sales;
+    if (activeSection !== 'sales') {
+      return [];
     }
 
-    return sales;
-  }, [activeSection, sales]);
+    return filterSalesByPaperworkReport(sales, paperworkRequests, activeReportFilter);
+  }, [activeReportFilter, activeSection, paperworkRequests, sales]);
   const displayedPaperworkDocuments = useMemo(() => {
     if (activeSection !== 'papers') {
       return [];
@@ -2793,6 +3487,17 @@ export function MotoCustomerCareSalesFollowUpListPage() {
 
     return paperworkDocumentMoves;
   }, [activeSection, paperworkDocumentMoves, paperworkFilter]);
+  const hasOpenSheet = Boolean(
+    trackingSheetItem
+      || licenseSheetItem
+      || trackingUnitPickerItem
+      || stockUnitSheetItem
+      || paperworkRequestItem
+      || paperworkRequestDetails
+      || pendingProcessorPaperworkOpen
+      || paperworkDocumentSheetOpen
+      || paperworkOutMoveDocument,
+  );
 
   const activeSectionLabel = followUpSections.find((section) => section.id === activeSection)?.label || 'المبيعات';
   useEffect(() => {
@@ -2810,7 +3515,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       return undefined;
     }
 
-    const shouldHideAppBackButton = isMobileContentOpen || isMobileContentClosing;
+    const shouldHideAppBackButton = hasOpenSheet
+      || (isMobileViewport && (isMobileContentOpen || isMobileContentClosing));
     document.documentElement.classList.toggle('customer-care-section-open', shouldHideAppBackButton);
     document.body.classList.toggle('customer-care-section-open', shouldHideAppBackButton);
 
@@ -2818,7 +3524,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       document.documentElement.classList.remove('customer-care-section-open');
       document.body.classList.remove('customer-care-section-open');
     };
-  }, [isMobileContentClosing, isMobileContentOpen]);
+  }, [hasOpenSheet, isMobileContentClosing, isMobileContentOpen, isMobileViewport]);
 
   const handleSectionChange = (sectionId) => {
     if (mobileCloseTimeoutRef.current) {
@@ -2830,6 +3536,28 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     setActiveSection(sectionId);
     setHasRequestedMobileData(true);
     setIsMobileContentOpen(true);
+  };
+  const handleReportFilterChange = (filterId) => {
+    if (filterId === 'sent_pending_receipt') {
+      setPendingProcessorPaperworkOpen(true);
+      ensurePaperworkLoaded();
+      return;
+    }
+
+    if (reportFilterTimeoutRef.current) {
+      window.clearTimeout(reportFilterTimeoutRef.current);
+      reportFilterTimeoutRef.current = null;
+    }
+
+    setActiveReportFilter(filterId);
+    setHasRequestedMobileData(true);
+    setActiveSection('sales');
+    setIsReportFilterLoading(true);
+
+    reportFilterTimeoutRef.current = window.setTimeout(() => {
+      setIsReportFilterLoading(false);
+      reportFilterTimeoutRef.current = null;
+    }, 260);
   };
   const handleOpenPaperworkStatus = (item) => {
     setPaperworkRequestItem(item);
@@ -2853,6 +3581,9 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     () => () => {
       if (mobileCloseTimeoutRef.current) {
         window.clearTimeout(mobileCloseTimeoutRef.current);
+      }
+      if (reportFilterTimeoutRef.current) {
+        window.clearTimeout(reportFilterTimeoutRef.current);
       }
     },
     [],
@@ -2886,19 +3617,26 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     <section className="relative flex min-h-0 flex-1 flex-col items-stretch overflow-hidden text-white" dir="rtl">
       <style>{`
         @keyframes customerCareMobilePageIn {
-          from { opacity: 0; transform: translateX(-100%); }
-          to { opacity: 1; transform: translateX(0); }
+          from { opacity: 0; transform: translateY(10px) scale(0.985); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
         }
         @keyframes customerCareMobilePageOut {
-          from { opacity: 1; transform: translateX(0); }
-          to { opacity: 0; transform: translateX(-100%); }
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to { opacity: 0; transform: translateY(8px) scale(0.99); }
+        }
+        @keyframes customerCareMobileSaleEntryIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         @media (max-width: 1023px) {
           .customer-care-mobile-page-in {
-            animation: customerCareMobilePageIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+            animation: customerCareMobilePageIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
           }
           .customer-care-mobile-page-out {
-            animation: customerCareMobilePageOut 0.16s cubic-bezier(0.7, 0, 0.84, 0) both;
+            animation: customerCareMobilePageOut 0.14s cubic-bezier(0.7, 0, 0.84, 0) both;
+          }
+          .customer-care-mobile-sale-entry {
+            animation: customerCareMobileSaleEntryIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
           }
         }
         .customer-care-operations-window {
@@ -2926,14 +3664,14 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         }
       `}</style>
       <div className="relative z-10 grid min-h-0 w-full max-w-none flex-1 gap-0 overflow-hidden lg:grid-cols-[minmax(18rem,0.72fr)_minmax(34rem,1.28fr)] lg:items-stretch lg:bg-[radial-gradient(circle_at_28%_18%,rgba(56,189,248,0.30)_0%,rgba(37,99,235,0.16)_32%,transparent_58%),linear-gradient(145deg,#164f86_0%,#123f72_52%,#0c2f59_100%)]">
-        <div className="customer-care-fade-up relative z-[45] min-h-0 overflow-hidden border-l border-white/12 bg-[radial-gradient(circle_at_45%_22%,rgba(56,189,248,0.30)_0%,rgba(37,99,235,0.18)_34%,transparent_58%),linear-gradient(145deg,#164f86_0%,#123f72_52%,#0c2f59_100%)] px-4 pt-16 text-right text-white shadow-[-18px_0_44px_rgba(15,23,42,0.16)] sm:px-10 sm:pt-20 lg:border-l-0 lg:bg-none lg:px-8 lg:pt-14 lg:shadow-none xl:px-10" style={{ animationDelay: '0s' }}>
+        <div className="customer-care-fade-up relative z-[45] h-full min-h-0 overflow-x-hidden overflow-y-auto border-l border-white/12 bg-[radial-gradient(circle_at_45%_22%,rgba(56,189,248,0.30)_0%,rgba(37,99,235,0.18)_34%,transparent_58%),linear-gradient(145deg,#164f86_0%,#123f72_52%,#0c2f59_100%)] px-0 pb-8 pt-16 text-right text-white shadow-[-18px_0_44px_rgba(15,23,42,0.16)] [-webkit-overflow-scrolling:touch] sm:px-0 sm:pt-20 lg:overflow-hidden lg:border-l-0 lg:bg-none lg:px-8 lg:pb-0 lg:pt-14 lg:shadow-none xl:px-10" style={{ animationDelay: '0s' }}>
           <div className="pointer-events-none absolute inset-0 hidden sm:block">
             <span className="absolute left-[10%] top-[11%] h-7 w-7 rounded-md bg-white/12 shadow-[92px_98px_0_rgba(255,255,255,0.08),148px_32px_0_rgba(125,211,252,0.12)]" />
             <span className="absolute right-[13%] top-[34%] h-12 w-12 rounded-lg bg-white/10 shadow-[-38px_142px_0_rgba(125,211,252,0.10),92px_238px_0_rgba(255,255,255,0.08)]" />
             <span className="absolute left-[27%] top-[22%] h-px w-36 rotate-12 bg-gradient-to-r from-transparent via-sky-200/30 to-transparent" />
           </div>
           <div className="pointer-events-none absolute inset-y-10 left-0 w-px bg-white/20" />
-          <div className="relative mt-4 lg:mt-5">
+          <div className="relative mt-4 px-4 sm:px-10 lg:mt-5 lg:px-0">
             <p className="mb-2 text-xs font-semibold text-blue-100/80 sm:mb-3 sm:text-sm">Customer Care</p>
             <h1 className="max-w-sm text-3xl font-bold leading-tight text-white sm:text-5xl">
               خدمة عملاء الموتوسيكلات
@@ -2945,10 +3683,20 @@ export function MotoCustomerCareSalesFollowUpListPage() {
           <div className="relative mt-6 min-h-0">
             <FollowUpSectionsPanel
               activeSection={activeSection}
+              activeReportFilter={activeReportFilter}
               onSectionChange={handleSectionChange}
+              onReportFilterChange={handleReportFilterChange}
+              paperworkReports={paperworkReports}
+              isReportsLoading={isReportsLoading}
               sales={sales}
               paperworkRequests={paperworkRequests}
+              paperworkDocuments={paperworkDocuments}
               isMobileContentOpen={isMobileContentOpen}
+              isLoading={isLoading}
+              isFiltering={isReportFilterLoading}
+              onRegisterTrackingUnit={setTrackingUnitPickerItem}
+              onCreatePaperworkRequest={handleOpenPaperworkStatus}
+              onOpenPaperworkRequest={setPaperworkRequestDetails}
             />
           </div>
         </div>
@@ -3003,10 +3751,18 @@ export function MotoCustomerCareSalesFollowUpListPage() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-              {isLoading ? (
+              {isLoading || (['sales', 'requests'].includes(activeSection) && isReportFilterLoading) ? (
                 <LoadingSpinner title="جاري تحميل العمليات" description="يتم تجهيز بيانات القسم الحالي." />
               ) : error ? (
                 <div className="m-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm font-bold text-red-700">{error}</div>
+              ) : activeSection === 'requests' && paperworkRequests.length ? (
+                paperworkRequests.map((request) => (
+                  <PaperworkRequestCard
+                    key={request.id}
+                    request={request}
+                    onOpen={setPaperworkRequestDetails}
+                  />
+                ))
               ) : activeSection === 'papers' && paperworkFilter === 'moves' && displayedPaperworkMoves.length ? (
                 displayedPaperworkMoves.map((move) => (
                   <PaperworkDocumentMoveCard key={move.id} move={move} />
@@ -3015,7 +3771,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                 displayedPaperworkDocuments.map((document) => (
                   <PaperworkDocumentCard key={document.id} document={document} onMoveOut={setPaperworkOutMoveDocument} />
                 ))
-              ) : activeSection !== 'papers' && displayedSales.length ? (
+              ) : activeSection === 'sales' && displayedSales.length ? (
                 displayedSales.map((sale) => (
                   <SalesFollowUpCard
                     key={sale.id}
@@ -3033,6 +3789,11 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                     <>
                       <h2 className="text-lg font-black text-slate-950">لا توجد أوراق</h2>
                       <p className="mt-2 text-sm font-semibold text-slate-500">قسم الأوراق يعرض مستندات paperwork_documents وحركاتها من paperwork_document_moves.</p>
+                    </>
+                  ) : activeSection === 'requests' ? (
+                    <>
+                      <h2 className="text-lg font-black text-slate-950">لا توجد طلبات أوراق</h2>
+                      <p className="mt-2 text-sm font-semibold text-slate-500">ستظهر هنا طلبات تنفيذ الأوراق ومراحل متابعتها.</p>
                     </>
                   ) : (
                     <>
@@ -3098,11 +3859,106 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         paperworkDocuments={paperworkDocuments}
         onSaved={refresh}
       />
-      <PaperworkRequestDetailsSheet
+      <PaperworkRequestDetailsDrawer
         request={paperworkRequestDetails}
         open={Boolean(paperworkRequestDetails)}
         onOpenChange={(open) => {
           if (!open) setPaperworkRequestDetails(null);
+        }}
+        tenantId={tenantId}
+        onCustomerConfirmed={(confirmation) => {
+          if (!paperworkRequestDetails?.id || !confirmation) return;
+
+          const confirmationPatch = {
+            customerConfirmed: true,
+            customerConfirmedAt: confirmation.customerConfirmedAt,
+            customerConfirmedBy: confirmation.customerConfirmedBy,
+            customerConfirmedByName: confirmation.customerConfirmedByName,
+          };
+
+          updatePaperworkRequestLocally(paperworkRequestDetails.id, confirmationPatch);
+          setPaperworkRequestDetails((current) => (
+            current?.id === paperworkRequestDetails.id
+              ? {
+                ...current,
+                ...confirmationPatch,
+                events: confirmation.event
+                  ? [...(current.events || []), confirmation.event]
+                  : current.events,
+              }
+              : current
+          ));
+        }}
+        onRequestSent={(result) => {
+          if (!paperworkRequestDetails?.id || !result) return;
+
+          const sentPatch = {
+            currentStage: result.currentStage,
+            stage: {
+              code: result.currentStage,
+              name: 'تم الإرسال للجهة',
+            },
+            updatedAt: result.updatedAt,
+          };
+
+          updatePaperworkRequestLocally(paperworkRequestDetails.id, sentPatch);
+          setPaperworkRequestDetails((current) => (
+            current?.id === paperworkRequestDetails.id
+              ? {
+                ...current,
+                ...sentPatch,
+                events: result.event
+                  ? [...(current.events || []), result.event]
+                  : current.events,
+              }
+              : current
+          ));
+        }}
+        onSaved={(processor) => {
+          if (!paperworkRequestDetails?.id || !processor) return;
+
+          const nextProcessor = {
+            id: processor.id,
+            name: processor.name,
+            phone: processor.phone,
+            phone1: processor.phone,
+            parentName: processor.parentName || '',
+            functionTitle: processor.subtitle || '',
+            subtitle: processor.subtitle || '',
+          };
+
+          updatePaperworkRequestLocally(paperworkRequestDetails.id, {
+            processorPartnerId: processor.id,
+            processor: nextProcessor,
+          });
+          setPaperworkRequestDetails((current) => (
+            current?.id === paperworkRequestDetails.id
+              ? {
+                ...current,
+                processorPartnerId: processor.id,
+                processor: nextProcessor,
+              }
+              : current
+          ));
+        }}
+      />
+      <PendingProcessorPaperworkDrawer
+        open={pendingProcessorPaperworkOpen}
+        onOpenChange={setPendingProcessorPaperworkOpen}
+        requests={paperworkRequests}
+        tenantId={tenantId}
+        onReceived={(receivedItems) => {
+          receivedItems.forEach((item) => {
+            updatePaperworkRequestLocally(item.requestId, {
+              currentStage: 'received_from_processor',
+              stage: {
+                code: 'received_from_processor',
+                name: 'تم استلام الورق من الجهة',
+              },
+              updatedAt: item.updatedAt,
+            });
+          });
+          refresh();
         }}
       />
 

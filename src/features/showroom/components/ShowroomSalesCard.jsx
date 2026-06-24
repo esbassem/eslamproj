@@ -656,7 +656,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
         ? trackingIdentifiers.map((identifier) => identifier.value).filter(Boolean).join(' - ')
         : fallbackSerialNumber,
       trackingIdentifiers,
-      ownershipTransferName: productDraft.ownershipTransferName.trim(),
+      ownershipTransferName: '',
       configuredAttributes,
       license,
       lineId: `${pendingProduct.id}-${Date.now()}`,
@@ -1164,7 +1164,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                 <>
               <div className="rounded-none border-0 bg-transparent p-0 px-5 sm:px-7">
               {!pendingProduct?.requiresLicense ? (
-                <div className={`grid gap-4 ${pendingProduct?.requiresOwnershipTransfer ? 'md:grid-cols-2' : ''}`}>
+                <div className="grid gap-4">
                   <label className="block">
                     <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">سعر البيع</span>
                     <Input
@@ -1183,20 +1183,6 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                     </span>
                   </label>
 
-                  {pendingProduct?.requiresOwnershipTransfer ? (
-                    <label className="block">
-                      <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">اسم المالك الجديد</span>
-                      <Input
-                        value={productDraft.ownershipTransferName}
-                        onChange={(event) => {
-                          setProductDraft((current) => ({ ...current, ownershipTransferName: event.target.value }));
-                          setProductSheetError('');
-                        }}
-                        placeholder="اكتب اسم المالك الجديد"
-                        className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
-                      />
-                    </label>
-                  ) : null}
                 </div>
               ) : null}
 
@@ -1322,7 +1308,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                 </>
               ) : (
                 <div className="space-y-4 px-5 pb-4 pt-0 sm:px-7">
-                  <div className={`grid gap-4 ${pendingProduct?.requiresOwnershipTransfer ? 'md:grid-cols-2' : ''}`}>
+                  <div className="grid gap-4">
                     <label className="block">
                       <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">سعر البيع</span>
                       <Input
@@ -1341,20 +1327,6 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                       </span>
                     </label>
 
-                    {pendingProduct?.requiresOwnershipTransfer ? (
-                      <label className="block">
-                        <span className="mb-2.5 block text-xs font-black uppercase tracking-wide text-slate-500">اسم المالك الجديد</span>
-                        <Input
-                          value={productDraft.ownershipTransferName}
-                          onChange={(event) => {
-                            setProductDraft((current) => ({ ...current, ownershipTransferName: event.target.value }));
-                            setProductSheetError('');
-                          }}
-                          placeholder="اكتب اسم المالك الجديد"
-                          className="h-11 rounded-lg border-slate-300 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50"
-                        />
-                      </label>
-                    ) : null}
                   </div>
                 </div>
               )}
@@ -1383,6 +1355,7 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
         isSubmitting={isCustomerSubmitting}
         side="right"
         hideTypeFields
+        hideCompanyFields
         hideAccountingFields
         hideFooterNote
         hideCancelButton

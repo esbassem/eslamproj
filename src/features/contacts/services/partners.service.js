@@ -13,10 +13,17 @@ function normalizePartner(record) {
   const supplierRank = toNumber(record?.supplier_rank, 0);
   const isCustomer = customerRank > 0;
   const isSupplier = supplierRank > 0;
+  const parentId = record?.parent_id ?? null;
+  const isCompany = record?.is_company ?? false;
+  const contactType = record?.contact_type ?? (parentId ? 'contact' : isCompany ? 'company' : 'person');
 
   return {
     id: record?.id,
     tenantId: record?.tenant_id ?? null,
+    parentId,
+    parentName: record?.parent_name ?? record?.parentName ?? '',
+    contactType,
+    functionTitle: record?.function_title ?? '',
     name: record?.name ?? '',
     nickname: record?.nickname ?? '',
     phone: record?.phone1 ?? '',
@@ -28,7 +35,7 @@ function normalizePartner(record) {
     jobAddress: record?.job_address ?? '',
     notes: record?.notes ?? '',
     companyType: record?.company_type ?? '',
-    isCompany: record?.is_company ?? false,
+    isCompany,
     customerRank,
     supplierRank,
     financerRank: toNumber(record?.financer_rank, 0),
@@ -69,6 +76,18 @@ function buildPartnerPayload(data) {
 
   if (Object.prototype.hasOwnProperty.call(data, 'name')) {
     payload.name = data.name?.trim() || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'parentId') || Object.prototype.hasOwnProperty.call(data, 'parent_id')) {
+    payload.parent_id = data.parentId ?? data.parent_id ?? null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'contactType') || Object.prototype.hasOwnProperty.call(data, 'contact_type')) {
+    payload.contact_type = (data.contactType ?? data.contact_type)?.trim() || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'functionTitle') || Object.prototype.hasOwnProperty.call(data, 'function_title')) {
+    payload.function_title = (data.functionTitle ?? data.function_title)?.trim() || null;
   }
 
   if (Object.prototype.hasOwnProperty.call(data, 'nickname')) {
@@ -149,7 +168,63 @@ function buildPartnerPayload(data) {
     payload.property_account_payable_id = data.payableAccountId ?? data.property_account_payable_id ?? null;
   }
 
+  const hasParentField = Object.prototype.hasOwnProperty.call(payload, 'parent_id');
+  const hasIsCompanyField = Object.prototype.hasOwnProperty.call(payload, 'is_company');
+  const hasParent = Boolean(payload.parent_id);
+
+  if (payload.is_company === true) {
+    payload.contact_type = 'company';
+  } else if (hasParent) {
+    payload.contact_type = 'contact';
+    payload.is_company = false;
+  } else if (hasIsCompanyField || hasParentField) {
+    payload.contact_type = 'person';
+  }
+
   return payload;
+}
+
+async function loadParentNamesMap(client, tenantId, partners) {
+  const parentIds = Array.from(new Set(
+    (Array.isArray(partners) ? partners : [])
+      .map((partner) => partner?.parent_id)
+      .filter(Boolean),
+  ));
+
+  if (!parentIds.length) {
+    return new Map();
+  }
+
+  let query = client.from('partners').select('id, name').in('id', parentIds);
+
+  if (tenantId) {
+    query = query.eq('tenant_id', tenantId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || []).reduce((map, partner) => {
+    map.set(partner.id, partner.name || '');
+    return map;
+  }, new Map());
+}
+
+function groupPartnersByParent(partners) {
+  return (Array.isArray(partners) ? partners : []).reduce((map, partner) => {
+    const parentId = partner.parentId;
+    if (!parentId) {
+      return map;
+    }
+
+    const current = map.get(parentId) || [];
+    current.push(partner);
+    map.set(parentId, current);
+    return map;
+  }, new Map());
 }
 
 function getFileExtension(file) {
@@ -221,6 +296,36 @@ async function uploadPartnerIdentityAttachments(client, { tenantId, partnerId, i
 }
 
 export const partnersService = {
+  async getPartnerById({ tenantId, id } = {}) {
+    if (!id) {
+      return null;
+    }
+
+    const client = requireSupabase();
+    let query = client.from('partners').select('*').eq('id', id);
+
+    if (tenantId) {
+      query = query.eq('tenant_id', tenantId);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || 'تعذر تحميل جهة الاتصال.');
+    }
+
+    if (!data) {
+      return null;
+    }
+
+    const parentNamesMap = await loadParentNamesMap(client, tenantId, [data]);
+
+    return normalizePartner({
+      ...data,
+      parent_name: parentNamesMap.get(data.parent_id) || '',
+    });
+  },
+
   async getPartners({ tenantId, filterType = 'all', search = '', status = 'all' } = {}) {
     const client = requireSupabase();
 
@@ -235,6 +340,8 @@ export const partnersService = {
     const normalizedSearch = escapeSearchTerm(search.trim());
     if (normalizedSearch) {
       query = query.or(`name.ilike.%${normalizedSearch}%,nickname.ilike.%${normalizedSearch}%,phone1.ilike.%${normalizedSearch}%,phone2.ilike.%${normalizedSearch}%`);
+    } else {
+      query = query.is('parent_id', null);
     }
 
     if (status === 'active') {
@@ -251,7 +358,123 @@ export const partnersService = {
       throw new Error(error.message || 'تعذر تحميل جهات الاتصال.');
     }
 
-    return (data ?? []).map(normalizePartner);
+    const rows = data ?? [];
+    const parentNamesMap = await loadParentNamesMap(client, tenantId, rows);
+
+    return rows.map((record) => normalizePartner({
+      ...record,
+      parent_name: parentNamesMap.get(record.parent_id) || '',
+    }));
+  },
+
+  async getChildContacts({ tenantId, parentIds = [], status = 'active' } = {}) {
+    const ids = Array.from(new Set((Array.isArray(parentIds) ? parentIds : [parentIds]).filter(Boolean)));
+
+    if (!ids.length) {
+      return new Map();
+    }
+
+    const client = requireSupabase();
+    let query = client
+      .from('partners')
+      .select('*')
+      .in('parent_id', ids)
+      .order('created_at', { ascending: false });
+
+    if (tenantId) {
+      query = query.eq('tenant_id', tenantId);
+    }
+
+    if (status === 'active') {
+      query = query.eq('active', true);
+    }
+
+    if (status === 'archived') {
+      query = query.eq('active', false);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message || 'تعذر تحميل جهات الاتصال التابعة.');
+    }
+
+    const parentNamesMap = await loadParentNamesMap(client, tenantId, data || []);
+    const children = (data || []).map((record) => normalizePartner({
+      ...record,
+      parent_name: parentNamesMap.get(record.parent_id) || '',
+    }));
+
+    return groupPartnersByParent(children);
+  },
+
+  async getPaperworkProcessorOptions({ tenantId } = {}) {
+    const client = requireSupabase();
+    let suppliersQuery = client
+      .from('partners')
+      .select('id, name, phone1, phone2')
+      .gt('supplier_rank', 0)
+      .is('parent_id', null)
+      .eq('active', true)
+      .order('created_at', { ascending: false });
+
+    if (tenantId) {
+      suppliersQuery = suppliersQuery.eq('tenant_id', tenantId);
+    }
+
+    const { data: suppliers = [], error: suppliersError } = await suppliersQuery;
+
+    if (suppliersError) {
+      throw new Error(suppliersError.message || 'تعذر تحميل جهات إصدار الأوراق.');
+    }
+
+    const supplierIds = suppliers.map((supplier) => supplier.id).filter(Boolean);
+    let children = [];
+
+    if (supplierIds.length) {
+      let childrenQuery = client
+        .from('partners')
+        .select('id, parent_id, name, phone1, phone2, function_title')
+        .in('parent_id', supplierIds)
+        .eq('active', true)
+        .order('created_at', { ascending: false });
+
+      if (tenantId) {
+        childrenQuery = childrenQuery.eq('tenant_id', tenantId);
+      }
+
+      const { data, error: childrenError } = await childrenQuery;
+
+      if (childrenError) {
+        throw new Error(childrenError.message || 'تعذر تحميل الجهات التابعة.');
+      }
+
+      children = data || [];
+    }
+
+    const childrenByParent = children.reduce((map, child) => {
+      const current = map.get(child.parent_id) || [];
+      current.push(child);
+      map.set(child.parent_id, current);
+      return map;
+    }, new Map());
+
+    return suppliers.flatMap((supplier) => [
+      {
+        id: supplier.id,
+        name: supplier.name || 'مورد بدون اسم',
+        phone: supplier.phone1 || supplier.phone2 || '',
+        subtitle: 'المورد الرئيسي',
+        parentName: '',
+      },
+      ...(childrenByParent.get(supplier.id) || []).map((child) => ({
+        id: child.id,
+        name: child.name || 'جهة تابعة بدون اسم',
+        phone: child.phone1 || child.phone2 || '',
+        subtitle: child.function_title || 'جهة اتصال تابعة',
+        parentName: supplier.name || '',
+      })),
+    ]);
   },
 
   async createPartner(payload) {

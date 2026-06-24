@@ -29,11 +29,9 @@ export function MotoCustomerCareWorkspaceLayout() {
         }
         .customer-care-fade-up { animation: customerCareFadeUp 0.24s ease both; }
         .customer-care-app-content-in { animation: customerCareAppContentIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.04s both; }
-        @media (max-width: 1023px) {
-          html.customer-care-section-open .customer-care-app-back-button,
-          body.customer-care-section-open .customer-care-app-back-button {
-            display: none !important;
-          }
+        html.customer-care-section-open .customer-care-app-back-button,
+        body.customer-care-section-open .customer-care-app-back-button {
+          display: none !important;
         }
       `}</style>
       <div className="pointer-events-none absolute inset-0 hidden sm:block">

@@ -57,6 +57,43 @@ function getProductAttributes(product) {
   ];
 }
 
+function getPaperworkGuardianshipLabel(note) {
+  const guardianshipCode = String(note || '').match(/حالة الوصاية:\s*([^\n]+)/)?.[1]?.trim();
+  return {
+    father_guardian: 'وصاية والده',
+    mother_guardian: 'وصاية والدته',
+  }[guardianshipCode] || guardianshipCode || '';
+}
+
+function getProductPaperworkInfo(item) {
+  const request = item?.paperworkRequest || item?.paperwork_request || null;
+
+  if (!request) {
+    return {
+      exists: false,
+      ownerName: 'غير محدد',
+      guardianshipLabel: '',
+      statusLabel: 'لم يتم تحديد بيانات الأوراق بعد',
+    };
+  }
+
+  const ownerStatus = request.documentOwnerStatus || request.document_owner_status || '';
+  const ownerName = request.documentOwnerName
+    || request.document_owner_name
+    || request.documentOwner?.name
+    || request.document_owner?.name
+    || (ownerStatus === 'later' ? 'سيتم تحديده لاحقًا' : 'غير محدد');
+
+  return {
+    exists: true,
+    ownerName,
+    guardianshipLabel: ownerStatus === 'later'
+      ? ''
+      : getPaperworkGuardianshipLabel(request.documentOwnerNote || request.document_owner_note),
+    statusLabel: ownerStatus === 'later' ? 'صاحب الورق سيتم تحديده لاحقًا' : 'احيانا قد يتاخر الورق حتي اسبوعان',
+  };
+}
+
 export function ShowroomContractPreview({ companyName, customer, items, totalAmount, paidAmount, remainingAmount, paymentMethod, notes }) {
   const safeItems = Array.isArray(items) ? items : [];
   const safePaidAmount = Number(paidAmount) || 0;
@@ -133,30 +170,55 @@ export function ShowroomContractPreview({ companyName, customer, items, totalAmo
             </h2>
           </div>
           <div className="space-y-3 px-2 sm:px-4">
-            {safeItems.map((item, index) => (
-              <div key={item?.lineId || item?.id || index} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                <div className="flex items-start justify-between gap-4 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-base font-extrabold text-slate-900">{getProductTitle(item)}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                      {getProductAttributes(item).map((attribute, attributeIndex) => (
-                        <span key={`${attribute.label}-${attribute.value}-${attributeIndex}`}>
-                          {attribute.label}: {attribute.value}
-                        </span>
-                      ))}
-                      {item?.ownershipTransferName || item?.ownership_name ? <span>نقل الملكية: {item.ownershipTransferName || item.ownership_name}</span> : null}
+            {safeItems.map((item, index) => {
+              const paperworkInfo = getProductPaperworkInfo(item);
+
+              return (
+                <div key={item?.lineId || item?.id || index} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <div className="flex items-start justify-between gap-4 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-base font-extrabold text-slate-900">{getProductTitle(item)}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        {getProductAttributes(item).map((attribute, attributeIndex) => (
+                          <span key={`${attribute.label}-${attribute.value}-${attributeIndex}`}>
+                            {attribute.label}: {attribute.value}
+                          </span>
+                        ))}
+                      </div>
+                      <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${
+                        paperworkInfo.exists
+                          ? 'border-blue-100 bg-blue-50 text-blue-950'
+                          : 'border-amber-100 bg-amber-50 text-amber-900'
+                      }`}>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_150px] sm:items-end">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="font-bold text-slate-500">بيانات الأوراق:</span>
+                              <span className="font-black">باسم {paperworkInfo.ownerName}</span>
+                              {paperworkInfo.guardianshipLabel ? (
+                                <span className="font-bold text-blue-700">· {paperworkInfo.guardianshipLabel}</span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-[11px] font-bold opacity-75">{paperworkInfo.statusLabel}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="mb-1 text-[10px] font-bold text-slate-500">توقيع تأكيد بيانات الورق</p>
+                            <div className="h-7 border-b border-slate-500" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-left" dir="ltr">
+                      <p className="text-xs font-semibold text-slate-500">السعر</p>
+                      <p className="mt-1 font-mono text-lg font-extrabold text-slate-900">
+                        {formatContractMoney(Number(item?.total ?? item?.line_total ?? (Number(item?.price ?? item?.unit_price) || 0) * (Number(item?.quantity) || 1)))}
+                      </p>
                     </div>
                   </div>
-
-                  <div className="text-left" dir="ltr">
-                    <p className="text-xs font-semibold text-slate-500">السعر</p>
-                    <p className="mt-1 font-mono text-lg font-extrabold text-slate-900">
-                      {formatContractMoney(Number(item?.total ?? item?.line_total ?? (Number(item?.price ?? item?.unit_price) || 0) * (Number(item?.quantity) || 1)))}
-                    </p>
-                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
