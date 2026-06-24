@@ -15,7 +15,6 @@ as $$
 declare
   v_current_tenant_user_id uuid;
   v_existing_request_id uuid;
-  v_stage_id uuid;
   v_document_id uuid;
   v_request_id uuid;
   v_request_notes text;
@@ -76,18 +75,6 @@ begin
     raise exception 'لا يوجد ورق مسجل بالخزنة لهذا المنتج.';
   end if;
 
-  select ps.id
-    into v_stage_id
-  from public.paperwork_stages ps
-  where ps.tenant_id = p_tenant_id
-    and ps.code = 'received_from_processor'
-  order by ps.active desc, ps.sequence asc
-  limit 1;
-
-  if v_stage_id is null then
-    raise exception 'تعذر العثور على مرحلة استلام الورق من جهة التخليص.';
-  end if;
-
   v_request_notes := concat_ws(
     E'\n\n',
     'تمت تسوية بيع قديم: الورق موجود بالفعل في الخزنة وتم ربطه بهذا الطلب.',
@@ -110,7 +97,7 @@ begin
     tracking_unit_id,
     customer_id,
     document_owner_partner_id,
-    current_stage_id,
+    current_stage,
     stage_entered_at,
     status,
     closed_at,
@@ -127,7 +114,7 @@ begin
     p_tracking_unit_id,
     p_customer_id,
     p_customer_id,
-    v_stage_id,
+    'received_from_processor',
     now(),
     'open',
     null,
@@ -145,7 +132,7 @@ begin
     tenant_id,
     request_id,
     event_type,
-    new_stage_id,
+    new_stage,
     new_status,
     notes,
     created_by
@@ -154,7 +141,7 @@ begin
     p_tenant_id,
     v_request_id,
     'received_from_supplier',
-    v_stage_id,
+    'received_from_processor',
     'open',
     v_event_notes,
     v_current_tenant_user_id

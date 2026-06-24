@@ -17,6 +17,9 @@ import {
 const EMPTY_FORM = {
   name: '',
   phone: '',
+  parentId: null,
+  contactType: 'person',
+  functionTitle: '',
   nationalId: '',
   identityCardFrontFile: null,
   identityCardBackFile: null,
@@ -24,6 +27,8 @@ const EMPTY_FORM = {
   notes: '',
   isCustomer: true,
   isSupplier: false,
+  isCompany: false,
+  companyType: '',
   receivableAccount: '',
   payableAccount: '',
 };
@@ -36,6 +41,9 @@ function normalizeInitialValues(initialValues) {
   return {
     name: initialValues.name ?? '',
     phone: initialValues.phone ?? '',
+    parentId: initialValues.parentId ?? initialValues.parent_id ?? null,
+    contactType: initialValues.contactType ?? initialValues.contact_type ?? 'person',
+    functionTitle: initialValues.functionTitle ?? initialValues.function_title ?? '',
     nationalId: initialValues.nationalId ?? initialValues.national_id ?? '',
     identityCardFrontFile: null,
     identityCardBackFile: null,
@@ -43,6 +51,8 @@ function normalizeInitialValues(initialValues) {
     notes: initialValues.notes ?? '',
     isCustomer: initialValues.isCustomer ?? (Number(initialValues.customerRank ?? 0) > 0),
     isSupplier: initialValues.isSupplier ?? (Number(initialValues.supplierRank ?? 0) > 0),
+    isCompany: initialValues.isCompany ?? initialValues.is_company ?? false,
+    companyType: initialValues.companyType ?? initialValues.company_type ?? '',
     receivableAccount: initialValues.receivableAccount ?? '',
     payableAccount: initialValues.payableAccount ?? '',
   };
@@ -174,6 +184,8 @@ export function PartnerFormSheet({
   isSubmitting = false,
   side = 'bottom',
   hideTypeFields = false,
+  hideCompanyFields = false,
+  hideNotesField = false,
   hideAccountingFields = false,
   hideFooterNote = false,
   hideCancelButton = false,
@@ -181,6 +193,8 @@ export function PartnerFormSheet({
   submitInHeader = false,
   hideDismissButton = false,
   inlineSubmit = false,
+  parentPartner = null,
+  childContactMode = false,
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState('');
@@ -192,6 +206,7 @@ export function PartnerFormSheet({
   }, [open, initialValues]);
 
   const isEditMode = Boolean(initialValues?.id);
+  const isChildContactMode = childContactMode || Boolean(parentPartner);
   const shouldShowFooter = (!submitInHeader && !inlineSubmit) || !hideFooterNote || !hideCancelButton;
 
   const handleChange = (field) => (event) => {
@@ -222,16 +237,19 @@ export function PartnerFormSheet({
       return;
     }
 
-    const isCustomer = hideTypeFields ? true : form.isCustomer;
-    const isSupplier = hideTypeFields ? false : form.isSupplier;
-
-    if (!isCustomer && !isSupplier) {
-      setError('يجب تحديد الجهة كعميل أو مورد على الأقل.');
-      return;
-    }
+    const isCustomer = isChildContactMode ? false : hideTypeFields ? true : form.isCustomer;
+    const isSupplier = isChildContactMode ? false : hideTypeFields ? false : form.isSupplier;
+    const parentId = parentPartner?.id || form.parentId || null;
+    const isCompany = isChildContactMode ? false : form.isCompany;
+    const contactType = isChildContactMode ? 'contact' : isCompany ? 'company' : parentId ? 'contact' : 'person';
 
     const result = await onSubmit({
       ...form,
+      parentId,
+      contactType,
+      isCompany,
+      companyType: isCompany ? form.companyType : '',
+      functionTitle: form.functionTitle,
       isCustomer,
       isSupplier,
       customerRank: isCustomer ? 1 : 0,
@@ -251,10 +269,10 @@ export function PartnerFormSheet({
       <SheetContent side={side} className={side === 'bottom' ? 'max-h-[88vh]' : 'max-w-md'}>
         <SheetHeader className={accentHeader ? 'border-b-0 bg-[linear-gradient(135deg,#0f172a_0%,#155e75_100%)] px-7 py-6 text-white shadow-[0_20px_42px_-34px_rgba(15,23,42,0.9)]' : undefined}>
           <SheetTitle className={accentHeader ? 'text-2xl font-black tracking-tight text-white' : undefined}>
-            {isEditMode ? 'تعديل جهة الاتصال' : 'إضافة جهة اتصال'}
+            {isChildContactMode ? (isEditMode ? 'تعديل جهة اتصال تابعة' : 'إضافة جهة اتصال تابعة') : isEditMode ? 'تعديل جهة الاتصال' : 'إضافة جهة اتصال'}
           </SheetTitle>
           <SheetDescription className={accentHeader ? 'max-w-[18rem] text-sm font-semibold leading-6 text-cyan-50/80' : undefined}>
-            أدخل بيانات العميل الأساسية لإضافته إلى عملية البيع.
+            {isChildContactMode && parentPartner?.name ? `تابعة لـ ${parentPartner.name}` : 'أدخل بيانات جهة الاتصال الأساسية.'}
           </SheetDescription>
           {submitInHeader ? (
             <Button
@@ -274,6 +292,12 @@ export function PartnerFormSheet({
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
 
             <div className="grid gap-4 md:grid-cols-2">
+              {isChildContactMode && parentPartner?.name ? (
+                <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800 md:col-span-2">
+                  جهة تابعة لـ {parentPartner.name}
+                </div>
+              ) : null}
+
               <div className="space-y-2">
                 <Label htmlFor="partner-name">الاسم</Label>
                 <Input id="partner-name" value={form.name} onChange={handleChange('name')} placeholder="اسم الجهة" />
@@ -284,6 +308,35 @@ export function PartnerFormSheet({
                 <Input id="partner-phone" value={form.phone} onChange={handleChange('phone')} placeholder="01000000000" />
               </div>
 
+              {isChildContactMode ? (
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="partner-function-title">الوظيفة/الدور</Label>
+                  <Input
+                    id="partner-function-title"
+                    value={form.functionTitle}
+                    onChange={handleChange('functionTitle')}
+                    placeholder="مسؤول أوراق، محاسب، مبيعات، مدير"
+                  />
+                </div>
+              ) : hideCompanyFields ? null : (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="partner-company-type">طبيعة الجهة</Label>
+                    <Input
+                      id="partner-company-type"
+                      value={form.companyType}
+                      onChange={handleChange('companyType')}
+                      placeholder="شركة، معرض، تاجر، مورد"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+                    <input type="checkbox" checked={form.isCompany} onChange={handleChange('isCompany')} />
+                    شركة / جهة اعتبارية
+                  </label>
+                </>
+              )}
+
+              {!isChildContactMode && (
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="partner-national-id">الرقم القومي</Label>
                 <NationalIdBoxes
@@ -291,12 +344,14 @@ export function PartnerFormSheet({
                   onChange={(nationalId) => setForm((current) => ({ ...current, nationalId }))}
                 />
               </div>
+              )}
 
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="partner-address">العنوان</Label>
                 <Input id="partner-address" value={form.address} onChange={handleChange('address')} placeholder="المدينة - الشارع" />
               </div>
 
+              {!isChildContactMode && (
               <div className="space-y-2 md:col-span-2">
                 <Label>صورة البطاقة</Label>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -316,9 +371,10 @@ export function PartnerFormSheet({
                   />
                 </div>
               </div>
+              )}
             </div>
 
-            {!hideTypeFields && (
+            {!hideTypeFields && !isChildContactMode && (
               <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input type="checkbox" checked={form.isCustomer} onChange={handleChange('isCustomer')} />
@@ -331,7 +387,7 @@ export function PartnerFormSheet({
               </div>
             )}
 
-            {!hideAccountingFields && (
+            {!hideAccountingFields && !isChildContactMode && (
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="partner-receivable">حساب العملاء (محاسبي)</Label>
@@ -354,17 +410,19 @@ export function PartnerFormSheet({
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="partner-notes">ملاحظات</Label>
-              <textarea
-                id="partner-notes"
-                value={form.notes}
-                onChange={handleChange('notes')}
-                rows={4}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
-                placeholder="أي ملاحظات إضافية"
-              />
-            </div>
+            {!hideNotesField ? (
+              <div className="space-y-2">
+                <Label htmlFor="partner-notes">ملاحظات</Label>
+                <textarea
+                  id="partner-notes"
+                  value={form.notes}
+                  onChange={handleChange('notes')}
+                  rows={4}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
+                  placeholder="أي ملاحظات إضافية"
+                />
+              </div>
+            ) : null}
 
             {inlineSubmit && (
               <Button type="submit" className="h-11 w-full rounded-xl bg-[#155e75] font-black text-white shadow-[0_18px_32px_-24px_rgba(21,94,117,0.9)] hover:bg-[#0f4f63]" disabled={isSubmitting}>

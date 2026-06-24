@@ -31,6 +31,9 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
   const [paperworkRequests, setPaperworkRequests] = useState([]);
   const [paperworkDocuments, setPaperworkDocuments] = useState([]);
   const [paperworkDocumentMoves, setPaperworkDocumentMoves] = useState([]);
+  const [paperworkReports, setPaperworkReports] = useState({ missing: 0, vault: 0, sentPendingReceipt: 0 });
+  const [reportsStatus, setReportsStatus] = useState('idle');
+  const [reportsError, setReportsError] = useState('');
   const [sectionStatus, setSectionStatus] = useState({ sales: 'idle', papers: 'idle' });
   const [sectionError, setSectionError] = useState({ sales: '', papers: '' });
 
@@ -47,9 +50,49 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     setPaperworkRequests([]);
     setPaperworkDocuments([]);
     setPaperworkDocumentMoves([]);
+    setPaperworkReports({ missing: 0, vault: 0, sentPendingReceipt: 0 });
+    setReportsStatus('idle');
+    setReportsError('');
     setSectionStatus({ sales: 'idle', papers: 'idle' });
     setSectionError({ sales: '', papers: '' });
   }, []);
+
+  const loadReports = useCallback(() => {
+    let active = true;
+
+    if (!tenant?.id) {
+      setPaperworkReports({ missing: 0, vault: 0, sentPendingReceipt: 0 });
+      setReportsStatus('idle');
+      setReportsError('');
+      return () => {};
+    }
+
+    setReportsStatus('loading');
+    setReportsError('');
+
+    motoCustomerCareService.getPaperworkReportCounts({ tenantId: tenant.id })
+      .then((reports) => {
+        if (!active) {
+          return;
+        }
+
+        setPaperworkReports(reports || { missing: 0, vault: 0, sentPendingReceipt: 0 });
+        setReportsStatus('ready');
+      })
+      .catch((nextError) => {
+        if (!active) {
+          return;
+        }
+
+        setPaperworkReports({ missing: 0, vault: 0, sentPendingReceipt: 0 });
+        setReportsStatus('error');
+        setReportsError(nextError?.message || 'تعذر تحميل تقارير الأوراق.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [tenant?.id]);
 
   const loadSales = useCallback(() => {
     let active = true;
@@ -148,13 +191,27 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     return loadSales();
   }, [activeSection, loadPaperwork, loadSales]);
 
+  useEffect(() => loadReports(), [loadReports]);
+
   const refresh = useCallback(() => {
+    loadReports();
+
     if (activeSection === 'papers') {
       return loadPaperwork();
     }
 
     return loadSales();
-  }, [activeSection, loadPaperwork, loadSales]);
+  }, [activeSection, loadPaperwork, loadReports, loadSales]);
+
+  const updatePaperworkRequestLocally = useCallback((requestId, patch) => {
+    if (!requestId || !patch) {
+      return;
+    }
+
+    setPaperworkRequests((current) => current.map((request) => (
+      request.id === requestId ? { ...request, ...patch } : request
+    )));
+  }, []);
 
   const ensurePaperworkLoaded = useCallback(() => {
     if (sectionStatus.papers === 'ready' || sectionStatus.papers === 'loading') {
@@ -205,8 +262,9 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     );
   }, [filteredSales]);
 
-  const currentSectionStatus = sectionStatus[activeSection] || 'idle';
-  const currentSectionError = sectionError[activeSection] || '';
+  const loadSectionId = activeSection === 'requests' ? 'sales' : activeSection;
+  const currentSectionStatus = sectionStatus[loadSectionId] || 'idle';
+  const currentSectionError = sectionError[loadSectionId] || '';
 
   return {
     tenantId: tenant?.id ?? null,
@@ -215,12 +273,17 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     paperworkRequests,
     paperworkDocuments,
     paperworkDocumentMoves,
+    paperworkReports,
     summary,
     isLoading: currentSectionStatus === 'loading',
+    isReportsLoading: reportsStatus === 'loading',
     error: currentSectionError,
+    reportsError,
     loadStatus: currentSectionStatus,
+    reportsStatus,
     sectionStatus,
     refresh,
+    updatePaperworkRequestLocally,
     ensurePaperworkLoaded,
   };
 }

@@ -124,7 +124,7 @@ export function AppLayout() {
   };
 
   return (
-    <div 
+    <div
       className={`min-h-screen transition-colors duration-150 ease-out ${isFullBleedApp ? 'bg-transparent px-0 py-0' : isLauncherHome ? 'bg-[radial-gradient(circle_at_50%_36%,#ffffff_0%,#f7f7f8_42%,#eceef1_100%)] px-0 py-0' : 'bg-white px-9 py-1 lg:px-14 xl:px-20 2xl:px-28'}`}
       style={rootStyle}
     >
