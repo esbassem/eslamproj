@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { ArrowRight, Camera, CheckCircle2, MoreVertical, Pencil, PlusCircle, Power, RefreshCw, Store, Trash2, TriangleAlert } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -1355,7 +1356,7 @@ function ShowroomConfigsHome({
   );
 }
 
-function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved }) {
+function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved, onIgnored }) {
   const { tenant } = useWorkspace();
   const [selectedLine, setSelectedLine] = useState(null);
   const [attachmentPickerType, setAttachmentPickerType] = useState(null);
@@ -1372,6 +1373,7 @@ function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved }) {
   const [paperworkOwnerIdentityPreviewUrl, setPaperworkOwnerIdentityPreviewUrl] = useState('');
   const [paperworkSaveError, setPaperworkSaveError] = useState('');
   const [isPaperworkSaving, setIsPaperworkSaving] = useState(false);
+  const [isIgnoreWarningOpen, setIsIgnoreWarningOpen] = useState(false);
   const lines = useMemo(() => getSalePendingPaperworkLines(sale), [sale]);
   const hasSingleLine = lines.length === 1;
 
@@ -1392,6 +1394,7 @@ function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved }) {
     setPaperworkOwnerIdentityCloudUrl('');
     setPaperworkSaveError('');
     setIsPaperworkSaving(false);
+    setIsIgnoreWarningOpen(false);
   }, [lines, open, sale?.id]);
 
   useEffect(() => () => {
@@ -1858,12 +1861,20 @@ function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved }) {
               {paperworkSaveError}
             </div>
           ) : null}
-          <div>
+          <div className="grid grid-cols-[0.85fr_1.15fr] gap-2">
+            <button
+              type="button"
+              onClick={() => setIsIgnoreWarningOpen(true)}
+              disabled={isPaperworkSaving}
+              className="inline-flex h-12 items-center justify-center rounded-xl border border-amber-200 bg-white px-2 text-xs font-black text-amber-800 transition hover:bg-amber-100/70 focus:outline-none focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              تجاهل
+            </button>
             <button
               type="button"
               onClick={savePaperworkRequest}
               disabled={!canConfirmPaperworkRequest || isPaperworkSaving}
-              className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-blue-700 px-5 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+              className="inline-flex h-12 items-center justify-center rounded-xl bg-blue-700 px-5 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
             >
               {isPaperworkSaving ? 'جاري الحفظ...' : 'تأكيد'}
             </button>
@@ -1872,6 +1883,56 @@ function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved }) {
 
       </SheetContent>
     </Sheet>
+    <Dialog.Root
+      open={isIgnoreWarningOpen}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) setIsIgnoreWarningOpen(true);
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-[80] bg-slate-950/55 backdrop-blur-sm" />
+        <Dialog.Content
+          dir="rtl"
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          className="fixed left-1/2 top-1/2 z-[81] w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-amber-200 bg-white p-5 text-right shadow-[0_28px_80px_rgba(15,23,42,0.32)] outline-none"
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700 ring-1 ring-amber-100">
+              <TriangleAlert className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <Dialog.Title className="text-base font-black text-slate-950">
+                مسؤولية تجاهل طلب الأوراق
+              </Dialog.Title>
+              <Dialog.Description className="mt-2 text-sm font-bold leading-6 text-slate-600">
+                تجاهل هذه الخطوة يعني أن طلب أوراق الملكية لم يتم تسجيله الآن، وقد يؤدي ذلك إلى نقص بيانات الورق أو تأخير المتابعة بعد البيع. يمكنك الرجوع واستكمال البيانات لضمان حفظ الطلب بشكل صحيح.
+              </Dialog.Description>
+            </div>
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setIsIgnoreWarningOpen(false)}
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-blue-700 px-3 text-xs font-black text-white transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100"
+            >
+              العودة للاستكمال
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsIgnoreWarningOpen(false);
+                onIgnored?.(sale);
+              }}
+              className="inline-flex h-11 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-black text-amber-900 transition hover:bg-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-100"
+            >
+              تجاهل والخروج
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
     <TrackingAttachmentPickerSheet
       open={Boolean(attachmentPickerType)}
       onOpenChange={(nextOpen) => {
@@ -1917,6 +1978,7 @@ export function ShowroomSellPage() {
   const [salesError, setSalesError] = useState('');
   const [selectedSale, setSelectedSale] = useState(null);
   const [paperworkPromptSale, setPaperworkPromptSale] = useState(null);
+  const [dismissedPaperworkPromptSaleId, setDismissedPaperworkPromptSaleId] = useState(null);
   const [isCreateConfigOpen, setIsCreateConfigOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState(null);
   const [configUsageById, setConfigUsageById] = useState({});
@@ -1994,10 +2056,14 @@ export function ShowroomSellPage() {
     }
 
     const latestSale = sales[0] || null;
-    if (latestSale && getSalePendingPaperworkLines(latestSale).length) {
+    if (
+      latestSale
+      && latestSale.id !== dismissedPaperworkPromptSaleId
+      && getSalePendingPaperworkLines(latestSale).length
+    ) {
       setPaperworkPromptSale(latestSale);
     }
-  }, [isSalesLoading, paperworkPromptSale, sales]);
+  }, [dismissedPaperworkPromptSaleId, isSalesLoading, paperworkPromptSale, sales]);
 
   const salesStats = useMemo(() => {
     const total = sales.reduce((sum, sale) => sum + Number(sale.total_amount || sale.totalAmount || 0), 0);
@@ -2029,6 +2095,7 @@ export function ShowroomSellPage() {
       });
 
       setSales((current) => [savedSale, ...current.filter((item) => item.id !== savedSale.id)]);
+      setDismissedPaperworkPromptSaleId(null);
       if (getSalePendingPaperworkLines(savedSale).length) {
         setPaperworkPromptSale(savedSale);
       }
@@ -2066,6 +2133,7 @@ export function ShowroomSellPage() {
     );
 
     setSales((current) => current.map(normalizeSale));
+    setSelectedSale((current) => normalizeSale(current));
     setPaperworkPromptSale((current) => {
       const nextSale = normalizeSale(current);
       return nextSale && getSalePendingPaperworkLines(nextSale).length ? nextSale : null;
@@ -2324,6 +2392,13 @@ export function ShowroomSellPage() {
         isOpen={Boolean(selectedSale)}
         onClose={() => setSelectedSale(null)}
         onDeleted={handleSaleDeleted}
+        onPaperworkRequestOpen={(saleToUpdate) => {
+          if (saleToUpdate && getSalePendingPaperworkLines(saleToUpdate).length) {
+            setDismissedPaperworkPromptSaleId(null);
+            setSelectedSale(null);
+            setPaperworkPromptSale(saleToUpdate);
+          }
+        }}
       />
       <PaperworkRequestPromptSheet
         open={Boolean(paperworkPromptSale)}
@@ -2335,6 +2410,10 @@ export function ShowroomSellPage() {
           ));
         }}
         onSaved={handlePaperworkPromptSaved}
+        onIgnored={(ignoredSale) => {
+          setDismissedPaperworkPromptSaleId(ignoredSale?.id || null);
+          setPaperworkPromptSale(null);
+        }}
       />
       <ShowroomConfigSheet
         open={isCreateConfigOpen}
