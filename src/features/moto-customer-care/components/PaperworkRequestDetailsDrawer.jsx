@@ -81,7 +81,7 @@ function RequestImages({ request, onPreview }) {
     >
       <div className="aspect-[16/5] bg-slate-50">
         {ownerImage?.signedUrl ? (
-          <img src={ownerImage.signedUrl} alt="بطاقة صاحب الورق" className="h-full w-full object-cover" />
+          <img src={ownerImage.signedUrl} alt="بطاقة صاحب الورق" loading="lazy" decoding="async" className="h-full w-full object-cover" />
         ) : (
           <span className="flex h-full items-center justify-center text-slate-300"><ImagePlus className="h-6 w-6" /></span>
         )}
@@ -90,7 +90,7 @@ function RequestImages({ request, onPreview }) {
         {images.map((image) => (
           <span key={image.id} className="aspect-[5/4] min-w-0 bg-slate-50">
             {image.attachment?.signedUrl ? (
-              <img src={image.attachment.signedUrl} alt={image.label} className="h-full w-full object-cover" />
+              <img src={image.attachment.signedUrl} alt={image.label} loading="lazy" decoding="async" className="h-full w-full object-cover" />
             ) : (
               <span className="flex h-full items-center justify-center text-slate-300"><ImagePlus className="h-5 w-5" /></span>
             )}
@@ -300,6 +300,7 @@ export function PaperworkRequestDetailsDrawer({
   const [snapshot, setSnapshot] = useState(request);
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
+  const [contentReady, setContentReady] = useState(false);
   const [processorOpen, setProcessorOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [customerConfirmationOpen, setCustomerConfirmationOpen] = useState(false);
@@ -312,6 +313,7 @@ export function PaperworkRequestDetailsDrawer({
   const [processorOverride, setProcessorOverride] = useState(null);
   const closeTimerRef = useRef(null);
   const openFrameRef = useRef(null);
+  const contentTimerRef = useRef(null);
 
   useEffect(() => {
     if (open && request) setSnapshot(request);
@@ -323,18 +325,24 @@ export function PaperworkRequestDetailsDrawer({
       window.cancelAnimationFrame(openFrameRef.current);
       openFrameRef.current = null;
     }
+    window.clearTimeout(contentTimerRef.current);
 
     if (open) {
       setVisible(false);
+      setContentReady(false);
       setMounted(true);
       openFrameRef.current = window.requestAnimationFrame(() => {
         openFrameRef.current = window.requestAnimationFrame(() => {
           setVisible(true);
+          contentTimerRef.current = window.setTimeout(() => {
+            setContentReady(true);
+          }, 80);
           openFrameRef.current = null;
         });
       });
     } else {
       setVisible(false);
+      setContentReady(false);
       setProcessorOpen(false);
       setPreviewOpen(false);
       setCustomerConfirmationOpen(false);
@@ -347,6 +355,7 @@ export function PaperworkRequestDetailsDrawer({
 
     return () => {
       window.clearTimeout(closeTimerRef.current);
+      window.clearTimeout(contentTimerRef.current);
       if (openFrameRef.current) {
         window.cancelAnimationFrame(openFrameRef.current);
       }
@@ -412,10 +421,12 @@ export function PaperworkRequestDetailsDrawer({
   const chassis = findIdentifier(snapshot, /chassis|شاسيه/i);
   const engine = findIdentifier(snapshot, /engine|motor|موتور|محرك/i);
   const sourceEvents = Array.isArray(snapshot.events) ? snapshot.events : [];
-  const sortedEvents = sourceEvents.slice().sort((first, second) => (
-    getCreatedAtTime(first) - getCreatedAtTime(second)
-  ));
-  const recordedCreationEvent = sortedEvents.find(isCreationEvent);
+  const sortedEvents = contentReady
+    ? sourceEvents.slice().sort((first, second) => (
+      getCreatedAtTime(first) - getCreatedAtTime(second)
+    ))
+    : [];
+  const recordedCreationEvent = contentReady ? sortedEvents.find(isCreationEvent) : null;
   const creationEvent = recordedCreationEvent || {
     id: `request-created-${snapshot.id}`,
     eventType: 'created',
@@ -423,10 +434,12 @@ export function PaperworkRequestDetailsDrawer({
     createdByName: '',
     isSynthetic: true,
   };
-  const events = [
-    creationEvent,
-    ...sortedEvents.filter((event) => !isCreationEvent(event)),
-  ];
+  const events = contentReady
+    ? [
+      creationEvent,
+      ...sortedEvents.filter((event) => !isCreationEvent(event)),
+    ]
+    : [];
   const confirmWithCustomer = async () => {
     if (isConfirmingCustomer || snapshot.customerConfirmed) return;
 
@@ -558,60 +571,78 @@ export function PaperworkRequestDetailsDrawer({
         </header>
 
         <div className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white px-4 pb-6 pt-2.5">
-          <section>
-            <div className="relative">
-              <div>
-                {events.map((event, index) => {
-                  const isCreated = index === 0;
+          {contentReady ? (
+            <section>
+              <div className="relative">
+                <div>
+                  {events.map((event, index) => {
+                    const isCreated = index === 0;
 
-                  return (
-                    <article key={event.id || `${event.eventType}-${index}`} className="border-b border-slate-200">
-                      <div className="py-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className={`truncate text-sm font-black ${isCreated ? 'text-blue-700' : 'text-slate-950'}`}>
-                              {getEventLabel(event)}
-                            </p>
-                            {event.createdByName ? (
-                              <p className="mt-0.5 text-xs font-bold text-slate-500">بواسطة: {event.createdByName}</p>
-                            ) : null}
-                          </div>
-                          <p className="shrink-0 text-left text-[10px] font-bold text-slate-400">
-                            {formatDate(event.createdAt || event.created_at)}
-                          </p>
-                        </div>
-
-                        {event.notes ? (
-                          <p className="mt-2 text-xs font-bold leading-5 text-slate-600">{event.notes}</p>
-                        ) : null}
-
-                        {isCreated ? (
-                          <div className="mt-3 flex items-center gap-4">
-                            <div className="w-full max-w-[10.5rem] shrink-0 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
-                              <RequestImages request={snapshot} onPreview={() => setPreviewOpen(true)} />
-                            </div>
+                    return (
+                      <article key={event.id || `${event.eventType}-${index}`} className="border-b border-slate-200">
+                        <div className="py-4">
+                          <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <p className="text-[11px] font-bold text-slate-400">طلب الورق باسم</p>
-                              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-                                <p className="min-w-0 truncate text-sm font-black text-slate-950" title={documentOwnerName}>
-                                  {documentOwnerName}
-                                </p>
-                                {guardianshipLabel !== '--' ? (
-                                  <span className="shrink-0 text-[10px] font-bold text-slate-400">
-                                    · {guardianshipLabel}
-                                  </span>
-                                ) : null}
+                              <p className={`truncate text-sm font-black ${isCreated ? 'text-blue-700' : 'text-slate-950'}`}>
+                                {getEventLabel(event)}
+                              </p>
+                              {event.createdByName ? (
+                                <p className="mt-0.5 text-xs font-bold text-slate-500">بواسطة: {event.createdByName}</p>
+                              ) : null}
+                            </div>
+                            <p className="shrink-0 text-left text-[10px] font-bold text-slate-400">
+                              {formatDate(event.createdAt || event.created_at)}
+                            </p>
+                          </div>
+
+                          {event.notes ? (
+                            <p className="mt-2 text-xs font-bold leading-5 text-slate-600">{event.notes}</p>
+                          ) : null}
+
+                          {isCreated ? (
+                            <div className="mt-3 flex items-center gap-4">
+                              <div className="w-full max-w-[10.5rem] shrink-0 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
+                                <RequestImages request={snapshot} onPreview={() => setPreviewOpen(true)} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-bold text-slate-400">طلب الورق باسم</p>
+                                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                                  <p className="min-w-0 truncate text-sm font-black text-slate-950" title={documentOwnerName}>
+                                    {documentOwnerName}
+                                  </p>
+                                  {guardianshipLabel !== '--' ? (
+                                    <span className="shrink-0 text-[10px] font-bold text-slate-400">
+                                      · {guardianshipLabel}
+                                    </span>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </article>
-                  );
-                })}
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          ) : (
+            <div className="space-y-3 py-4" aria-label="جاري تجهيز تفاصيل الطلب">
+              <div className="h-4 w-32 rounded-full bg-slate-100" />
+              <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+                <div className="h-24 w-40 shrink-0 rounded-2xl bg-slate-100" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3 w-20 rounded-full bg-slate-100" />
+                  <div className="h-4 w-32 rounded-full bg-slate-100" />
+                  <div className="h-3 w-24 rounded-full bg-slate-100" />
+                </div>
+              </div>
+              <div className="space-y-2 border-b border-slate-100 pb-4">
+                <div className="h-4 w-28 rounded-full bg-slate-100" />
+                <div className="h-3 w-48 rounded-full bg-slate-100" />
               </div>
             </div>
-          </section>
+          )}
         </div>
 
         <footer className={`relative z-20 shrink-0 border-t shadow-[0_-10px_26px_-16px_rgba(15,23,42,0.70)] ${

@@ -1114,6 +1114,7 @@ export const showroomService = {
     identitySource = null,
     trackingPhotosIgnored = false,
     trackingPhotosIgnoreReason = '',
+    processorPartnerId = null,
     userId,
   } = {}) {
     requireTenantId(tenantId);
@@ -1188,14 +1189,46 @@ export const showroomService = {
 
       if (error) throw error;
 
+      const requestId = data?.id || null;
+      const trackingUnitId = item.trackingUnitId || item.tracking_unit_id || item.trackingUnit?.id || null;
+      const safeProcessorPartnerId = processorPartnerId || null;
+
+      if (safeProcessorPartnerId && requestId) {
+        const { error: requestProcessorError } = await client
+          .from('paperwork_requests')
+          .update({
+            processor_partner_id: safeProcessorPartnerId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('tenant_id', tenantId)
+          .eq('id', requestId);
+
+        if (requestProcessorError) throw requestProcessorError;
+
+        if (trackingUnitId) {
+          const { error: trackingProcessorError } = await client
+            .from('stock_tracking_units')
+            .update({
+              paperwork_processor_partner_id: safeProcessorPartnerId,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('tenant_id', tenantId)
+            .eq('id', trackingUnitId);
+
+          if (trackingProcessorError) throw trackingProcessorError;
+        }
+      }
+
       return {
-        id: data?.id || null,
+        id: requestId,
         currentStage: data?.current_stage || 'preparation',
         status: data?.status || 'open',
         documentOwnerName: data?.document_owner_name || null,
         documentOwnerNationalId: data?.document_owner_national_id || null,
         documentOwnerStatus: data?.document_owner_status || null,
         documentOwnerNote: data?.document_owner_note || null,
+        processorPartnerId: safeProcessorPartnerId || data?.processor_partner_id || null,
+        processor_partner_id: safeProcessorPartnerId || data?.processor_partner_id || null,
         trackingPhotosIgnored: Boolean(data?.tracking_photos_ignored),
         trackingPhotosIgnoreReason: data?.tracking_photos_ignore_reason || null,
         created: Boolean(data?.created),

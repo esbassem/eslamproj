@@ -30,6 +30,19 @@ function getPaperworkGuardianshipLabel(note) {
   }[guardianshipCode] || guardianshipCode || '';
 }
 
+function getPaperworkStageLabel(stageCode) {
+  return {
+    preparation: 'تجهيز بيانات الورق',
+    owner_confirmation: 'تحديد صاحب الورق',
+    sent_to_processor: 'تم الإرسال للجهة',
+    processor_ready: 'الورق جاهز عند الجهة',
+    received_from_processor: 'تم استلام الورق من الجهة',
+    client_notified: 'تم إبلاغ العميل',
+    delivered: 'تم التسليم للعميل',
+    cancelled: 'ملغي',
+  }[stageCode] || 'مرحلة الورق غير محددة';
+}
+
 function getItemPaperworkInfo(item) {
   const request = item?.paperworkRequest || item?.paperwork_request || null;
 
@@ -43,6 +56,7 @@ function getItemPaperworkInfo(item) {
   }
 
   const ownerStatus = request.documentOwnerStatus || request.document_owner_status || '';
+  const currentStage = request.currentStage || request.current_stage || '';
   const ownerName = request.documentOwnerName
     || request.document_owner_name
     || request.documentOwner?.name
@@ -55,7 +69,7 @@ function getItemPaperworkInfo(item) {
     guardianshipLabel: ownerStatus === 'later'
       ? ''
       : getPaperworkGuardianshipLabel(request.documentOwnerNote || request.document_owner_note),
-    statusLabel: ownerStatus === 'later' ? 'صاحب الورق سيتم تحديده لاحقًا' : 'احيانا قد يتاخر الورق حتي اسبوعان',
+    statusLabel: `مرحلة طلب الأوراق: ${getPaperworkStageLabel(currentStage)}`,
   };
 }
 
