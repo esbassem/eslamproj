@@ -73,6 +73,7 @@ export function ProtectedRoute() {
 }
 
 export function AppAccessRoute({ appCode, children }) {
+  const location = useLocation();
   const { apps, appsStatus } = useAppContext();
   const { tenantUser } = useWorkspace();
   const allowedApp = resolveCurrentApp(apps, appCode);
@@ -80,7 +81,7 @@ export function AppAccessRoute({ appCode, children }) {
   const canOpenOwnerSettings = appCode === 'settings' && tenantUser?.role === 'owner';
 
   if (isCheckingAppAccess) {
-    return <AppContentFallback />;
+    return <AppContentFallback pathname={location.pathname} />;
   }
 
   if (!canOpenOwnerSettings && !allowedApp) {

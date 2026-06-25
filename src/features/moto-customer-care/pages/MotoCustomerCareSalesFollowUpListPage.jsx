@@ -249,7 +249,7 @@ function filterSalesByPaperworkReport(sales = [], paperworkRequests = [], filter
   return (Array.isArray(sales) ? sales : []).filter((sale) => saleMatchesPaperworkReportFilter(sale, paperworkRequests, filterId));
 }
 
-function LatestMobileSalesList({
+function LatestMobilePaperworkRequestsList({
   sales = [],
   paperworkRequests = [],
   paperworkDocuments = [],
@@ -260,13 +260,13 @@ function LatestMobileSalesList({
   onOpenPaperworkRequest,
   onViewAll,
 }) {
-  const latestSales = (Array.isArray(sales) ? sales : []).slice(0, 10);
+  const latestRequests = (Array.isArray(paperworkRequests) ? paperworkRequests : []).slice(0, 10);
 
   return (
     <div className="mt-8 lg:hidden">
       <div className="mb-2 flex items-center justify-between gap-3 px-4 text-white sm:px-10">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-black leading-5">آخر عمليات البيع</h2>
+          <h2 className="text-sm font-black leading-5">آخر طلبات الأوراق</h2>
           <span className="flex items-center gap-1" aria-hidden="true">
             <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
             <span className="h-1.5 w-1.5 rounded-full bg-sky-200/70" />
@@ -283,28 +283,21 @@ function LatestMobileSalesList({
       <div className="relative grid gap-0 pt-2 before:absolute before:inset-x-0 before:top-0 before:h-2 before:rounded-t-[1.35rem] before:bg-white before:shadow-[0_-10px_24px_rgba(255,255,255,0.10)]">
         {isLoading || isFiltering ? (
           <div className="mx-4 rounded-2xl border border-white/12 bg-white/[0.08] px-3.5 py-3 text-xs font-black text-blue-50/80 backdrop-blur-md sm:mx-10 lg:mx-0">
-            جاري تجهيز العمليات...
+            جاري تجهيز طلبات الأوراق...
           </div>
-        ) : latestSales.length ? (
-          latestSales.map((sale, index) => (
+        ) : latestRequests.length ? (
+          latestRequests.map((request, index) => (
             <div
-              key={sale.id}
+              key={request.id}
               className="customer-care-mobile-sale-entry overflow-hidden bg-white shadow-[0_16px_34px_rgba(15,23,42,0.12)]"
               style={{ animationDelay: `${index * 22}ms` }}
             >
-              <SalesFollowUpCard
-                sale={sale}
-                paperworkRequests={paperworkRequests}
-                paperworkDocuments={paperworkDocuments}
-                onRegisterTrackingUnit={onRegisterTrackingUnit}
-                onCreatePaperworkRequest={onCreatePaperworkRequest}
-                onOpenPaperworkRequest={onOpenPaperworkRequest}
-              />
+              <PaperworkRequestCard request={request} onOpen={onOpenPaperworkRequest} />
             </div>
           ))
         ) : (
           <div className="mx-4 rounded-2xl border border-white/12 bg-white/[0.08] px-3.5 py-3 text-xs font-black text-blue-50/80 backdrop-blur-md sm:mx-10 lg:mx-0">
-            لا توجد عمليات مبيعات حديثة.
+            لا توجد طلبات أوراق حديثة.
           </div>
         )}
       </div>
@@ -382,7 +375,7 @@ function FollowUpSectionsPanel({
         })}
       </div>
 
-      <LatestMobileSalesList
+      <LatestMobilePaperworkRequestsList
         sales={filteredMobileSales}
         paperworkRequests={paperworkRequests}
         paperworkDocuments={paperworkDocuments}
@@ -393,7 +386,7 @@ function FollowUpSectionsPanel({
         onOpenPaperworkRequest={onOpenPaperworkRequest}
         onViewAll={() => {
           onReportFilterChange?.(null);
-          onSectionChange('sales');
+          onSectionChange('requests');
         }}
       />
 
@@ -906,7 +899,7 @@ function PaperworkJourneyStations({ currentStage }) {
 
   return (
     <div
-      className="mt-3 min-w-0 border-t border-slate-100 pt-3 lg:mt-0 lg:flex lg:h-full lg:items-center lg:border-r lg:border-t-0 lg:border-slate-200 lg:pr-5 lg:pt-0"
+      className="mt-3 min-w-0 pt-3 lg:mt-0 lg:flex lg:h-full lg:items-center lg:border-r lg:border-slate-200 lg:pr-5 lg:pt-0"
       aria-label="مراحل طلب الأوراق"
     >
       <div className="grid min-w-0 flex-1 grid-cols-4 gap-1 rounded-xl border border-slate-200/80 bg-slate-50 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
@@ -965,6 +958,14 @@ function PaperworkJourneyStations({ currentStage }) {
   );
 }
 
+function getPaperworkCurrentStation(currentStage) {
+  const index = PAPERWORK_JOURNEY_STATIONS.findIndex((station) => station.stages.includes(currentStage));
+  return {
+    station: index >= 0 ? PAPERWORK_JOURNEY_STATIONS[index] : null,
+    stageLabel: PAPERWORK_INTERNAL_STAGE_LABELS[currentStage] || currentStage || '',
+  };
+}
+
 function PaperworkRequestCard({ request, onOpen }) {
   const processorName = request.processor?.name || '';
   const licenseSummary = request.license?.status === 'jawab'
@@ -991,6 +992,7 @@ function PaperworkRequestCard({ request, onOpen }) {
     mother_guardian: 'وصاية والدته',
     none: 'بدون وصاية',
   }[guardianshipCode] || guardianshipCode || '';
+  const currentStation = getPaperworkCurrentStation(currentStage);
 
   return (
     <article
@@ -1003,7 +1005,7 @@ function PaperworkRequestCard({ request, onOpen }) {
           onOpen?.(request);
         }
       }}
-      className="relative cursor-pointer bg-white px-4 py-5 outline-none transition before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-slate-200 first:before:hidden hover:bg-blue-50/55 focus-visible:bg-blue-50/55 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      className="relative cursor-pointer bg-white px-4 py-5 outline-none transition before:absolute before:inset-x-4 before:top-0 before:h-[2px] before:bg-slate-300 first:before:hidden hover:bg-blue-50/55 focus-visible:bg-blue-50/55 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 lg:before:inset-x-5 lg:before:h-px lg:before:bg-slate-200"
       aria-label={`عرض تفاصيل طلب أوراق ${request.productName || ''}`}
     >
       <div className="flex min-w-0 flex-col lg:min-h-[5.75rem] lg:flex-row lg:items-stretch lg:gap-5">
@@ -1019,29 +1021,50 @@ function PaperworkRequestCard({ request, onOpen }) {
               <span className="shrink-0 text-[9px] font-bold text-slate-400">· {guardianshipLabel}</span>
             ) : null}
           </div>
-          <p className="mt-1 truncate text-[10px] font-bold text-slate-400" title={identifiersText}>
-            {identifiersText}
-          </p>
-          <div className="mt-1">
-            <span
-              className={`inline-flex max-w-full truncate rounded-md border px-2 py-0.5 text-xs font-black leading-5 shadow-sm ${
-                request.license
-                  ? 'border-blue-200 bg-blue-50 text-blue-800'
-                  : 'border-amber-200 bg-amber-50 text-amber-800'
-              }`}
-              title={licenseSummary}
-            >
-              {licenseSummary}
-            </span>
+          <div className="mt-2 flex min-w-0 items-start gap-2 lg:mt-1 lg:block">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[10px] font-bold text-slate-400" title={identifiersText}>
+                {identifiersText}
+              </p>
+              <div className="mt-1">
+                <span
+                  className={`inline-flex max-w-full truncate rounded-md border px-2 py-0.5 text-xs font-black leading-5 shadow-sm ${
+                    request.license
+                      ? 'border-blue-200 bg-blue-50 text-blue-800'
+                      : 'border-amber-200 bg-amber-50 text-amber-800'
+                  }`}
+                  title={licenseSummary}
+                >
+                  {licenseSummary}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] font-bold text-slate-400">
+                ضمن الفاتورة
+                <span className="mr-1 font-black text-slate-600">
+                  {request.customer?.name || 'عميل غير محدد'}
+                </span>
+              </p>
+            </div>
+            {currentStation.station ? (
+              <div className="-mt-1 flex aspect-square w-[5.9rem] shrink-0 items-center justify-center rounded-2xl bg-blue-600 px-2 text-center text-white shadow-[0_12px_26px_rgba(37,99,235,0.24)] lg:hidden">
+                <div className="min-w-0">
+                  <p className="mb-1 text-[8px] font-black leading-3 text-white/65">
+                    مرحلة الطلب
+                  </p>
+                  <p className="line-clamp-2 text-[11px] font-black leading-3 text-white">
+                    {currentStation.station.label}
+                  </p>
+                  {currentStation.stageLabel ? (
+                    <p className="mt-1 line-clamp-2 text-[8px] font-bold leading-3 text-white/78">
+                      {currentStation.stageLabel}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
-          <p className="mt-1 text-[11px] font-bold text-slate-400">
-            ضمن الفاتورة
-            <span className="mr-1 font-black text-slate-600">
-              {request.customer?.name || 'عميل غير محدد'}
-            </span>
-          </p>
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="hidden min-w-0 flex-1 lg:block">
           <PaperworkJourneyStations currentStage={currentStage} />
         </div>
       </div>
