@@ -968,6 +968,7 @@ function getPaperworkCurrentStation(currentStage) {
 
 function PaperworkRequestCard({ request, onOpen }) {
   const processorName = request.processor?.name || '';
+  const missingProcessor = request.license?.status === 'jawab' && !processorName;
   const licenseSummary = request.license?.status === 'jawab'
     ? `جواب تاجر: ${processorName || 'لم تحدد جهة الإصدار'}`
     : getPaperLicenseSummary(request.license);
@@ -1029,7 +1030,9 @@ function PaperworkRequestCard({ request, onOpen }) {
               <div className="mt-1">
                 <span
                   className={`inline-flex max-w-full truncate rounded-md border px-2 py-0.5 text-xs font-black leading-5 shadow-sm ${
-                    request.license
+                    missingProcessor
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : request.license
                       ? 'border-blue-200 bg-blue-50 text-blue-800'
                       : 'border-amber-200 bg-amber-50 text-amber-800'
                   }`}
@@ -3889,6 +3892,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
           if (!open) setPaperworkRequestDetails(null);
         }}
         tenantId={tenantId}
+        canManageProcessor={tenantUser?.role === 'owner'}
         onCustomerConfirmed={(confirmation) => {
           if (!paperworkRequestDetails?.id || !confirmation) return;
 

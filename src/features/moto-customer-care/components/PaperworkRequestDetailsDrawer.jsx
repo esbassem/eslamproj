@@ -293,6 +293,7 @@ export function PaperworkRequestDetailsDrawer({
   open,
   onOpenChange,
   tenantId,
+  canManageProcessor = false,
   onSaved,
   onCustomerConfirmed,
   onRequestSent,
@@ -311,6 +312,7 @@ export function PaperworkRequestDetailsDrawer({
   const [sendToProcessorError, setSendToProcessorError] = useState('');
   const [sendToProcessorNote, setSendToProcessorNote] = useState('');
   const [processorOverride, setProcessorOverride] = useState(null);
+  const [processorPermissionNotice, setProcessorPermissionNotice] = useState('');
   const closeTimerRef = useRef(null);
   const openFrameRef = useRef(null);
   const contentTimerRef = useRef(null);
@@ -350,6 +352,7 @@ export function PaperworkRequestDetailsDrawer({
       setSendConfirmationOpen(false);
       setSendToProcessorError('');
       setSendToProcessorNote('');
+      setProcessorPermissionNotice('');
       closeTimerRef.current = window.setTimeout(() => setMounted(false), 240);
     }
 
@@ -364,6 +367,7 @@ export function PaperworkRequestDetailsDrawer({
 
   useEffect(() => {
     setProcessorOverride(null);
+    setProcessorPermissionNotice('');
   }, [snapshot?.id]);
 
   useEffect(() => {
@@ -431,7 +435,8 @@ export function PaperworkRequestDetailsDrawer({
     id: `request-created-${snapshot.id}`,
     eventType: 'created',
     createdAt: snapshot.createdAt,
-    createdByName: '',
+    createdBy: snapshot.createdBy || snapshot.created_by || null,
+    createdByName: snapshot.createdByName || snapshot.created_by_name || '',
     isSynthetic: true,
   };
   const events = contentReady
@@ -549,7 +554,14 @@ export function PaperworkRequestDetailsDrawer({
               </div>
               <button
                 type="button"
-                onClick={() => setProcessorOpen(true)}
+                onClick={() => {
+                  if (!canManageProcessor) {
+                    setProcessorPermissionNotice('المالك فقط يقدر يحدد جهة إصدار الأوراق.');
+                    return;
+                  }
+                  setProcessorPermissionNotice('');
+                  setProcessorOpen(true);
+                }}
                 className={`mt-2 flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-right transition-colors ${
                   displayedProcessor
                     ? 'bg-white/12 text-white hover:bg-white/20'
@@ -566,6 +578,11 @@ export function PaperworkRequestDetailsDrawer({
                   {displayedProcessor ? `جهة الإصدار: ${processorName}` : 'جهة الإصدار غير محددة'}
                 </span>
               </button>
+              {processorPermissionNotice ? (
+                <p className="mt-1 rounded-md bg-red-500/18 px-2 py-1 text-[10px] font-black leading-4 text-red-50">
+                  {processorPermissionNotice}
+                </p>
+              ) : null}
             </div>
           </div>
         </header>
