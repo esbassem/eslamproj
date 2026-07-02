@@ -30,6 +30,7 @@ const loadShowroomCockpitPage = () => import('@/features/showroom/pages/Showroom
 const loadShowroomSellPage = () => import('@/features/showroom/pages/ShowroomSellPage');
 const loadShowroomSaleDetailsPage = () => import('@/features/showroom/pages/ShowroomSaleDetailsPage');
 const loadMotoCustomerCareWorkspaceLayout = () => import('@/features/moto-customer-care/layouts/MotoCustomerCareWorkspaceLayout');
+const loadMotoCustomerCareHomePage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareHomePage');
 const loadMotoCustomerCareSalesFollowUpListPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage');
 const loadMotoCustomerCareSaleFollowUpDetailsPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSaleFollowUpDetailsPage');
 
@@ -56,6 +57,7 @@ export const ShowroomCockpitPage = lazyNamed(loadShowroomCockpitPage, 'ShowroomC
 export const ShowroomSellPage = lazyNamed(loadShowroomSellPage, 'ShowroomSellPage');
 export const ShowroomSaleDetailsPage = lazyNamed(loadShowroomSaleDetailsPage, 'ShowroomSaleDetailsPage');
 export const MotoCustomerCareWorkspaceLayout = lazyNamed(loadMotoCustomerCareWorkspaceLayout, 'MotoCustomerCareWorkspaceLayout');
+export const MotoCustomerCareHomePage = lazyNamed(loadMotoCustomerCareHomePage, 'MotoCustomerCareHomePage');
 export const MotoCustomerCareSalesFollowUpListPage = lazyNamed(loadMotoCustomerCareSalesFollowUpListPage, 'MotoCustomerCareSalesFollowUpListPage');
 export const MotoCustomerCareSaleFollowUpDetailsPage = lazyNamed(loadMotoCustomerCareSaleFollowUpDetailsPage, 'MotoCustomerCareSaleFollowUpDetailsPage');
 
