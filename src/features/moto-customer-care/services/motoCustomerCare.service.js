@@ -1343,6 +1343,7 @@ function normalizePaperworkRequest(record, maps = {}) {
     cancelReason: record.cancel_reason || '',
     notes: record.notes || '',
     createdBy: record.created_by,
+    createdByName: maps.usersMap?.get(record.created_by)?.name || '',
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     closedAt: record.closed_at,
@@ -1493,7 +1494,7 @@ export const motoCustomerCareService = {
       loadTenantUsersByIdsMap(
         client,
         tenantId,
-        requests.map((request) => request.customer_confirmed_by).filter(Boolean),
+        requests.flatMap((request) => [request.customer_confirmed_by, request.created_by]).filter(Boolean),
       ),
     ]);
 

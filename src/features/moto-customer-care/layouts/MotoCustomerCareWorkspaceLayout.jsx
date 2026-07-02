@@ -15,7 +15,7 @@ export function MotoCustomerCareWorkspaceLayout() {
 
   return (
     <div
-      className="relative h-screen overflow-hidden bg-[#1f5f9f] text-white [background-image:radial-gradient(circle_at_34%_18%,rgba(147,197,253,0.42)_0%,rgba(37,99,235,0.18)_28%,transparent_48%),linear-gradient(135deg,#3d82ca_0%,#2669af_52%,#1d4f89_100%)]"
+      className="relative h-screen overflow-hidden bg-[#061827] text-white [background-image:radial-gradient(circle_at_34%_18%,rgba(59,130,246,0.20)_0%,rgba(14,116,144,0.10)_28%,transparent_48%),linear-gradient(135deg,#0b253a_0%,#081d31_52%,#05111f_100%)]"
       dir="rtl"
     >
       <style>{`
