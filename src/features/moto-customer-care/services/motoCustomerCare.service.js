@@ -1,4 +1,5 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { invokePaperworkNotification } from '@/core/notifications/paperworkNotifications';
 import { resolveCurrentTenantUserId } from '@/features/workspace/api/currentTenantUser.api';
 
 const TENANT_FILES_BUCKET = 'tenant-files';
@@ -2121,6 +2122,10 @@ export const motoCustomerCareService = {
 
     if (error) {
       throw error;
+    }
+
+    if (request?.id) {
+      await invokePaperworkNotification(client, request.id);
     }
 
     return request?.id || true;
