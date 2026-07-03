@@ -33,6 +33,7 @@ const loadMotoCustomerCareWorkspaceLayout = () => import('@/features/moto-custom
 const loadMotoCustomerCareHomePage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareHomePage');
 const loadMotoCustomerCareSalesFollowUpListPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage');
 const loadMotoCustomerCareSaleFollowUpDetailsPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSaleFollowUpDetailsPage');
+const loadReceivablesPage = () => import('@/features/receivables/pages/ReceivablesPage');
 
 export const PublicLayout = lazyNamed(loadPublicLayout, 'PublicLayout');
 export const AuthLayout = lazyNamed(loadAuthLayout, 'AuthLayout');
@@ -60,6 +61,7 @@ export const MotoCustomerCareWorkspaceLayout = lazyNamed(loadMotoCustomerCareWor
 export const MotoCustomerCareHomePage = lazyNamed(loadMotoCustomerCareHomePage, 'MotoCustomerCareHomePage');
 export const MotoCustomerCareSalesFollowUpListPage = lazyNamed(loadMotoCustomerCareSalesFollowUpListPage, 'MotoCustomerCareSalesFollowUpListPage');
 export const MotoCustomerCareSaleFollowUpDetailsPage = lazyNamed(loadMotoCustomerCareSaleFollowUpDetailsPage, 'MotoCustomerCareSaleFollowUpDetailsPage');
+export const ReceivablesPage = lazyNamed(loadReceivablesPage, 'ReceivablesPage');
 
 const protectedRoutePreloaders = {
   [ROUTES.dashboard]: loadDashboardPage,

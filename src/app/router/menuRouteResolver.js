@@ -9,5 +9,11 @@ export function normalizeMenuRoute(route = '') {
 
 export function resolveMenuComponent(route) {
   const normalizedRoute = normalizeMenuRoute(route);
-  return MENU_COMPONENTS[normalizedRoute] ?? null;
+  const alternateRoute = normalizedRoute.startsWith('/apps/')
+    ? normalizedRoute.replace(/^\/apps\//, '/app/')
+    : normalizedRoute.startsWith('/app/')
+      ? normalizedRoute.replace(/^\/app\//, '/apps/')
+      : '';
+
+  return MENU_COMPONENTS[normalizedRoute] ?? MENU_COMPONENTS[alternateRoute] ?? null;
 }
