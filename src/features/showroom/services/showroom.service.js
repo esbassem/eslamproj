@@ -1,4 +1,5 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { invokePaperworkNotification } from '@/core/notifications/paperworkNotifications';
 import { resolveCurrentTenantUserId } from '@/features/workspace/api/currentTenantUser.api';
 import { isInventoryInstalled } from '@/core/lib/inventoryGuard';
 
@@ -1217,6 +1218,10 @@ export const showroomService = {
 
           if (trackingProcessorError) throw trackingProcessorError;
         }
+      }
+
+      if (requestId && data?.created) {
+        await invokePaperworkNotification(client, requestId);
       }
 
       return {
