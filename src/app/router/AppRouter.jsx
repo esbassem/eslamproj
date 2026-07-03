@@ -19,6 +19,7 @@ import {
   OnboardingPage,
   PosPage,
   PublicLayout,
+  ReceivablesPage,
   ShowroomSaleDetailsPage,
   ShowroomSellPage,
   ShowroomWorkspaceLayout,
@@ -97,6 +98,12 @@ export function AppRouter() {
                 <Route index element={<MotoCustomerCareHomePage />} />
                 <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
+              <Route path="/app/receivables" element={<AppAccessRoute appCode="receivables"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
+                <Route index element={<ReceivablesPage />} />
+                <Route path="installments" element={<ReceivablesPage />} />
+              </Route>
+              <Route path="/apps/receivables" element={<Navigate to="/app/receivables" replace />} />
+              <Route path="/apps/receivables/installments" element={<Navigate to="/app/receivables/installments" replace />} />
               <Route path="/apps/:appCode" element={<AppLayout />}>
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />
