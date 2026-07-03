@@ -78,6 +78,11 @@ function AppTopbarComponent({ onMenuClick }) {
         return;
       }
 
+      if (result.status === 'permission_default') {
+        showPushToast('لم يتم منح إذن الإشعارات بعد. اضغط السماح من نافذة المتصفح عند ظهورها.', 'error');
+        return;
+      }
+
       showPushToast('تم تفعيل الإشعارات وحفظ اشتراك هذا الجهاز.');
     } catch (error) {
       showPushToast(error?.message || 'تعذر تفعيل الإشعارات الآن.', 'error');

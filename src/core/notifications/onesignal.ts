@@ -5,6 +5,7 @@ const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID;
 const PROVIDER = 'onesignal';
 const PLAYER_ID_WAIT_ATTEMPTS = 20;
 const PLAYER_ID_WAIT_MS = 500;
+const LOG_PREFIX = '[OneSignal Web Push]';
 
 declare global {
   interface Window {
@@ -41,6 +42,19 @@ function wait(ms: number) {
   });
 }
 
+function logStep(message: string, details?: unknown) {
+  if (typeof details === 'undefined') {
+    console.log(LOG_PREFIX, message);
+    return;
+  }
+
+  console.log(LOG_PREFIX, message, details);
+}
+
+function logException(message: string, error: unknown) {
+  console.error(LOG_PREFIX, message, error);
+}
+
 function isAlreadyInitializedError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '');
   return message.toLowerCase().includes('already initialized');
@@ -48,6 +62,20 @@ function isAlreadyInitializedError(error: unknown) {
 
 function hasLoadedOneSignalNamespaces() {
   return Boolean(window.OneSignal?.Notifications && window.OneSignal?.User?.PushSubscription);
+}
+
+function getBrowserNotificationPermission() {
+  return typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
+}
+
+function getOneSignalPushState() {
+  return {
+    notificationPermission: getBrowserNotificationPermission(),
+    oneSignalPermission: OneSignal.Notifications?.permission,
+    subscriptionId: OneSignal.User?.PushSubscription?.id ?? null,
+    token: OneSignal.User?.PushSubscription?.token ?? null,
+    optedIn: OneSignal.User?.PushSubscription?.optedIn,
+  };
 }
 
 async function getPlayerId() {
@@ -66,13 +94,20 @@ async function getPlayerId() {
 
 export async function initializeOneSignal() {
   ensureBrowserSupport();
+  logStep('initializeOneSignal:start', {
+    alreadyInitialized: Boolean(window.businessHubOneSignalInitialized),
+    hasLoadedNamespaces: hasLoadedOneSignalNamespaces(),
+    notificationPermission: getBrowserNotificationPermission(),
+  });
 
   if (window.businessHubOneSignalInitialized || hasLoadedOneSignalNamespaces()) {
     window.businessHubOneSignalInitialized = true;
+    logStep('initializeOneSignal:already-initialized', getOneSignalPushState());
     return OneSignal;
   }
 
   if (!window.businessHubOneSignalInitPromise) {
+    logStep('initializeOneSignal:init-call');
     window.businessHubOneSignalInitPromise = OneSignal.init({
       appId: ONESIGNAL_APP_ID,
       allowLocalhostAsSecureOrigin: true,
@@ -89,18 +124,22 @@ export async function initializeOneSignal() {
       },
     }).then(() => {
       window.businessHubOneSignalInitialized = true;
+      logStep('initializeOneSignal:init-complete', getOneSignalPushState());
     }).catch((error) => {
       if (isAlreadyInitializedError(error)) {
         window.businessHubOneSignalInitialized = true;
+        logStep('initializeOneSignal:init-already-initialized-error', getOneSignalPushState());
         return;
       }
 
       window.businessHubOneSignalInitPromise = undefined;
+      logException('initializeOneSignal:init-exception', error);
       throw error;
     });
   }
 
   await window.businessHubOneSignalInitPromise;
+  logStep('initializeOneSignal:ready', getOneSignalPushState());
   return OneSignal;
 }
 
@@ -157,22 +196,51 @@ export async function requestAndSaveOneSignalSubscription({
     throw new Error('لا يمكن تفعيل الإشعارات قبل تحميل بيانات الشركة والمستخدم.');
   }
 
-  await initializeOneSignal();
+  try {
+    await initializeOneSignal();
+  } catch (error) {
+    logException('requestAndSave:init-exception', error);
+    throw error;
+  }
+
+  logStep('requestAndSave:after-init', getOneSignalPushState());
 
   if (!OneSignal.Notifications.isPushSupported()) {
+    logStep('requestAndSave:push-not-supported', getOneSignalPushState());
     throw new Error('هذا المتصفح لا يدعم إشعارات الويب.');
   }
 
   if (Notification.permission === 'denied') {
+    logStep('requestAndSave:browser-permission-denied', getOneSignalPushState());
     return {
       status: 'denied' as const,
       playerId: null,
     };
   }
 
-  const granted = OneSignal.Notifications.permission || (await OneSignal.Notifications.requestPermission());
+  if (!OneSignal.Notifications.permission) {
+    logStep('requestAndSave:show-slidedown-prompt', getOneSignalPushState());
 
-  if (!granted || Notification.permission !== 'granted') {
+    try {
+      await OneSignal.Slidedown.promptPush({ force: true });
+    } catch (error) {
+      logException('requestAndSave:slidedown-exception', error);
+      throw error;
+    }
+
+    logStep('requestAndSave:after-slidedown-prompt', getOneSignalPushState());
+  }
+
+  if (Notification.permission === 'default') {
+    logStep('requestAndSave:browser-permission-default', getOneSignalPushState());
+    return {
+      status: 'permission_default' as const,
+      playerId: null,
+    };
+  }
+
+  if (Notification.permission === 'denied') {
+    logStep('requestAndSave:browser-permission-denied-after-prompt', getOneSignalPushState());
     return {
       status: 'denied' as const,
       playerId: null,
@@ -180,16 +248,34 @@ export async function requestAndSaveOneSignalSubscription({
   }
 
   if (!OneSignal.User.PushSubscription.optedIn) {
-    await OneSignal.User.PushSubscription.optIn();
+    logStep('requestAndSave:opt-in-start', getOneSignalPushState());
+
+    try {
+      await OneSignal.User.PushSubscription.optIn();
+    } catch (error) {
+      logException('requestAndSave:opt-in-exception', error);
+      throw error;
+    }
+
+    logStep('requestAndSave:opt-in-complete', getOneSignalPushState());
   }
 
   const playerId = await getPlayerId();
+  logStep('requestAndSave:subscription-id-result', {
+    ...getOneSignalPushState(),
+    playerId,
+  });
 
   if (!playerId) {
     throw new Error('تم منح الإذن لكن لم نستطع الحصول على OneSignal player id.');
   }
 
   await saveSubscription({ tenantId, tenantUserId, playerId });
+  logStep('requestAndSave:saved', {
+    tenantId,
+    tenantUserId,
+    playerId,
+  });
 
   return {
     status: 'saved' as const,
