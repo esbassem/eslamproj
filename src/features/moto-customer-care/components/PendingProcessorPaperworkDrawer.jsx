@@ -16,6 +16,69 @@ function formatSentAt(value) {
   }).format(date);
 }
 
+function getRequestSentAt(request) {
+  return [...(request.events || [])]
+    .reverse()
+    .find((event) => (
+      event.eventType === 'sent_to_supplier'
+      || event.newStage === 'sent_to_processor'
+    ))?.createdAt
+    || request.stageEnteredAt
+    || null;
+}
+
+function getSentAgeMeta(value) {
+  if (!value) {
+    return {
+      label: 'لم تحدد المدة',
+      className: 'border-slate-200 bg-slate-50 text-slate-500',
+    };
+  }
+
+  const date = new Date(value);
+  const now = new Date();
+
+  if (Number.isNaN(date.getTime())) {
+    return {
+      label: 'لم تحدد المدة',
+      className: 'border-slate-200 bg-slate-50 text-slate-500',
+    };
+  }
+
+  const elapsedMs = Math.max(now.getTime() - date.getTime(), 0);
+  const elapsedHours = Math.floor(elapsedMs / (1000 * 60 * 60));
+  const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
+  const label = elapsedHours < 24
+    ? `منذ ${Math.max(elapsedHours, 1).toLocaleString('ar-EG')} ساعة`
+    : `منذ ${elapsedDays.toLocaleString('ar-EG')} يوم`;
+
+  if (elapsedDays >= 7) {
+    return {
+      label,
+      className: 'border-red-200 bg-red-50 text-red-700',
+    };
+  }
+
+  if (elapsedDays >= 5) {
+    return {
+      label,
+      className: 'border-orange-200 bg-orange-50 text-orange-700',
+    };
+  }
+
+  if (elapsedDays >= 3) {
+    return {
+      label,
+      className: 'border-amber-200 bg-amber-50 text-amber-700',
+    };
+  }
+
+  return {
+    label,
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  };
+}
+
 function getGuardianshipLabel(note) {
   const value = String(note || '').match(/حالة الوصاية:\s*([^\n]+)/)?.[1]?.trim();
   return {
@@ -165,62 +228,64 @@ export function PendingProcessorPaperworkDrawer({
                   </span>
 
                   <span className="mr-8 block divide-y divide-slate-100 px-4">
-                    {group.requests.map((request) => (
-                      <span
-                        key={request.id}
-                        className="flex w-full items-start gap-3 py-4 text-right"
-                      >
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center text-slate-400">
-                          <FileText className="h-4 w-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                            <span className="min-w-0 truncate text-xs font-black text-slate-900">
-                              {request.productName || 'طلب أوراق'}
-                            </span>
-                            <span className="shrink-0 text-[10px] font-bold text-slate-500">
-                              باسم: {request.documentOwnerName
-                                || request.documentOwner?.name
-                                || (request.documentOwnerStatus === 'later' ? 'يُحدد لاحقًا' : 'غير محدد')}
-                            </span>
-                            {request.documentOwnerStatus !== 'later' && getGuardianshipLabel(request.documentOwnerNote) ? (
-                              <span className="shrink-0 text-[9px] font-bold text-slate-400">
-                                · {getGuardianshipLabel(request.documentOwnerNote)}
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="mt-0.5 block truncate text-[10px] font-bold text-slate-400">
-                            {(() => {
-                              const identifiers = Array.isArray(request.trackingIdentifiers)
-                                ? request.trackingIdentifiers
-                                : [];
-                              const chassis = identifiers.find((identifier) => (
-                                /chassis|شاسيه/i.test(`${identifier.code || ''} ${identifier.label || ''}`)
-                              ));
-                              const engine = identifiers.find((identifier) => (
-                                /engine|motor|موتور|محرك/i.test(`${identifier.code || ''} ${identifier.label || ''}`)
-                              ));
+                    {group.requests.map((request) => {
+                      const sentAt = getRequestSentAt(request);
+                      const sentAgeMeta = getSentAgeMeta(sentAt);
 
-                              return [
-                                chassis?.value ? `شاسيه ${chassis.value}` : '',
-                                engine?.value ? `موتور ${engine.value}` : '',
-                              ].filter(Boolean).join(' · ') || 'لا توجد أرقام تعريف';
-                            })()}
+                      return (
+                        <span
+                          key={request.id}
+                          className="flex w-full items-start gap-3 py-4 text-right"
+                        >
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center text-slate-400">
+                            <FileText className="h-4 w-4" />
                           </span>
-                          <span className="mt-1.5 block truncate text-[9px] font-bold text-blue-500">
-                            أُرسل للجهة: {formatSentAt(
-                              [...(request.events || [])]
-                                .reverse()
-                                .find((event) => (
-                                  event.eventType === 'sent_to_supplier'
-                                  || event.newStage === 'sent_to_processor'
-                                ))?.createdAt
-                              || request.stageEnteredAt,
-                            )}
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="min-w-0 truncate text-xs font-black text-slate-900">
+                                {request.productName || 'طلب أوراق'}
+                              </span>
+                              <span className="shrink-0 text-[10px] font-bold text-slate-500">
+                                باسم: {request.documentOwnerName
+                                  || request.documentOwner?.name
+                                  || (request.documentOwnerStatus === 'later' ? 'يُحدد لاحقًا' : 'غير محدد')}
+                              </span>
+                              {request.documentOwnerStatus !== 'later' && getGuardianshipLabel(request.documentOwnerNote) ? (
+                                <span className="shrink-0 text-[9px] font-bold text-slate-400">
+                                  · {getGuardianshipLabel(request.documentOwnerNote)}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[10px] font-bold text-slate-400">
+                              {(() => {
+                                const identifiers = Array.isArray(request.trackingIdentifiers)
+                                  ? request.trackingIdentifiers
+                                  : [];
+                                const chassis = identifiers.find((identifier) => (
+                                  /chassis|شاسيه/i.test(`${identifier.code || ''} ${identifier.label || ''}`)
+                                ));
+                                const engine = identifiers.find((identifier) => (
+                                  /engine|motor|موتور|محرك/i.test(`${identifier.code || ''} ${identifier.label || ''}`)
+                                ));
+
+                                return [
+                                  chassis?.value ? `شاسيه ${chassis.value}` : '',
+                                  engine?.value ? `موتور ${engine.value}` : '',
+                                ].filter(Boolean).join(' · ') || 'لا توجد أرقام تعريف';
+                              })()}
+                            </span>
+                            <span className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                              <span className="truncate text-[9px] font-bold text-blue-500">
+                                أُرسل للجهة: {formatSentAt(sentAt)}
+                              </span>
+                              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-black leading-4 ${sentAgeMeta.className}`}>
+                                {sentAgeMeta.label}
+                              </span>
+                            </span>
                           </span>
                         </span>
-                      </span>
-                    ))}
+                      );
+                    })}
                   </span>
                 </button>
               ))}

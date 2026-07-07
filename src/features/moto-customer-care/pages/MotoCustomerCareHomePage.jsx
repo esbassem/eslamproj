@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, CircleCheck, FileText, PhoneCall } from 'lucide-react';
+import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
 import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -62,7 +63,26 @@ function getPaperLicenseSummary(license) {
   return parts.filter(Boolean).join(' / ');
 }
 
-function CustomerCareIntroPanel() {
+function getElapsedStageMeta(value) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const elapsedMs = Math.max(Date.now() - date.getTime(), 0);
+  const elapsedHours = Math.floor(elapsedMs / (1000 * 60 * 60));
+  const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
+  const label = elapsedHours < 24
+    ? `منذ ${Math.max(elapsedHours, 1).toLocaleString('ar-EG')} ساعة`
+    : `منذ ${elapsedDays.toLocaleString('ar-EG')} يوم`;
+
+  if (elapsedDays >= 7) return { label, className: 'bg-red-50 text-red-700 ring-red-200' };
+  if (elapsedDays >= 4) return { label, className: 'bg-orange-50 text-orange-700 ring-orange-200' };
+  if (elapsedDays >= 2) return { label, className: 'bg-amber-50 text-amber-700 ring-amber-200' };
+  return { label, className: 'bg-sky-50 text-sky-700 ring-sky-200' };
+}
+
+function CustomerCareIntroPanel({ pendingProcessorCount = 0, onOpenPendingProcessorPaperwork }) {
   return (
     <div className="customer-care-fade-up relative z-[45] h-auto min-h-0 overflow-visible bg-[radial-gradient(circle_at_45%_22%,rgba(14,165,233,0.14)_0%,rgba(30,64,175,0.08)_34%,transparent_58%),linear-gradient(145deg,#0b253a_0%,#081d31_52%,#05111f_100%)] px-0 pb-8 pt-16 text-right text-white sm:px-0 sm:pt-20 lg:h-full lg:overflow-hidden lg:bg-none lg:px-8 lg:pb-0 lg:pt-14 xl:px-10">
       <div className="pointer-events-none absolute inset-0 hidden sm:block">
@@ -78,12 +98,30 @@ function CustomerCareIntroPanel() {
         <p className="mt-3 max-w-md text-sm font-semibold leading-6 text-sky-50/65 sm:text-base sm:leading-7">
           متابعة البيع، الأوراق، وحالة القطع بعد التسليم.
         </p>
+        <div className="mt-6 flex flex-wrap justify-start gap-3">
+          <button
+            type="button"
+            onClick={onOpenPendingProcessorPaperwork}
+            className="inline-flex min-h-12 items-center gap-3 rounded-xl border border-white/20 bg-white/[0.13] px-4 py-2.5 text-right text-white shadow-[0_14px_30px_rgba(3,7,18,0.16)] backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.20] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25"
+            aria-label={`الأوراق المرسلة للجهات: ${pendingProcessorCount} طلب`}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-400 text-white shadow-sm">
+              <Building2 className="h-4.5 w-4.5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-xs font-black leading-4 text-white">الأوراق المرسلة للجهات</span>
+              <span className="mt-0.5 block text-[10px] font-bold leading-4 text-sky-100/75">
+                {pendingProcessorCount.toLocaleString('ar-EG')} بانتظار الاستلام
+              </span>
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function getPaperworkCurrentStation(currentStage) {
+function getPaperworkCurrentStation(currentStage, stageEnteredAt) {
   const index = PAPERWORK_JOURNEY_STATIONS.findIndex((station) => station.stages.includes(currentStage));
   const normalizedIndex = index >= 0 ? index : 0;
   const progressPercent = Math.round(((normalizedIndex + 1) / PAPERWORK_JOURNEY_STATIONS.length) * 100);
@@ -94,6 +132,7 @@ function getPaperworkCurrentStation(currentStage) {
     progressPercent,
     stepNumber: normalizedIndex + 1,
     totalSteps: PAPERWORK_JOURNEY_STATIONS.length,
+    elapsed: getElapsedStageMeta(stageEnteredAt),
   };
 }
 
@@ -107,8 +146,15 @@ function PaperworkCurrentStageCard({ currentStation }) {
           <span className="hidden max-w-full truncate text-[10px] font-black leading-4 text-slate-400 lg:block">
             مرحلة الطلب
           </span>
-          <span className="mt-0.5 block max-w-full truncate text-sm font-black leading-5 text-slate-950">
-            {currentStation.station.label}
+          <span className="mt-0.5 flex max-w-full items-center gap-1.5">
+            <span className="min-w-0 truncate text-sm font-black leading-5 text-slate-950">
+              {currentStation.station.label}
+            </span>
+            {currentStation.elapsed ? (
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black leading-4 ring-1 ${currentStation.elapsed.className}`}>
+                {currentStation.elapsed.label}
+              </span>
+            ) : null}
           </span>
         </div>
         <span className="flex-shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
@@ -141,7 +187,10 @@ function PaperworkRequestCard({ request, onOpen }) {
     mother_guardian: 'وصاية والدته',
     none: 'بدون وصاية',
   }[guardianshipCode] || guardianshipCode || '';
-  const currentStation = getPaperworkCurrentStation(currentStage);
+  const currentStation = getPaperworkCurrentStation(
+    currentStage,
+    request.stageEnteredAt || request.stage_entered_at || request.createdAt || request.created_at,
+  );
 
   return (
     <article
@@ -263,6 +312,7 @@ function PaperworkRequestsCard({ requests, isLoading, error, onOpen }) {
 export function MotoCustomerCareHomePage() {
   const { tenant_user: tenantUser } = useAuth();
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [pendingProcessorPaperworkOpen, setPendingProcessorPaperworkOpen] = useState(false);
   const {
     tenantId,
     paperworkRequests,
@@ -274,10 +324,15 @@ export function MotoCustomerCareHomePage() {
   const recentRequests = useMemo(() => (
     [...paperworkRequests]
       .sort((left, right) => (
-        new Date(right.updatedAt || right.updated_at || right.createdAt || right.created_at || 0)
-        - new Date(left.updatedAt || left.updated_at || left.createdAt || left.created_at || 0)
+        new Date(right.createdAt || right.created_at || 0)
+        - new Date(left.createdAt || left.created_at || 0)
       ))
       .slice(0, 20)
+  ), [paperworkRequests]);
+  const pendingProcessorRequestsCount = useMemo(() => (
+    paperworkRequests.filter((request) => (
+      ['sent_to_processor', 'processor_ready'].includes(request.currentStage)
+    )).length
   ), [paperworkRequests]);
 
   useEffect(() => {
@@ -285,7 +340,7 @@ export function MotoCustomerCareHomePage() {
       return undefined;
     }
 
-    const hasOpenRequestDetails = Boolean(selectedRequest);
+    const hasOpenRequestDetails = Boolean(selectedRequest) || pendingProcessorPaperworkOpen;
     document.documentElement.classList.toggle('customer-care-section-open', hasOpenRequestDetails);
     document.body.classList.toggle('customer-care-section-open', hasOpenRequestDetails);
 
@@ -314,7 +369,10 @@ export function MotoCustomerCareHomePage() {
         }
       `}</style>
       <div className="relative z-10 grid min-h-full w-full max-w-none flex-none gap-0 overflow-visible lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(18rem,0.72fr)_minmax(34rem,1.28fr)] lg:items-stretch lg:overflow-hidden lg:bg-[radial-gradient(circle_at_28%_18%,rgba(14,165,233,0.14)_0%,rgba(30,64,175,0.08)_32%,transparent_58%),linear-gradient(145deg,#0b253a_0%,#081d31_52%,#05111f_100%)]">
-        <CustomerCareIntroPanel />
+        <CustomerCareIntroPanel
+          pendingProcessorCount={pendingProcessorRequestsCount}
+          onOpenPendingProcessorPaperwork={() => setPendingProcessorPaperworkOpen(true)}
+        />
         <PaperworkRequestsCard
           requests={recentRequests}
           isLoading={isLoading}
@@ -350,6 +408,7 @@ export function MotoCustomerCareHomePage() {
 
           const patch = {
             currentStage: result.currentStage,
+            stageEnteredAt: result.updatedAt,
             stage: {
               code: result.currentStage,
               name: 'تم الإرسال للجهة',
@@ -386,6 +445,26 @@ export function MotoCustomerCareHomePage() {
           ));
         }}
         onReceived={refresh}
+      />
+      <PendingProcessorPaperworkDrawer
+        open={pendingProcessorPaperworkOpen}
+        onOpenChange={setPendingProcessorPaperworkOpen}
+        requests={paperworkRequests}
+        tenantId={tenantId}
+        onReceived={(receivedItems = []) => {
+          receivedItems.forEach((item) => {
+            updatePaperworkRequestLocally(item.requestId, {
+              currentStage: 'received_from_processor',
+              stageEnteredAt: item.updatedAt,
+              stage: {
+                code: 'received_from_processor',
+                name: 'تم استلام الورق من الجهة',
+              },
+              updatedAt: item.updatedAt,
+            });
+          });
+          refresh();
+        }}
       />
     </section>
   );
