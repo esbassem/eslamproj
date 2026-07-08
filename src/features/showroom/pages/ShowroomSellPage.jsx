@@ -37,6 +37,17 @@ function getSalePendingPaperworkLines(sale) {
   return lines.filter((line) => !hasLinePaperworkRequest(line));
 }
 
+function getMonthSalesRange(monthDate) {
+  const date = monthDate instanceof Date && !Number.isNaN(monthDate.getTime()) ? monthDate : new Date();
+  const start = new Date(date.getFullYear(), date.getMonth(), 1);
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10),
+  };
+}
+
 
 function normalizeConfigCode(value) {
   return String(value ?? '').trim().toUpperCase();
@@ -497,6 +508,7 @@ export function ShowroomSellPage() {
   const [editingConfig, setEditingConfig] = useState(null);
   const [configUsageById, setConfigUsageById] = useState({});
   const [configActionError, setConfigActionError] = useState('');
+  const [invoiceReportMonth, setInvoiceReportMonth] = useState(() => new Date());
   const isHomeRoute = location.pathname.replace(/\/+$/, '') === '/app/showroom_point';
 
   useEffect(() => {
@@ -547,9 +559,13 @@ export function ShowroomSellPage() {
     setSalesError('');
 
     try {
+      const { from, to } = getMonthSalesRange(invoiceReportMonth);
       const nextSales = await showroomService.getSales({
         tenantId: tenant.id,
         showroomConfigId: currentShowroomConfigId,
+        saleDateFrom: from,
+        saleDateTo: to,
+        limit: null,
       });
       setSales(nextSales);
     } catch (error) {
@@ -558,7 +574,7 @@ export function ShowroomSellPage() {
     } finally {
       setIsSalesLoading(false);
     }
-  }, [currentShowroomConfigId, tenant?.id]);
+  }, [currentShowroomConfigId, invoiceReportMonth, tenant?.id]);
 
   useEffect(() => {
     loadSales();
@@ -915,6 +931,8 @@ export function ShowroomSellPage() {
             <ShowroomInvoicesCard
               invoices={sales}
               stats={salesStats}
+              reportMonth={invoiceReportMonth}
+              onReportMonthChange={setInvoiceReportMonth}
               isLoading={isSalesLoading}
               error={salesError}
               onInvoiceSelect={setSelectedSale}

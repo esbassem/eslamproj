@@ -4,6 +4,7 @@ import { createManualReceivable as rpcCreateManualReceivable } from '@/features/
 const RECEIVABLE_COLUMNS = '*';
 const INSTALLMENT_COLUMNS = '*';
 const EVENT_COLUMNS = '*';
+const GUARANTOR_COLUMNS = '*';
 const PARTNER_COLUMNS = 'id, tenant_id, name, phone1, phone2, customer_rank, supplier_rank, active';
 const USER_COLUMNS = 'id, tenant_id, full_name, email, phone, role, is_active';
 const BRANCH_COLUMNS = 'id, tenant_id, name, is_active';
@@ -106,10 +107,25 @@ function normalizeEvent(record, usersById = new Map()) {
   };
 }
 
+function normalizeGuarantor(record, partnersById = new Map()) {
+  if (!record) return null;
+
+  const partner = partnersById.get(record.partner_id) ?? null;
+
+  return {
+    ...record,
+    partner,
+    name: partner?.name || 'ضامن',
+    phone: partner?.phone || '',
+    order: toNumber(record.guarantor_order, 0),
+  };
+}
+
 function normalizeReceivable(record, lookups = {}) {
   if (!record) return null;
 
   const installments = lookups.installmentsByReceivableId?.get(record.id) ?? [];
+  const guarantors = lookups.guarantorsByReceivableId?.get(record.id) ?? [];
   const currentDate = todayIsoDate();
   const dueAmount = installments
     .filter((installment) => isDueInstallment(installment, currentDate))
@@ -134,6 +150,7 @@ function normalizeReceivable(record, lookups = {}) {
     dueAmount,
     overdueAmount,
     installments,
+    guarantors,
     partner,
     assignee,
     branch,
@@ -146,6 +163,17 @@ function groupInstallments(installments) {
     if (!receivableId) return map;
     const current = map.get(receivableId) ?? [];
     current.push(installment);
+    map.set(receivableId, current);
+    return map;
+  }, new Map());
+}
+
+function groupGuarantors(guarantors) {
+  return (guarantors ?? []).reduce((map, guarantor) => {
+    const receivableId = guarantor.receivable_id;
+    if (!receivableId) return map;
+    const current = map.get(receivableId) ?? [];
+    current.push(guarantor);
     map.set(receivableId, current);
     return map;
   }, new Map());
@@ -264,7 +292,7 @@ export const receivablesApi = {
     if (receivablesError) throw receivablesError;
 
     const receivableIds = unique((receivableRows ?? []).map((row) => row.id));
-    const [{ data: installmentRows, error: installmentsError }, { data: eventRows, error: eventsError }] = await Promise.all([
+    const [{ data: installmentRows, error: installmentsError }, { data: eventRows, error: eventsError }, { data: guarantorRows, error: guarantorsError }] = await Promise.all([
       receivableIds.length
         ? client
             .from('receivable_installments')
@@ -282,16 +310,29 @@ export const receivablesApi = {
             .in('receivable_id', receivableIds)
             .order('created_at', { ascending: false })
         : Promise.resolve({ data: [], error: null }),
+      receivableIds.length
+        ? client
+            .from('receivable_guarantors')
+            .select(GUARANTOR_COLUMNS)
+            .eq('tenant_id', tenantId)
+            .in('receivable_id', receivableIds)
+            .order('guarantor_order', { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (installmentsError) throw installmentsError;
     if (eventsError) throw eventsError;
+    if (guarantorsError) throw guarantorsError;
 
     const normalizedInstallments = (installmentRows ?? []).map(normalizeInstallment).filter(Boolean);
     const partnersById = byId(partners);
     const usersById = byId(users);
     const branchesById = byId(branches);
     const installmentsByReceivableId = groupInstallments(normalizedInstallments);
+    const normalizedGuarantors = (guarantorRows ?? [])
+      .map((record) => normalizeGuarantor(record, partnersById))
+      .filter(Boolean);
+    const guarantorsByReceivableId = groupGuarantors(normalizedGuarantors);
     const eventsByReceivableId = (eventRows ?? []).reduce((map, event) => {
       const receivableId = event.receivable_id;
       if (!receivableId) return map;
@@ -302,7 +343,7 @@ export const receivablesApi = {
     }, new Map());
 
     const receivables = (receivableRows ?? [])
-      .map((record) => normalizeReceivable(record, { partnersById, usersById, branchesById, installmentsByReceivableId }))
+      .map((record) => normalizeReceivable(record, { partnersById, usersById, branchesById, installmentsByReceivableId, guarantorsByReceivableId }))
       .filter(Boolean);
 
     return {
@@ -373,6 +414,28 @@ export const receivablesApi = {
 
     if (eventError) throw eventError;
     return installment;
+  },
+
+  async deleteReceivable({ tenantId, receivableId } = {}) {
+    if (!tenantId || !receivableId) throw new Error('بيانات حذف المديونية غير مكتملة.');
+
+    const client = requireSupabase();
+    const filters = { tenant_id: tenantId, receivable_id: receivableId };
+
+    const deleteSteps = [
+      ['receivable_events', filters],
+      ['receivable_guarantors', filters],
+      ['receivable_installments', filters],
+      ['receivable_payment_plans', filters],
+      ['receivables', { tenant_id: tenantId, id: receivableId }],
+    ];
+
+    for (const [table, match] of deleteSteps) {
+      const { error } = await client.from(table).delete().match(match);
+      if (error) throw error;
+    }
+
+    return { id: receivableId };
   },
 
   async loadSourceSale(tenantId, sourceId) {

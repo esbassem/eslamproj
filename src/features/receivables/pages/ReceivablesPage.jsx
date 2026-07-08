@@ -15,11 +15,11 @@ import { Badge } from '@/core/ui/badge';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
-import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetHeader, SheetTitle } from '@/core/ui/sheet';
 import { cn } from '@/core/utils/cn';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { receivablesApi } from '@/features/receivables/api/receivables.api';
+import { ReceivableDetailsSheet } from '@/features/receivables/components/ReceivableDetailsSheet';
 import { ReceivableCreateSheet } from '@/features/receivables/components/ReceivableManualCreateSheet';
 
 const statusLabels = {
@@ -185,7 +185,7 @@ function currentInstallmentIndex(receivable) {
   return (dueInstallment || activeInstallments[0]).index;
 }
 
-function ReceivableInfoLine({ label, value, dir, tone = 'slate' }) {
+function ReceivableInfoLine({ label, value, dir, tone = 'slate', valueStyle }) {
   const toneClass = tone === 'danger'
     ? 'text-rose-700'
     : tone === 'warning'
@@ -195,7 +195,7 @@ function ReceivableInfoLine({ label, value, dir, tone = 'slate' }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5 text-xs leading-5">
       <span className="flex-shrink-0 font-bold text-slate-400">{label} :</span>
-      <span className={cn('min-w-0 truncate font-black', toneClass)} dir={dir}>{value}</span>
+      <span className={cn('min-w-0 truncate font-black', toneClass)} dir={dir} style={valueStyle}>{value}</span>
     </div>
   );
 }
@@ -248,8 +248,11 @@ function OperationsCard({ receivables, onOpen, onCreate, canCreate = false }) {
 		                <p className="truncate text-lg font-black leading-6 text-slate-950">{receivable.partnerName || 'طرف غير محدد'}</p>
 		                <div className="mt-1 flex min-w-0 items-center gap-2">
 		                  <p className="truncate text-sm font-black text-slate-500">{receivable.title || labelFor(sourceTypeLabels, receivable.source_type)}</p>
-	                  <span className="inline-flex flex-shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-500">
-	                    {labelFor(sourceTypeLabels, receivable.source_type)}
+	                  <span className="inline-flex min-w-0 flex-shrink rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-500">
+	                    <span className="flex-shrink-0">{labelFor(sourceTypeLabels, receivable.source_type)}</span>
+                      {receivable.createdByName ? (
+                        <span className="mr-1 min-w-0 truncate">بواسطة {receivable.createdByName}</span>
+                      ) : null}
 		                  </span>
 			                </div>
 			              </div>
@@ -389,35 +392,6 @@ function InstallmentForm({ receivable, onSubmit, isSaving, error }) {
   );
 }
 
-function ReceivableDetailsSheet({ receivable, events, open, onOpenChange, onAddInstallment, isSavingInstallment, installmentError }) {
-  if (!receivable) return null;
-
-  const customerPhone = receivable.partner?.phone
-    || receivable.partner?.phone1
-    || receivable.partner?.phone2
-    || '';
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="max-w-4xl" dir="rtl">
-        <SheetDismissButton />
-        <SheetHeader className="pr-6">
-          <div className="min-w-0 pl-12">
-            <SheetTitle className="truncate text-2xl font-black text-slate-950">
-              {receivable.partnerName || 'طرف غير محدد'}
-            </SheetTitle>
-            {customerPhone ? (
-              <p className="mt-1 truncate text-xs font-bold text-slate-400" dir="ltr">
-                {customerPhone}
-              </p>
-            ) : null}
-          </div>
-        </SheetHeader>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
 export function ReceivablesPage() {
   const { tenant, tenant_user: tenantUser } = useAuth();
   const tenantId = tenant?.id ?? null;
@@ -436,6 +410,7 @@ export function ReceivablesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCustomerSubmitting, setIsCustomerSubmitting] = useState(false);
   const [isSavingInstallment, setIsSavingInstallment] = useState(false);
+  const [isDeletingReceivable, setIsDeletingReceivable] = useState(false);
   const [installmentError, setInstallmentError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -494,6 +469,32 @@ export function ReceivablesPage() {
       setInstallmentError(err.message || 'تعذر إضافة الاستحقاق.');
     } finally {
       setIsSavingInstallment(false);
+    }
+  };
+
+  const handleDeleteReceivable = async () => {
+    if (!tenantId || !selectedReceivable || !canCreateReceivable) return;
+
+    const confirmed = window.confirm(
+      `سيتم حذف المديونية "${selectedReceivable.title || selectedReceivable.partnerName || 'بدون اسم'}" وكل الاستحقاقات والضامنين والأحداث وخطط السداد المرتبطة بها نهائيًا. هل أنت متأكد؟`,
+    );
+    if (!confirmed) return;
+
+    setIsDeletingReceivable(true);
+    try {
+      await receivablesApi.deleteReceivable({
+        tenantId,
+        receivableId: selectedReceivable.id,
+      });
+      setSelectedId(null);
+      setInstallmentError('');
+      await loadData();
+      setSuccessMessage('تم حذف المديونية نهائيًا.');
+    } catch (err) {
+      setSuccessMessage('');
+      setInstallmentError(err.message || 'تعذر حذف المديونية.');
+    } finally {
+      setIsDeletingReceivable(false);
     }
   };
 
@@ -604,6 +605,7 @@ export function ReceivablesPage() {
         receivable={selectedReceivable}
         events={selectedReceivable ? state.eventsByReceivableId.get(selectedReceivable.id) ?? [] : []}
         open={Boolean(selectedReceivable)}
+        companyName={tenant?.name || tenant?.company_name || tenant?.display_name || ''}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
             setSelectedId(null);
@@ -613,6 +615,9 @@ export function ReceivablesPage() {
         onAddInstallment={handleAddInstallment}
         isSavingInstallment={isSavingInstallment}
         installmentError={installmentError}
+        canDelete={canCreateReceivable}
+        onDelete={handleDeleteReceivable}
+        isDeleting={isDeletingReceivable}
       />
     </section>
   );
