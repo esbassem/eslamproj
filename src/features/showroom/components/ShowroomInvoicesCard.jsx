@@ -10,15 +10,30 @@ function getInvoiceItems(invoice) {
       : [];
 }
 
+function isInvoiceInMonth(invoice, reportMonth) {
+  const date = new Date(invoice?.sale_date || invoice?.created_at);
+  return (
+    !Number.isNaN(date.getTime())
+    && date.getFullYear() === reportMonth.getFullYear()
+    && date.getMonth() === reportMonth.getMonth()
+  );
+}
+
 export function ShowroomInvoicesCard({
   invoices = [],
   isLoading = false,
   error = '',
   onInvoiceSelect,
+  reportMonth: controlledReportMonth,
+  onReportMonthChange,
 }) {
-  const [reportMonth, setReportMonth] = useState(() => new Date());
+  const [localReportMonth, setLocalReportMonth] = useState(() => new Date());
+  const reportMonth = controlledReportMonth || localReportMonth;
 
-  const filteredInvoices = invoices;
+  const filteredInvoices = useMemo(
+    () => invoices.filter((invoice) => isInvoiceInMonth(invoice, reportMonth)),
+    [invoices, reportMonth],
+  );
 
   const monthLabel = useMemo(() => (
     new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
@@ -28,21 +43,20 @@ export function ShowroomInvoicesCard({
   ), [reportMonth]);
 
   const monthStats = useMemo(() => {
-    const year = reportMonth.getFullYear();
-    const month = reportMonth.getMonth();
-    const monthInvoices = invoices.filter((invoice) => {
-      const date = new Date(invoice.sale_date || invoice.created_at);
-      return !Number.isNaN(date.getTime()) && date.getFullYear() === year && date.getMonth() === month;
-    });
-
     return {
-      count: monthInvoices.length,
-      total: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount ?? invoice.totalAmount ?? 0), 0),
+      count: filteredInvoices.length,
+      total: filteredInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount ?? invoice.totalAmount ?? 0), 0),
     };
-  }, [invoices, reportMonth]);
+  }, [filteredInvoices]);
 
   const changeReportMonth = (offset) => {
-    setReportMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+    const nextMonth = new Date(reportMonth.getFullYear(), reportMonth.getMonth() + offset, 1);
+
+    if (onReportMonthChange) {
+      onReportMonthChange(nextMonth);
+    } else {
+      setLocalReportMonth(nextMonth);
+    }
   };
 
   const getInvoiceProductsText = (invoice) => (

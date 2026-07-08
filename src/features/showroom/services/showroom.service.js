@@ -958,26 +958,57 @@ export const showroomService = {
     return showroomService.deleteConfig({ tenantId, id });
   },
 
-  async getSales({ tenantId, limit = 20, status, showroomConfigId } = {}) {
+  async getSales({ tenantId, limit = 20, status, showroomConfigId, saleDateFrom, saleDateTo } = {}) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
     const client = requireSupabase();
-    let query = client
-      .from('showroom_sales')
-      .select(SALE_SELECT)
-      .eq('tenant_id', tenantId)
-      .eq('showroom_config_id', showroomConfigId);
+    const buildQuery = () => {
+      let query = client
+        .from('showroom_sales')
+        .select(SALE_SELECT)
+        .eq('tenant_id', tenantId)
+        .eq('showroom_config_id', showroomConfigId);
 
-    if (status) {
-      query = query.eq('status', status);
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      if (saleDateFrom) {
+        query = query.gte('sale_date', saleDateFrom);
+      }
+
+      if (saleDateTo) {
+        query = query.lt('sale_date', saleDateTo);
+      }
+
+      return query.order('sale_date', { ascending: false }).order('created_at', { ascending: false });
+    };
+
+    let data = [];
+    let error = null;
+
+    if (limit === null) {
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const to = from + pageSize - 1;
+        const result = await buildQuery().range(from, to);
+        if (result.error) {
+          error = result.error;
+          break;
+        }
+
+        const rows = result.data || [];
+        data = data.concat(rows);
+        if (rows.length < pageSize) break;
+      }
+    } else {
+      const result = await buildQuery().limit(limit);
+      data = result.data || [];
+      error = result.error;
     }
 
-    const { data, error } = await query
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
     if (error) throw error;
-    const salesWithCustomers = await attachCustomers(client, tenantId, data || []);
+    const salesWithCustomers = await attachCustomers(client, tenantId, data);
     return attachSaleLines(client, tenantId, salesWithCustomers, showroomConfigId);
   },
 
