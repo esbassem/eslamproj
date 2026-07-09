@@ -407,16 +407,10 @@ export function PaperworkRequestDetailsDrawer({
       && Boolean(snapshot.documentOwnerName || snapshot.documentOwner?.name)
       && Boolean(ownerImage?.signedUrl)
     );
-  const trackingPhotosAreReady = snapshot.trackingPhotosIgnored
-    || (
-      Boolean(snapshot.attachments?.chassis_photo?.signedUrl)
-      && Boolean(snapshot.attachments?.engine_photo?.signedUrl)
-    );
   const sendBlockers = [
     !snapshot.customerConfirmed ? 'يجب التأكيد مع العميل أولًا.' : '',
     !displayedProcessor?.id ? 'يجب تحديد جهة إصدار الأوراق.' : '',
     !ownerIsReady ? 'بيانات صاحب الورق أو صورة البطاقة غير مكتملة.' : '',
-    !trackingPhotosAreReady ? 'صور الشاسيه والموتور غير مكتملة.' : '',
     snapshot.blockedReason ? snapshot.blockedReason : '',
     snapshot.currentStage !== 'preparation' ? 'الطلب ليس في مرحلة التجهيز.' : '',
     snapshot.status !== 'open' ? 'لا يمكن إرسال طلب غير مفتوح.' : '',
@@ -835,9 +829,6 @@ export function PaperworkRequestDetailsDrawer({
                 {[
                   'تم التأكيد مع العميل.',
                   'تمت مراجعة بيانات صاحب الورق.',
-                  snapshot.trackingPhotosIgnored
-                    ? `تم تجاوز مراجعة صور الشاسيه والموتور: ${snapshot.trackingPhotosIgnoreReason || 'بدون سبب مسجل'}`
-                    : 'تمت مراجعة صور الشاسيه والموتور.',
                 ].map((item) => (
                   <div key={item} className="flex items-start gap-2.5">
                     <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">

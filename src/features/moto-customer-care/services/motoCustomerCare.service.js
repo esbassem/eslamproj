@@ -2531,13 +2531,11 @@ export const motoCustomerCareService = {
       .from('paperwork_requests')
       .select(`
         id,
-        tracking_unit_id,
         document_owner_status,
         document_owner_name,
         document_owner_partner_id,
         processor_partner_id,
         customer_confirmed,
-        tracking_photos_ignored,
         current_stage,
         status,
         blocked_reason
@@ -2549,29 +2547,16 @@ export const motoCustomerCareService = {
     if (requestError) throw requestError;
     if (!request) throw new Error('طلب الأوراق غير موجود.');
 
-    const [{ data: ownerAttachments, error: ownerAttachmentsError }, { data: trackingAttachments, error: trackingAttachmentsError }] = await Promise.all([
-      client
-        .from('ir_attachments')
-        .select('document_type')
-        .eq('tenant_id', tenantId)
-        .eq('related_model', 'paperwork_requests')
-        .eq('related_id', requestId)
-        .eq('document_type', 'document_owner_id_card')
-        .eq('is_active', true),
-      request.tracking_unit_id
-        ? client
-          .from('ir_attachments')
-          .select('document_type')
-          .eq('tenant_id', tenantId)
-          .eq('related_model', 'stock_tracking_units')
-          .eq('related_id', request.tracking_unit_id)
-          .in('document_type', ['chassis_photo', 'engine_photo'])
-          .eq('is_active', true)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+    const { data: ownerAttachments, error: ownerAttachmentsError } = await client
+      .from('ir_attachments')
+      .select('document_type')
+      .eq('tenant_id', tenantId)
+      .eq('related_model', 'paperwork_requests')
+      .eq('related_id', requestId)
+      .eq('document_type', 'document_owner_id_card')
+      .eq('is_active', true);
 
     if (ownerAttachmentsError) throw ownerAttachmentsError;
-    if (trackingAttachmentsError) throw trackingAttachmentsError;
 
     const ownerIsReady = request.document_owner_status === 'later'
       || (
@@ -2579,14 +2564,10 @@ export const motoCustomerCareService = {
         && Boolean(request.document_owner_name || request.document_owner_partner_id)
         && Boolean(ownerAttachments?.length)
       );
-    const trackingDocumentTypes = new Set((trackingAttachments || []).map((attachment) => attachment.document_type));
-    const trackingPhotosAreReady = request.tracking_photos_ignored
-      || (trackingDocumentTypes.has('chassis_photo') && trackingDocumentTypes.has('engine_photo'));
 
     if (!request.customer_confirmed) throw new Error('يجب التأكيد مع العميل أولًا.');
     if (!request.processor_partner_id) throw new Error('يجب تحديد جهة إصدار الأوراق.');
     if (!ownerIsReady) throw new Error('بيانات صاحب الورق أو صورة البطاقة غير مكتملة.');
-    if (!trackingPhotosAreReady) throw new Error('صور الشاسيه والموتور غير مكتملة.');
     if (request.blocked_reason) throw new Error(request.blocked_reason);
     if (request.current_stage !== 'preparation') throw new Error('الطلب ليس في مرحلة التجهيز.');
     if (request.status !== 'open') throw new Error('لا يمكن إرسال طلب غير مفتوح.');
