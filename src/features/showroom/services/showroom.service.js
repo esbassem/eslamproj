@@ -233,7 +233,7 @@ function getTrackingNumber(item, trackingIdentifiers = getLineTrackingIdentifier
   return trackingIdentifiers.map((identifier) => identifier.value).filter(Boolean).join(' - ');
 }
 
-async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId, saleId, userId }) {
+async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId, saleId, userId, targetStatus = 'sold' }) {
   if ((item?.tracking ?? item?.tracking_type) !== 'serial') {
     return null;
   }
@@ -248,7 +248,7 @@ async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId
 
   const { data: existingUnits, error: existingError } = await client
     .from('stock_tracking_units')
-    .select('id, status')
+    .select('id, status, notes')
     .eq('tenant_id', tenantId)
     .eq('product_product_id', productProductId)
     .eq('tracking_number', safeTrackingNumber)
@@ -262,11 +262,16 @@ async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId
     throw new Error(`الوحدة "${safeTrackingNumber}" تم بيعها من قبل.`);
   }
 
+  if (trackingUnit?.status === 'reserved' && trackingUnit?.notes !== `showroom_sale:${saleId}`) {
+    throw new Error(`الوحدة "${safeTrackingNumber}" محجوزة في فاتورة أخرى.`);
+  }
+
   if (trackingUnit) {
     const { data: updatedUnit, error: updateError } = await client
       .from('stock_tracking_units')
       .update({
-        status: 'sold',
+        status: targetStatus,
+        notes: `showroom_sale:${saleId}`,
       })
       .eq('tenant_id', tenantId)
       .eq('id', trackingUnit.id)
@@ -283,7 +288,7 @@ async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId
         product_product_id: productProductId,
         tracking_number: safeTrackingNumber,
         tracking_type: 'serial',
-        status: 'sold',
+        status: targetStatus,
         notes: `showroom_sale:${saleId}`,
       }])
       .select('id, status')
@@ -342,6 +347,20 @@ async function saveTrackingUnitLicense(client, { tenantId, item, trackingUnitId,
 
   const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId, tenantUserId: userId });
 
+  const { data: currentLicense, error: currentLicenseError } = await client
+    .from('stock_tracking_unit_licenses')
+    .select('license_status, license_number, license_issued_at, license_expires_at, issuing_authority, notes')
+    .eq('tenant_id', tenantId)
+    .eq('tracking_unit_id', trackingUnitId)
+    .eq('is_current', true)
+    .maybeSingle();
+  if (currentLicenseError) throw currentLicenseError;
+  if (currentLicense && [
+    'license_status', 'license_number', 'license_issued_at', 'license_expires_at', 'issuing_authority', 'notes',
+  ].every((key) => String(currentLicense[key] ?? '') === String(license[key] ?? ''))) {
+    return;
+  }
+
   const { error: updateError } = await client
     .from('stock_tracking_unit_licenses')
     .update({ is_current: false, updated_at: new Date().toISOString() })
@@ -384,6 +403,14 @@ function buildSaleLine({ tenantId, saleId, item, trackingUnitId }) {
     unit_price: unitPrice,
     total: unitPrice * quantity,
   };
+}
+
+function buildFinancingPaymentNotes({ financierPartnerId, approvalReference, paymentNotes }) {
+  return [
+    `financier_partner_id: ${financierPartnerId}`,
+    approvalReference ? `approval_reference: ${approvalReference}` : '',
+    paymentNotes ? `notes: ${paymentNotes}` : '',
+  ].filter(Boolean).join('\n');
 }
 
 async function attachLineAttributes(client, tenantId, lines) {
@@ -546,7 +573,40 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
 }
 
 async function attachLineDetails(client, tenantId, lines) {
-  const linesWithAttributes = await attachLineAttributes(client, tenantId, lines || []);
+  const saleLines = Array.isArray(lines) ? lines : [];
+  const productIds = [...new Set(saleLines.map((line) => line.product_product_id).filter(Boolean))];
+  const { data: products, error: productsError } = productIds.length
+    ? await client.from('product_products').select(`
+      id, display_name, sku, barcode, tracking, sale_price,
+      product_template:product_templates!product_products_product_template_id_fkey (
+        id, category_id, product_type, requires_contract,
+        requires_ownership_transfer, requires_post_sale_documents, requires_license
+      )
+    `).eq('tenant_id', tenantId).in('id', productIds)
+    : { data: [], error: null };
+  if (productsError) throw productsError;
+  const productsById = new Map((products || []).map((product) => [product.id, product]));
+  const enrichedLines = saleLines.map((line) => {
+    const product = productsById.get(line.product_product_id);
+    const template = product?.product_template;
+    return {
+      ...line,
+      productProductId: line.product_product_id,
+      displayName: product?.display_name || line.description || 'منتج',
+      name: product?.display_name || line.description || 'منتج',
+      code: product?.sku || '',
+      barcode: product?.barcode || '',
+      tracking: product?.tracking || 'none',
+      productType: template?.product_type || 'goods',
+      categoryId: template?.category_id || null,
+      requiresContract: Boolean(template?.requires_contract),
+      requiresOwnershipTransfer: Boolean(template?.requires_ownership_transfer),
+      requiresPostSaleDocuments: Boolean(template?.requires_post_sale_documents),
+      requiresLicense: Boolean(template?.requires_license),
+      price: toMoney(line.unit_price),
+    };
+  });
+  const linesWithAttributes = await attachLineAttributes(client, tenantId, enrichedLines);
   return attachLineTrackingIdentifiers(client, tenantId, linesWithAttributes);
 }
 
@@ -798,6 +858,79 @@ async function attachCustomers(client, tenantId, sales) {
   return Array.isArray(sales) ? salesWithCustomers : salesWithCustomers[0] || null;
 }
 
+async function attachSaleAccountingStatus(client, tenantId, sales) {
+  const saleRows = Array.isArray(sales) ? sales : [sales].filter(Boolean);
+  const saleIds = saleRows.map((sale) => sale.id).filter(Boolean);
+  if (!saleIds.length) return Array.isArray(sales) ? saleRows : saleRows[0] || null;
+
+  const chunk = (values, size = 100) => (
+    Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size))
+  );
+  const accountMoveIds = [...new Set(saleRows.map((sale) => sale.account_move_id).filter(Boolean))];
+  const [moveIdResults, refResults, receivableAccountsResult] = await Promise.all([
+    Promise.all(chunk(accountMoveIds).map((ids) => client.from('account_moves').select('id, ref')
+      .eq('tenant_id', tenantId).eq('move_type', 'sale').eq('state', 'posted').in('id', ids))),
+    Promise.all(chunk(saleIds.map((saleId) => `showroom_sale:${saleId}`)).map((refs) => client
+      .from('account_moves').select('id, ref').eq('tenant_id', tenantId)
+      .eq('move_type', 'sale').eq('state', 'posted').in('ref', refs))),
+    client.from('account_accounts').select('id').eq('tenant_id', tenantId).eq('code', '114001'),
+  ]);
+
+  const moveResults = [...moveIdResults, ...refResults];
+  const failedResult = [...moveResults, receivableAccountsResult].find((result) => result.error);
+  if (failedResult?.error) throw failedResult.error;
+
+  const accountingMoves = moveResults.flatMap((result) => result.data || []);
+  const movesById = new Map(accountingMoves.map((move) => [move.id, move]));
+  const movesByRef = new Map(accountingMoves.filter((move) => move.ref).map((move) => [move.ref, move]));
+  const moveBySaleId = new Map();
+  saleRows.forEach((sale) => {
+    const move = movesById.get(sale.account_move_id) || movesByRef.get(`showroom_sale:${sale.id}`) || null;
+    if (move) moveBySaleId.set(sale.id, move);
+  });
+
+  const linkedMoveIds = [...new Set([...moveBySaleId.values()].map((move) => move.id))];
+  const receivableAccountIds = (receivableAccountsResult.data || []).map((account) => account.id);
+  const lineResults = linkedMoveIds.length && receivableAccountIds.length
+    ? await Promise.all(chunk(linkedMoveIds).map((ids) => client.from('account_move_lines')
+      .select('id, move_id, debit').eq('tenant_id', tenantId).in('move_id', ids)
+      .in('account_id', receivableAccountIds).gt('debit', 0)))
+    : [];
+  const failedLineResult = lineResults.find((result) => result.error);
+  if (failedLineResult?.error) throw failedLineResult.error;
+
+  const receivableLines = lineResults.flatMap((result) => result.data || []);
+  const lineIds = receivableLines.map((line) => line.id);
+  const reconcileResults = await Promise.all(chunk(lineIds).map((ids) => client
+    .from('account_partial_reconcile').select('debit_move_id, amount')
+    .eq('tenant_id', tenantId).in('debit_move_id', ids)));
+  const failedReconcileResult = reconcileResults.find((result) => result.error);
+  if (failedReconcileResult?.error) throw failedReconcileResult.error;
+
+  const paidByLineId = new Map();
+  reconcileResults.flatMap((result) => result.data || []).forEach((row) => {
+    paidByLineId.set(row.debit_move_id, toMoney(paidByLineId.get(row.debit_move_id)) + toMoney(row.amount));
+  });
+  const paidByMoveId = new Map();
+  receivableLines.forEach((line) => {
+    paidByMoveId.set(line.move_id, toMoney(paidByMoveId.get(line.move_id)) + toMoney(paidByLineId.get(line.id)));
+  });
+
+  const normalized = saleRows.map((sale) => {
+    const move = moveBySaleId.get(sale.id) || null;
+    const paidAmount = Math.round(toMoney(paidByMoveId.get(move?.id)) * 100) / 100;
+    const totalAmount = toMoney(sale.total_amount ?? sale.totalAmount);
+    return {
+      ...sale,
+      hasAccountingEntry: Boolean(move),
+      isMissingAccountingEntry: sale.status === 'confirmed' && !move,
+      paid_amount: paidAmount,
+      remaining_amount: Math.max(Math.round((totalAmount - paidAmount) * 100) / 100, 0),
+    };
+  });
+
+  return Array.isArray(sales) ? normalized : normalized[0] || null;
+}
 export const showroomService = {
   async listConfigs({ tenantId } = {}) {
     requireTenantId(tenantId);
@@ -1009,7 +1142,8 @@ export const showroomService = {
 
     if (error) throw error;
     const salesWithCustomers = await attachCustomers(client, tenantId, data);
-    return attachSaleLines(client, tenantId, salesWithCustomers, showroomConfigId);
+    const salesWithAccountingStatus = await attachSaleAccountingStatus(client, tenantId, salesWithCustomers);
+    return attachSaleLines(client, tenantId, salesWithAccountingStatus, showroomConfigId);
   },
 
   async getInvoices(params = {}) {
@@ -1277,13 +1411,169 @@ export const showroomService = {
     }
   },
 
+  async savePendingSale({
+    tenantId,
+    pendingSaleId,
+    customerId,
+    items,
+    totalAmount,
+    showroomConfigId,
+    userId,
+  }) {
+    requireTenantId(tenantId);
+    requireShowroomConfigId(showroomConfigId);
+    if (!customerId) throw new Error('اختر العميل أولاً.');
+    const client = requireSupabase();
+    const saleItems = Array.isArray(items) ? items : [];
+    if (!saleItems.length) throw new Error('أضف منتجًا واحدًا على الأقل.');
+    const safeTotalAmount = Math.max(toMoney(totalAmount), 0);
+    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
+    let sale;
+    let previousTrackingUnitIds = [];
+
+    if (pendingSaleId) {
+      const { data, error } = await client.from('showroom_sales').update({
+        customer_id: customerId,
+        total_amount: safeTotalAmount,
+        paid_amount: 0,
+        remaining_amount: safeTotalAmount,
+        updated_at: new Date().toISOString(),
+      }).eq('tenant_id', tenantId).eq('showroom_config_id', showroomConfigId)
+        .eq('id', pendingSaleId).eq('status', 'pending_payment').select(SALE_SELECT).single();
+      if (error) throw error;
+      sale = data;
+      const { data: previousLines, error: previousLinesError } = await client.from('showroom_sale_lines')
+        .select('id, tracking_unit_id').eq('tenant_id', tenantId).eq('sale_id', sale.id);
+      if (previousLinesError) throw previousLinesError;
+      const previousLineIds = (previousLines || []).map((line) => line.id);
+      previousTrackingUnitIds = (previousLines || []).map((line) => line.tracking_unit_id).filter(Boolean);
+      if (previousLineIds.length) {
+        const { error: attributesDeleteError } = await client.from('transaction_line_attributes')
+          .delete().eq('tenant_id', tenantId).in('transaction_line_id', previousLineIds);
+        if (attributesDeleteError) throw attributesDeleteError;
+      }
+      const { error: deleteLinesError } = await client.from('showroom_sale_lines')
+        .delete().eq('tenant_id', tenantId).eq('sale_id', sale.id);
+      if (deleteLinesError) throw deleteLinesError;
+    } else {
+      const { data, error } = await client.from('showroom_sales').insert({
+        tenant_id: tenantId,
+        customer_id: customerId,
+        showroom_config_id: showroomConfigId,
+        sale_date: todayISODate(),
+        status: 'pending_payment',
+        total_amount: safeTotalAmount,
+        paid_amount: 0,
+        remaining_amount: safeTotalAmount,
+        created_by: createdBy,
+      }).select(SALE_SELECT).single();
+      if (error) throw error;
+      sale = data;
+    }
+
+    const preparedSaleItems = await Promise.all(saleItems.map(async (item) => {
+      const productProductId = getProductProductId(item);
+      const trackingUnitId = productProductId
+        ? await ensureSaleTrackingUnit(client, {
+          tenantId,
+          item,
+          productProductId,
+          saleId: sale.id,
+          userId: createdBy,
+          targetStatus: 'reserved',
+        })
+        : null;
+
+      await saveTrackingUnitLicense(client, {
+        tenantId,
+        item,
+        trackingUnitId,
+        userId: createdBy,
+      });
+
+      return { item, trackingUnitId };
+    }));
+
+    const activeTrackingUnitIds = preparedSaleItems.map(({ trackingUnitId }) => trackingUnitId).filter(Boolean);
+    const releasedTrackingUnitIds = previousTrackingUnitIds.filter((id) => !activeTrackingUnitIds.includes(id));
+    if (releasedTrackingUnitIds.length) {
+      const { error: releaseError } = await client.from('stock_tracking_units').update({
+        status: 'in_stock',
+        notes: null,
+        updated_at: new Date().toISOString(),
+      }).eq('tenant_id', tenantId).eq('status', 'reserved').eq('notes', `showroom_sale:${sale.id}`).in('id', releasedTrackingUnitIds);
+      if (releaseError) throw releaseError;
+    }
+
+    const lineRows = preparedSaleItems.map(({ item, trackingUnitId }) => buildSaleLine({
+      tenantId,
+      saleId: sale.id,
+      item,
+      trackingUnitId,
+    }));
+    const { data: lines, error: linesError } = await client.from('showroom_sale_lines')
+      .insert(lineRows).select();
+    if (linesError) throw linesError;
+
+    const attributeRows = (lines || []).flatMap((line, index) => getLineAttributes(saleItems[index]).map((attribute) => ({
+      tenant_id: tenantId,
+      transaction_line_id: line.id,
+      attribute_id: attribute.attributeId,
+      attribute_value_id: attribute.attributeValueId,
+      value_text: attribute.valueText,
+    })));
+    if (attributeRows.length) {
+      const { error: attributesError } = await client.from('transaction_line_attributes').insert(attributeRows);
+      if (attributesError) throw attributesError;
+    }
+
+    const detailedLines = await attachLineDetails(client, tenantId, lines || []);
+    return { ...sale, lines: detailedLines, payments: [] };
+  },
+
+  async completePendingSale({ saleId, cashAmount = 0, cashNote, advanceAllocations = [], tenantId, showroomConfigId }) {
+    requireTenantId(tenantId);
+    requireShowroomConfigId(showroomConfigId);
+    if (!saleId) throw new Error('تعذر تحديد الفاتورة المعلقة.');
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('complete_showroom_sale', {
+      p_sale_id: saleId,
+      p_cash_amount: toMoney(cashAmount),
+      p_cash_note: String(cashNote || '').trim() || null,
+      p_advance_payments: (Array.isArray(advanceAllocations) ? advanceAllocations : []).map((allocation) => ({
+        financier_partner_id: allocation.paymentEntityId,
+        amount: toMoney(allocation.amount),
+        note: String(allocation.note || '').trim() || null,
+      })),
+    });
+    if (error) throw new Error(error.message || 'تعذر إتمام البيع.');
+    const sale = await showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });
+    return { ...sale, completion: data };
+  },
+
+  async deletePendingSale({ tenantId, saleId }) {
+    requireTenantId(tenantId);
+    if (!saleId) throw new Error('تعذر تحديد الفاتورة المعلقة.');
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('delete_pending_showroom_sale', { p_sale_id: saleId });
+    if (error) throw new Error(error.message || 'تعذر حذف الفاتورة المعلقة.');
+    return data;
+  },
+
   async createSale({
     tenantId,
+    pendingSaleId,
     customerId,
     items,
     totalAmount,
     paidAmount = 0,
+    paymentType = 'cash',
     paymentMethodId,
+    financierPartnerId,
+    approvalReference,
+    paymentNotes,
+    cashAmount,
+    advanceAllocations = [],
     contractNote,
     notes,
     userId,
@@ -1294,8 +1584,12 @@ export const showroomService = {
     const client = requireSupabase();
     const saleItems = Array.isArray(items) ? items : [];
     const safeTotalAmount = Math.max(toMoney(totalAmount), 0);
-    const safePaidAmount = Math.min(Math.max(toMoney(paidAmount), 0), safeTotalAmount);
+    const requestedPaidAmount = toMoney(cashAmount) + (Array.isArray(advanceAllocations)
+      ? advanceAllocations.reduce((sum, allocation) => sum + toMoney(allocation?.amount), 0)
+      : 0);
+    const safePaidAmount = Math.min(Math.max(requestedPaidAmount || toMoney(paidAmount), 0), safeTotalAmount);
     const remainingAmount = Math.max(safeTotalAmount - safePaidAmount, 0);
+    const safePaymentType = paymentType === 'financing' ? 'financing' : 'cash';
     const saleDate = todayISODate();
     const { data: showroomConfig, error: configError } = await client
       .from('showroom_configs')
@@ -1307,24 +1601,67 @@ export const showroomService = {
 
     if (configError) throw configError;
 
-    const { data: sale, error: saleError } = await client
-      .from('showroom_sales')
-      .insert([{
-        tenant_id: tenantId,
-        customer_id: customerId || null,
-        showroom_config_id: showroomConfig.id,
-        sale_date: saleDate,
-        status: 'confirmed',
-        total_amount: safeTotalAmount,
-        paid_amount: safePaidAmount,
-        remaining_amount: remainingAmount,
-        notes: contractNote?.trim() || notes?.trim() || null,
-        account_move_id: null,
-      }])
-      .select(SALE_SELECT)
-      .single();
+    let financingPartner = null;
+    if (safePaymentType === 'financing') {
+      if (!financierPartnerId) {
+        throw new Error('اختر شركة التمويل من جهات الاتصال المسجلة.');
+      }
+
+      if (safePaidAmount <= 0) {
+        throw new Error('أدخل قيمة التمويل.');
+      }
+
+      const { data: partner, error: partnerError } = await client
+        .from('partners')
+        .select('id, name')
+        .eq('tenant_id', tenantId)
+        .eq('id', financierPartnerId)
+        .gt('financer_rank', 0)
+        .eq('is_company', true)
+        .eq('active', true)
+        .single();
+
+      if (partnerError || !partner) {
+        throw new Error('اختر شركة تمويل مسجلة ونشطة.');
+      }
+
+      financingPartner = partner;
+    }
+
+    const saleMutation = {
+      customer_id: customerId || null,
+      showroom_config_id: showroomConfig.id,
+      sale_date: saleDate,
+      status: 'confirmed',
+      total_amount: safeTotalAmount,
+      paid_amount: safePaidAmount,
+      remaining_amount: remainingAmount,
+      notes: contractNote?.trim() || notes?.trim() || null,
+      account_move_id: null,
+    };
+    const saleQuery = pendingSaleId
+      ? client.from('showroom_sales').update(saleMutation)
+        .eq('tenant_id', tenantId).eq('showroom_config_id', showroomConfig.id)
+        .eq('id', pendingSaleId).eq('status', 'pending_payment')
+      : client.from('showroom_sales').insert([{ tenant_id: tenantId, ...saleMutation }]);
+    const { data: sale, error: saleError } = await saleQuery.select(SALE_SELECT).single();
 
     if (saleError) throw saleError;
+
+    if (pendingSaleId) {
+      const { data: pendingLines, error: pendingLinesError } = await client.from('showroom_sale_lines')
+        .select('id').eq('tenant_id', tenantId).eq('sale_id', sale.id);
+      if (pendingLinesError) throw pendingLinesError;
+      const pendingLineIds = (pendingLines || []).map((line) => line.id);
+      if (pendingLineIds.length) {
+        const { error: pendingAttributesDeleteError } = await client.from('transaction_line_attributes')
+          .delete().eq('tenant_id', tenantId).in('transaction_line_id', pendingLineIds);
+        if (pendingAttributesDeleteError) throw pendingAttributesDeleteError;
+      }
+      const { error: pendingLinesDeleteError } = await client.from('showroom_sale_lines')
+        .delete().eq('tenant_id', tenantId).eq('sale_id', sale.id);
+      if (pendingLinesDeleteError) throw pendingLinesDeleteError;
+    }
 
     const preparedSaleItems = await Promise.all(saleItems.map(async (item) => {
       const productProductId = getProductProductId(item);
@@ -1397,7 +1734,39 @@ export const showroomService = {
     }
 
     let payments = [];
-    if (safePaidAmount > 0) {
+    if (Array.isArray(advanceAllocations) && advanceAllocations.length) {
+      const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
+      const { error: settlementError } = await client.rpc('settle_showroom_sale_payments', {
+        payload: {
+          tenant_id: tenantId,
+          sale_id: sale.id,
+          customer_id: customerId,
+          showroom_config_id: showroomConfig.id,
+          created_by: createdBy,
+          cash_amount: toMoney(cashAmount),
+          cash_notes: String(paymentNotes || '').trim() || null,
+          advance_allocations: advanceAllocations.map((allocation) => ({
+            payment_entity_id: allocation.paymentEntityId,
+            amount: toMoney(allocation.amount),
+            note: String(allocation.note || '').trim() || null,
+          })),
+        },
+      });
+      if (settlementError) throw settlementError;
+      const { data: settledPayments, error: settledPaymentsError } = await client
+        .from('showroom_sale_payments').select('*').eq('tenant_id', tenantId).eq('sale_id', sale.id);
+      if (settledPaymentsError) throw settledPaymentsError;
+      payments = settledPayments || [];
+    } else if (safePaidAmount > 0 && (safePaymentType === 'cash' || safePaymentType === 'financing')) {
+      const safeApprovalReference = String(approvalReference || '').trim();
+      const safePaymentNotes = String(paymentNotes || '').trim();
+      const financingNotes = safePaymentType === 'financing'
+        ? buildFinancingPaymentNotes({
+          financierPartnerId: financingPartner.id,
+          approvalReference: safeApprovalReference,
+          paymentNotes: safePaymentNotes,
+        })
+        : null;
       const { data: createdPayments, error: paymentError } = await client
         .from('showroom_sale_payments')
         .insert([{
@@ -1405,8 +1774,11 @@ export const showroomService = {
           sale_id: sale.id,
           amount: safePaidAmount,
           payment_date: saleDate,
-          payment_method: paymentMethodId || null,
-          notes: null,
+          payment_method: paymentMethodId || safePaymentType,
+          payment_type: safePaymentType,
+          financier_partner_id: safePaymentType === 'financing' ? financingPartner.id : null,
+          approval_reference: safePaymentType === 'financing' ? safeApprovalReference || null : null,
+          notes: safePaymentType === 'financing' ? financingNotes : safePaymentNotes || null,
         }])
         .select();
 
@@ -1464,11 +1836,103 @@ export const showroomService = {
       }
     }
 
+    const { error: accountingError } = await client.rpc('post_showroom_sale_accounting', {
+      p_sale_id: sale.id,
+    });
+
+    if (accountingError) throw accountingError;
+
     return {
       ...saleWithCustomer,
       lines,
       payments,
     };
+  },
+
+  async getCustomerAdvanceBalances({ tenantId, customerId }) {
+    requireTenantId(tenantId);
+    if (!customerId) return [];
+    const client = requireSupabase();
+    const { data: account, error: accountError } = await client
+      .from('account_accounts')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('code', '114002')
+      .eq('active', true)
+      .maybeSingle();
+    if (accountError) throw accountError;
+    if (!account?.id) return [];
+
+    // The accountant app records the customer on account_moves.partner_id and
+    // the payment entity on the 114002 account_move_lines.partner_id.
+    const { data: moves, error: movesError } = await client
+      .from('account_moves')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('partner_id', customerId)
+      .eq('state', 'posted');
+    if (movesError) throw movesError;
+    const moveIds = (moves || []).map((move) => move.id).filter(Boolean);
+    if (!moveIds.length) return [];
+
+    const { data: lines, error: linesError } = await client
+      .from('account_move_lines')
+      .select('partner_id, debit, credit, label')
+      .eq('tenant_id', tenantId)
+      .eq('account_id', account.id)
+      .in('move_id', moveIds)
+      .or('label.ilike.اعتماد دفعة من جهة%,label.ilike.استخدام دفعة مسبقة%');
+    if (linesError) throw linesError;
+
+    const amountsByEntity = new Map();
+    (lines || []).forEach((line) => {
+      if (!line.partner_id) return;
+      amountsByEntity.set(
+        line.partner_id,
+        toMoney(amountsByEntity.get(line.partner_id)) + toMoney(line.debit) - toMoney(line.credit),
+      );
+    });
+
+    const { data: advanceAccount, error: advanceAccountError } = await client
+      .from('account_accounts').select('id').eq('tenant_id', tenantId).eq('code', '212001').eq('active', true).maybeSingle();
+    if (advanceAccountError) throw advanceAccountError;
+    if (advanceAccount?.id) {
+      const { data: consumptionMoves, error: consumptionMovesError } = await client
+        .from('account_moves').select('id, partner_id').eq('tenant_id', tenantId)
+        .eq('pay_method', 'advance_credit').eq('state', 'posted');
+      if (consumptionMovesError) throw consumptionMovesError;
+      const consumptionMoveIds = (consumptionMoves || []).map((move) => move.id);
+      if (consumptionMoveIds.length) {
+        const { data: consumptionLines, error: consumptionLinesError } = await client
+          .from('account_move_lines').select('move_id, debit').eq('tenant_id', tenantId)
+          .eq('account_id', advanceAccount.id).eq('partner_id', customerId).in('move_id', consumptionMoveIds);
+        if (consumptionLinesError) throw consumptionLinesError;
+        const consumptionMovesById = new Map((consumptionMoves || []).map((move) => [move.id, move]));
+        (consumptionLines || []).forEach((line) => {
+          const entityId = consumptionMovesById.get(line.move_id)?.partner_id;
+          if (!entityId) return;
+          amountsByEntity.set(entityId, toMoney(amountsByEntity.get(entityId)) - toMoney(line.debit));
+        });
+      }
+    }
+    const entityIds = Array.from(amountsByEntity.entries())
+      .filter(([, amount]) => amount > 0)
+      .map(([entityId]) => entityId);
+    if (!entityIds.length) return [];
+
+    const { data: entities, error: entitiesError } = await client
+      .from('partners')
+      .select('id, name, display_config')
+      .eq('tenant_id', tenantId)
+      .in('id', entityIds);
+    if (entitiesError) throw entitiesError;
+
+    return (entities || []).map((entity) => ({
+      paymentEntityId: entity.id,
+      paymentEntityName: entity.name || 'جهة دفع',
+      displayConfig: entity.display_config || null,
+      availableAmount: Math.round(toMoney(amountsByEntity.get(entity.id)) * 100) / 100,
+    })).filter((balance) => balance.availableAmount > 0);
   },
 
   async getSaleDetails({ tenantId, saleId, showroomConfigId }) {
@@ -1485,23 +1949,44 @@ export const showroomService = {
 
     if (saleError) throw saleError;
 
-    const [{ data: lines, error: linesError }, { data: payments, error: paymentsError }] = await Promise.all([
-      client
-        .from('showroom_sale_lines')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .eq('sale_id', saleId)
-        .order('created_at', { ascending: true }),
-      client
-        .from('showroom_sale_payments')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .eq('sale_id', saleId)
-        .order('created_at', { ascending: true }),
-    ]);
+    const { data: lines, error: linesError } = await client
+      .from('showroom_sale_lines')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('sale_id', saleId)
+      .order('created_at', { ascending: true });
 
     if (linesError) throw linesError;
-    if (paymentsError) throw paymentsError;
+
+    const { data: ledgerPaymentMoves, error: ledgerPaymentMovesError } = await client
+      .from('account_moves')
+      .select('id, partner_id, amount_total, invoice_date, date, pay_method, notes, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('move_type', 'payment')
+      .eq('state', 'posted')
+      .eq('ref', `showroom_sale:${saleId}`)
+      .order('created_at', { ascending: true });
+    if (ledgerPaymentMovesError) throw ledgerPaymentMovesError;
+    const ledgerPartnerIds = [...new Set((ledgerPaymentMoves || []).map((move) => move.partner_id).filter(Boolean))];
+    const { data: ledgerPartners, error: ledgerPartnersError } = ledgerPartnerIds.length
+      ? await client.from('partners').select('id, name').eq('tenant_id', tenantId).in('id', ledgerPartnerIds)
+      : { data: [], error: null };
+    if (ledgerPartnersError) throw ledgerPartnersError;
+    const ledgerPartnersById = new Map((ledgerPartners || []).map((partner) => [partner.id, partner]));
+    const ledgerPayments = (ledgerPaymentMoves || []).map((move) => ({
+      id: move.id,
+      account_move_id: move.id,
+      amount: toMoney(move.amount_total),
+      payment_date: move.invoice_date || move.date || move.created_at,
+      payment_method: move.pay_method === 'cash'
+        ? 'تحصيل نقدي'
+        : move.pay_method === 'advance_credit'
+          ? `رصيد مسبق - ${ledgerPartnersById.get(move.partner_id)?.name || 'جهة دفع'}`
+          : move.pay_method || 'دفعة',
+      payment_type: move.pay_method || 'payment',
+      notes: move.notes || null,
+      created_at: move.created_at,
+    }));
 
     const saleWithCustomer = await attachCustomers(client, tenantId, sale);
     const linesWithDetails = await attachLineDetails(client, tenantId, lines || []);
@@ -1510,7 +1995,12 @@ export const showroomService = {
     return {
       ...saleWithCustomer,
       lines: linesWithPaperwork,
-      payments: payments || [],
+      paid_amount: ledgerPayments.reduce((sum, payment) => sum + toMoney(payment.amount), 0),
+      remaining_amount: Math.max(
+        toMoney(saleWithCustomer.total_amount) - ledgerPayments.reduce((sum, payment) => sum + toMoney(payment.amount), 0),
+        0,
+      ),
+      payments: ledgerPayments,
     };
   },
 
@@ -1607,62 +2097,23 @@ export const showroomService = {
     return { ok: true, saleId };
   },
 
-  async paySaleRemaining({ tenantId, saleId, showroomConfigId, amount, notes, paymentMethod = 'دفعة' }) {
+  async paySaleRemaining({ tenantId, saleId, showroomConfigId, amount, notes, paymentMethod = 'cash' }) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
+    const paymentAmount = Math.round(Math.max(toMoney(amount), 0) * 100) / 100;
+    if (!saleId || paymentAmount <= 0) throw new Error('اكتب مبلغ دفع صحيح.');
+
     const client = requireSupabase();
-    const { data: sale, error: saleError } = await client
-      .from('showroom_sales')
-      .select('id, tenant_id, total_amount, paid_amount, remaining_amount')
-      .eq('tenant_id', tenantId)
-      .eq('showroom_config_id', showroomConfigId)
-      .eq('id', saleId)
-      .single();
-
-    if (saleError) throw saleError;
-
-    const totalAmount = Math.max(toMoney(sale?.total_amount), 0);
-    const paidAmount = Math.max(toMoney(sale?.paid_amount), 0);
-    const remainingAmount = Math.max(toMoney(sale?.remaining_amount ?? totalAmount - paidAmount), 0);
-    const paymentAmount = Math.min(Math.max(toMoney(amount), 0), remainingAmount);
-
-    if (remainingAmount <= 0 || paymentAmount <= 0) {
-      return showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });
-    }
-
-    const paymentDate = todayISODate();
-    const { error: paymentError } = await client
-      .from('showroom_sale_payments')
-      .insert([{
-        tenant_id: tenantId,
-        sale_id: saleId,
-        amount: paymentAmount,
-        payment_date: paymentDate,
-        payment_method: paymentMethod,
-        notes: notes?.trim() || null,
-      }]);
-
-    if (paymentError) throw paymentError;
-
-    const nextPaidAmount = Math.min(paidAmount + paymentAmount, totalAmount);
-    const nextRemainingAmount = Math.max(totalAmount - nextPaidAmount, 0);
-
-    const { error: updateError } = await client
-      .from('showroom_sales')
-      .update({
-        paid_amount: nextPaidAmount,
-        remaining_amount: nextRemainingAmount,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('tenant_id', tenantId)
-      .eq('showroom_config_id', showroomConfigId)
-      .eq('id', saleId);
-
-    if (updateError) throw updateError;
+    const { error } = await client.rpc('pay_showroom_sale_accounting', {
+      p_sale_id: saleId,
+      p_amount: paymentAmount,
+      p_notes: String(notes || '').trim() || null,
+      p_payment_method: paymentMethod || 'cash',
+    });
+    if (error) throw new Error(error.message || 'تعذر تسجيل الدفعة المحاسبية.');
 
     return showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });
   },
-
   async getInvoiceDetails({ tenantId, invoiceId, showroomConfigId }) {
     return showroomService.getSaleDetails({ tenantId, saleId: invoiceId, showroomConfigId });
   },

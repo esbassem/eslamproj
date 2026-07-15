@@ -8,6 +8,7 @@ import { RouteLoadingFallback } from '@/pages/system/RouteLoadingFallback';
 import { DynamicAppPage } from '@/app/router/DynamicAppPage';
 import {
   AppLayout,
+  AccountantHomePage,
   AuthLayout,
   ForgotPasswordPage,
   LandingPage,
@@ -104,6 +105,17 @@ export function AppRouter() {
               </Route>
               <Route path="/apps/receivables" element={<Navigate to="/app/receivables" replace />} />
               <Route path="/apps/receivables/installments" element={<Navigate to="/app/receivables/installments" replace />} />
+              <Route path="/apps/accountant" element={<AppAccessRoute appCode="accountant_app"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
+                <Route index element={<AccountantHomePage />} />
+                <Route path="payments" element={<AccountantHomePage />} />
+              </Route>
+              <Route path="/app/accounting" element={<Navigate to="/apps/accounting" replace />} />
+              <Route path="/app/accounting/payments" element={<Navigate to="/apps/accounting/payments" replace />} />
+              <Route path="/app/accounting/journals" element={<Navigate to="/apps/accounting/journals" replace />} />
+              <Route path="/apps/accounting" element={<AppLayout />}>
+                <Route index element={<DynamicAppPage />} />
+                <Route path="*" element={<DynamicAppPage />} />
+              </Route>
               <Route path="/apps/:appCode" element={<AppLayout />}>
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />

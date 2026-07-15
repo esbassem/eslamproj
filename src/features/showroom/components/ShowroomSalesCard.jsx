@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Minus, PackageSearch, Plus, PlusCircle, Search, Trash2, User, UserPlus } from 'lucide-react';
+import { Banknote, Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Minus, PackageSearch, Plus, PlusCircle, Search, Trash2, User, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetHeader, SheetTitle } from '@/core/ui/sheet';
@@ -9,10 +9,16 @@ import { posService } from '@/features/pos/api/pos.api';
 import { productAttributeService, productCategoryAttributeService, productCategoryService, productCategoryTrackingIdentifierService, productsService } from '@/features/products/api/products.api';
 import { ProductFormSheet } from '@/features/products/components/ProductFormSheet';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
+import { showroomService } from '@/features/showroom/services/showroom.service';
 
 const NEW_CUSTOMER_INITIAL_VALUES = {
   isCustomer: true,
   isSupplier: false,
+};
+
+const PAYMENT_TYPES = {
+  CASH: 'cash',
+  FINANCING: 'financing',
 };
 
 const LICENSE_STATUS_OPTIONS = [
@@ -33,6 +39,20 @@ function getInitialLicenseDraft() {
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('ar-EG')} EGP`;
+}
+
+function getPartnerAvatarConfig(partner) {
+  const displayConfig = partner?.displayConfig ?? partner?.display_config ?? null;
+  const avatar = displayConfig?.avatar && typeof displayConfig.avatar === 'object' ? displayConfig.avatar : {};
+  const text = String(avatar.text || partner?.name || '-').trim().slice(0, 1) || '-';
+  const shape = avatar.shape === 'rounded' ? 'rounded' : 'circle';
+
+  return {
+    text,
+    bg: typeof avatar.bg === 'string' && avatar.bg.trim() ? avatar.bg : '#0F172A',
+    color: typeof avatar.color === 'string' && avatar.color.trim() ? avatar.color : '#FFFFFF',
+    shape,
+  };
 }
 
 function getProductTitle(product) {
@@ -138,7 +158,7 @@ function isEmptyIdentifierFetchError(error) {
   return message.includes('json object requested') || message.includes('multiple (or no) rows returned');
 }
 
-export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
+export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleDelete, resumeSale, onResumeHandled, showroomConfig }) {
   const { tenant } = useWorkspace();
   const [step, setStep] = useState(0);
   const [customerName, setCustomerName] = useState('');
@@ -168,10 +188,29 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
   const [isTrackingIdentifiersLoading, setIsTrackingIdentifiersLoading] = useState(false);
   const [productSheetError, setProductSheetError] = useState('');
   const [openAttributeKey, setOpenAttributeKey] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentType, setPaymentType] = useState(PAYMENT_TYPES.CASH);
   const [paidAmount, setPaidAmount] = useState('');
+  const [financers, setFinancers] = useState([]);
+  const [isFinancersLoading, setIsFinancersLoading] = useState(false);
+  const [financersError, setFinancersError] = useState('');
+  const [financierPartnerId, setFinancierPartnerId] = useState('');
+  const [financedAmount, setFinancedAmount] = useState('');
+  const [approvalReference, setApprovalReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
   const [contractNote, setContractNote] = useState('');
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isCreatingPendingSale, setIsCreatingPendingSale] = useState(false);
+  const [isDeletingPendingSale, setIsDeletingPendingSale] = useState(false);
+  const [pendingSaleId, setPendingSaleId] = useState('');
+  const [advanceBalances, setAdvanceBalances] = useState([]);
+  const [advanceAllocations, setAdvanceAllocations] = useState({});
+  const [advancePaymentNotes, setAdvancePaymentNotes] = useState({});
+  const [isAdvanceBalancesLoading, setIsAdvanceBalancesLoading] = useState(false);
+  const [advanceBalancesError, setAdvanceBalancesError] = useState('');
+  const [isAdvanceBalancesSheetOpen, setIsAdvanceBalancesSheetOpen] = useState(false);
+  const [isCashPaymentSheetOpen, setIsCashPaymentSheetOpen] = useState(false);
+  const [cashDraftAmount, setCashDraftAmount] = useState('');
+  const [cashDraftNote, setCashDraftNote] = useState('');
 
   const loadCustomers = useCallback(async () => {
     if (!tenant?.id) {
@@ -228,6 +267,36 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
   }, [tenant?.id]);
 
   useEffect(() => {
+    if (!resumeSale?.id || resumeSale.status !== 'pending_payment') return;
+    const resumedCustomer = resumeSale.customer || (resumeSale.customer_id ? {
+      id: resumeSale.customer_id,
+      name: resumeSale.customer_name || 'العميل',
+    } : null);
+    const resumedCart = (Array.isArray(resumeSale.lines) ? resumeSale.lines : []).map((line) => ({
+      ...line,
+      id: line.id,
+      productProductId: line.productProductId || line.product_product_id,
+      product_product_id: line.product_product_id || line.productProductId,
+      name: line.name || line.displayName || line.description || 'منتج',
+      displayName: line.displayName || line.name || line.description || 'منتج',
+      price: Number(line.price ?? line.unit_price ?? 0),
+      quantity: Number(line.quantity || 1),
+    }));
+
+    setSelectedCustomer(resumedCustomer);
+    setCustomerName(resumedCustomer?.name || '');
+    setCart(resumedCart);
+    setPendingSaleId(resumeSale.id);
+    setPaidAmount('');
+    setPaymentNotes('');
+    setAdvanceAllocations({});
+    setAdvancePaymentNotes({});
+    setMessage('');
+    setStep(3);
+    onResumeHandled?.();
+  }, [onResumeHandled, resumeSale]);
+
+  useEffect(() => {
     loadProducts();
   }, [loadProducts]);
 
@@ -236,6 +305,37 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
       window.clearTimeout(licenseFieldsTimeoutRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (step !== 3 || !tenant?.id || !selectedCustomer?.id) {
+      setAdvanceBalancesError('');
+      return undefined;
+    }
+
+    setIsAdvanceBalancesLoading(true);
+    setAdvanceBalancesError('');
+
+    showroomService
+      .getCustomerAdvanceBalances({ tenantId: tenant.id, customerId: selectedCustomer.id })
+      .then((data) => {
+        if (!mounted) return;
+        setAdvanceBalances(data);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        setAdvanceBalances([]);
+        setAdvanceBalancesError(error.message || 'تعذر تحميل الدفعات المسبقة.');
+      })
+      .finally(() => {
+        if (mounted) setIsAdvanceBalancesLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [step, selectedCustomer?.id, tenant?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -316,8 +416,10 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
   }, [productSearch, products]);
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
-  const hasPaidAmount = paidAmount !== '';
-  const remainingAmount = Math.max(total - (Number(paidAmount) || 0), 0);
+  const advanceAmount = Object.values(advanceAllocations).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const paymentAmount = (Number(paidAmount) || 0) + advanceAmount;
+  const hasPaidAmount = paidAmount !== '' || advanceAmount > 0;
+  const remainingAmount = Math.max(total - paymentAmount, 0);
   const hasNoRemainingAmount = hasPaidAmount && remainingAmount <= 0;
   const customer = selectedCustomer;
   const pendingAttributeFields = useMemo(() => getProductAttributeFields(pendingProduct), [pendingProduct]);
@@ -763,7 +865,11 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
     setMessage('');
     if (step === 1) {
       setPaidAmount('');
-      setPaymentMethod('');
+      setPaymentType(PAYMENT_TYPES.CASH);
+      setFinancierPartnerId('');
+      setFinancedAmount('');
+      setApprovalReference('');
+      setPaymentNotes('');
       setContractNote('');
     }
     setStep((current) => Math.min(current + 1, 2));
@@ -788,6 +894,20 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
     setPaidAmount(String(Math.min(Math.max(numericValue, 0), total)));
   };
 
+  const updateFinancedAmount = (value) => {
+    if (value === '') {
+      setFinancedAmount('');
+      return;
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return;
+    }
+
+    setFinancedAmount(String(Math.min(Math.max(numericValue, 0), total)));
+  };
+
   const reset = () => {
     setStep(0);
     setCustomerName('');
@@ -795,31 +915,83 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
     setProductSearch('');
     setCart([]);
     setMessage('');
-    setPaymentMethod('');
+    setPaymentType(PAYMENT_TYPES.CASH);
     setPaidAmount('');
+    setFinancierPartnerId('');
+    setFinancedAmount('');
+    setApprovalReference('');
+    setPaymentNotes('');
     setContractNote('');
+    setAdvanceBalances([]);
+    setAdvanceAllocations({});
+    setAdvancePaymentNotes({});
+    setIsAdvanceBalancesSheetOpen(false);
+    setIsCashPaymentSheetOpen(false);
+    setCashDraftAmount('');
+    setCashDraftNote('');
+    setPendingSaleId('');
   };
 
-  const openSaleReview = () => {
-    if (!customer || !cart.length) return;
+  const openPaymentStep = async () => {
+    if (!customer || !cart.length || isCreatingPendingSale) return;
     setMessage('');
-    setStep(3);
+    setIsCreatingPendingSale(true);
+    try {
+      const result = await onSalePending?.({
+        pendingSaleId: pendingSaleId || null,
+        customer,
+        items: cart,
+        totalAmount: total,
+      });
+      if (result?.ok === false) {
+        setMessage(result.error || 'تعذر إنشاء الفاتورة المعلقة.');
+        return;
+      }
+      if (result?.sale?.id) setPendingSaleId(result.sale.id);
+      setStep(3);
+    } catch (error) {
+      setMessage(error.message || 'تعذر إنشاء الفاتورة المعلقة.');
+    } finally {
+      setIsCreatingPendingSale(false);
+    }
   };
 
   const complete = async () => {
     if (!customer || !cart.length || isCompleting) return;
-    const paid = Number(paidAmount) || 0;
+    const cash = Number(paidAmount) || 0;
+    const allocations = advanceBalances
+      .map((balance) => ({
+        paymentEntityId: balance.paymentEntityId,
+        amount: Number(advanceAllocations[balance.paymentEntityId]) || 0,
+        note: String(advancePaymentNotes[balance.paymentEntityId] || '').trim(),
+      }))
+      .filter((allocation) => allocation.amount > 0);
+    const paid = cash + allocations.reduce((sum, allocation) => sum + allocation.amount, 0);
     setMessage('');
+
+    if (paid > total) {
+      setMessage('إجمالي الدفع أكبر من قيمة الفاتورة.');
+      return;
+    }
+
     setIsCompleting(true);
 
     try {
       const result = await onSaleCreated?.({
         customer,
+        pendingSaleId: pendingSaleId || null,
         items: cart,
         totalAmount: total,
         paidAmount: paid,
+        cashAmount: cash,
+        cashNote: paymentNotes.trim(),
+        advanceAllocations: allocations,
         contractNote: contractNote.trim(),
-        paymentMethodId: paymentMethod.trim(),
+        paymentType,
+        paymentMethodId: paymentType,
+        financierPartnerId: paymentType === PAYMENT_TYPES.FINANCING ? financierPartnerId : null,
+        approvalReference: paymentType === PAYMENT_TYPES.FINANCING ? approvalReference.trim() : '',
+        paymentNotes: paymentType === PAYMENT_TYPES.FINANCING ? paymentNotes.trim() : '',
       });
 
       if (result?.ok === false) {
@@ -832,6 +1004,25 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
       setMessage(error.message || 'تعذر حفظ عملية البيع.');
     } finally {
       setIsCompleting(false);
+    }
+  };
+
+  const deletePendingSale = async () => {
+    if (!pendingSaleId || isDeletingPendingSale || isCompleting) return;
+    if (!window.confirm('سيتم حذف الفاتورة المعلقة وكل بياناتها نهائيًا. هل أنت متأكد؟')) return;
+    setMessage('');
+    setIsDeletingPendingSale(true);
+    try {
+      const result = await onPendingSaleDelete?.(pendingSaleId);
+      if (result?.ok === false) {
+        setMessage(result.error || 'تعذر حذف الفاتورة المعلقة.');
+        return;
+      }
+      reset();
+    } catch (error) {
+      setMessage(error.message || 'تعذر حذف الفاتورة المعلقة.');
+    } finally {
+      setIsDeletingPendingSale(false);
     }
   };
 
@@ -1012,76 +1203,94 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
           )}
 
           {step === 2 && (
-            <div className="flex h-full w-full items-start justify-center p-6" dir="rtl">
-              <div className="w-full space-y-5">
-
-                {/* Total sentence */}
-                <p className="text-right text-base font-bold text-[#668097]">
-                  الآن إجمالي المطلوب من العميل{' '}
-                  <span className="font-black text-[#173653]">{formatMoney(total)}</span>
-                </p>
-
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-xs font-black text-[#668097]">المدفوع الآن</label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max={total}
-                      step="0.01"
-                      value={paidAmount}
-                      onChange={(e) => updatePaidAmount(e.target.value)}
-                      className="h-14 rounded-2xl border-2 border-[#e6c8cf] bg-white text-xl font-black text-[#4d1f28] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-xs font-black text-[#668097]">طريقة الدفع</label>
-                    <Input
-                      value={paymentMethod}
-                      onChange={(event) => setPaymentMethod(event.target.value)}
-                      className="h-14 rounded-2xl border-2 border-[#e6c8cf] bg-white text-base font-black text-[#4d1f28] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
-                    />
-                  </div>
-                </div>
-
-                <div className={hasPaidAmount ? '' : 'opacity-45'}>
-                  <label className={`mb-2 block text-xs font-black ${hasPaidAmount ? 'text-[#668097]' : 'text-[#8aa0b3]'}`}>
-                    متبقي{' '}
-                    <span className={hasNoRemainingAmount ? 'text-emerald-600' : hasPaidAmount ? 'text-red-500' : 'text-[#8aa0b3]'}>
-                      {hasNoRemainingAmount ? 'لا يوجد متبقي' : formatMoney(remainingAmount)}
-                    </span>
-                  </label>
-                  <Input
-                    disabled={!hasPaidAmount || hasNoRemainingAmount}
-                    placeholder={hasNoRemainingAmount ? 'لا يوجد متبقي' : 'ملاحظة دفع المتبقي'}
-                    className="h-14 rounded-2xl border-2 border-[#e6c8cf] bg-white text-xl font-black text-[#4d1f28] disabled:cursor-not-allowed disabled:bg-[#fcf6f7] disabled:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-xs font-black text-[#668097]">ملاحظة إضافية للعقد</label>
-                  <Input
-                    value={contractNote}
-                    onChange={(event) => setContractNote(event.target.value)}
-                    placeholder="ستظهر هذه الملاحظة داخل العقد"
-                    className="h-12 rounded-2xl border border-[#e6c8cf] bg-white text-sm font-bold text-[#4d1f28] placeholder:text-[#a1898f] focus:border-[#9b3645] focus:ring-[#f1d7dc]"
-                  />
-                </div>
-
-              </div>
-            </div>
-          )}
-
-          {step === 3 && (
             <SaleReviewStep
               customer={customer}
               cart={cart}
               total={total}
-              paidAmount={Number(paidAmount) || 0}
-              remainingAmount={remainingAmount}
-              paymentMethod={paymentMethod}
-              contractNote={contractNote}
             />
+          )}
+
+          {step === 3 && (
+            <div className="flex h-full w-full items-start justify-center px-6 py-7" dir="rtl">
+              <div className="w-full max-w-[900px]">
+                <div className="grid gap-8 border-b border-slate-200 pb-7 lg:grid-cols-[0.8fr_1.2fr]">
+                  <section className="flex flex-col justify-center">
+                    <p className="text-xs font-black text-slate-400">إجمالي الفاتورة</p>
+                    <p className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{formatMoney(total)}</p>
+                  </section>
+
+                  <section>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-xs font-black text-slate-400">طرق الدفع المتاحة</p>
+                      {isAdvanceBalancesLoading ? <span className="text-[11px] font-bold text-slate-400">جار التحميل...</span> : null}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <button type="button" onClick={() => {
+                        setCashDraftAmount(paidAmount);
+                        setCashDraftNote(paymentNotes);
+                        setIsCashPaymentSheetOpen(true);
+                      }} className={`flex min-h-16 items-center gap-3 border px-3 py-2 text-right transition ${Number(paidAmount) > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white"><Banknote className="h-4 w-4" /></span>
+                        <span className="text-sm font-black text-slate-800">تحصيل نقدي</span>
+                      </button>
+                      {!isAdvanceBalancesLoading && !advanceBalancesError ? advanceBalances.map((balance) => {
+                        const avatar = getPartnerAvatarConfig({ name: balance.paymentEntityName, displayConfig: balance.displayConfig });
+                        const selectedAmount = Number(advanceAllocations[balance.paymentEntityId]) || 0;
+                        return (
+                          <button key={balance.paymentEntityId} type="button" onClick={() => setIsAdvanceBalancesSheetOpen(true)} className={`flex min-h-16 items-center gap-3 border px-3 py-2 text-right transition focus:outline-none ${selectedAmount > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center text-xs font-black ${avatar.shape === 'circle' ? 'rounded-full' : 'rounded-lg'}`} style={{ backgroundColor: avatar.bg, color: avatar.color }}>{avatar.text}</span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-black text-slate-800">{balance.paymentEntityName}</span>
+                              <span className="mt-1 block truncate text-[11px] font-bold text-slate-400">متاح {formatMoney(balance.availableAmount)}</span>
+                            </span>
+                            {selectedAmount > 0 ? <span className="text-xs font-black text-emerald-700">{formatMoney(selectedAmount)}</span> : null}
+                          </button>
+                        );
+                      }) : null}
+                    </div>
+                    {advanceBalancesError ? <p className="mt-2 text-xs font-black text-red-600">{advanceBalancesError}</p> : null}
+                  </section>
+                </div>
+
+                <section className="pt-5">
+                  <div className="space-y-2">
+                    {advanceBalances.filter((balance) => (Number(advanceAllocations[balance.paymentEntityId]) || 0) > 0).map((balance) => {
+                      const avatar = getPartnerAvatarConfig({ name: balance.paymentEntityName, displayConfig: balance.displayConfig });
+                      const amount = Number(advanceAllocations[balance.paymentEntityId]) || 0;
+                      return (
+                        <div key={balance.paymentEntityId} className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <span className={`flex h-7 w-7 shrink-0 items-center justify-center text-[10px] font-black ${avatar.shape === 'circle' ? 'rounded-full' : 'rounded-md'}`} style={{ backgroundColor: avatar.bg, color: avatar.color }}>{avatar.text}</span>
+                          <span className="shrink-0 truncate text-xs font-black text-slate-700">{balance.paymentEntityName}</span>
+                          {advancePaymentNotes[balance.paymentEntityId] ? <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-400">{advancePaymentNotes[balance.paymentEntityId]}</span> : <span className="flex-1" />}
+                          <span className="whitespace-nowrap text-xs font-black text-emerald-600">{formatMoney(amount)}</span>
+                          <button type="button" onClick={() => { setAdvanceAllocations((current) => ({ ...current, [balance.paymentEntityId]: '' })); setAdvancePaymentNotes((current) => ({ ...current, [balance.paymentEntityId]: '' })); }} className="flex h-7 w-7 shrink-0 items-center justify-center text-slate-400 transition hover:bg-red-50 hover:text-red-600" aria-label={`حذف دفعة ${balance.paymentEntityName}`} title="حذف الدفعة"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      );
+                    })}
+                    {(Number(paidAmount) || 0) > 0 ? (
+                      <div className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white"><Banknote className="h-3.5 w-3.5" /></span>
+                          <span className="shrink-0 text-xs font-black text-slate-700">تحصيل نقدي</span>
+                          {paymentNotes ? <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-400">{paymentNotes}</span> : <span className="flex-1" />}
+                          <span className="whitespace-nowrap text-xs font-black text-emerald-600">{formatMoney(Number(paidAmount))}</span>
+                          <button type="button" onClick={() => { setPaidAmount(''); setPaymentNotes(''); setCashDraftAmount(''); setCashDraftNote(''); }} className="flex h-7 w-7 shrink-0 items-center justify-center text-slate-400 transition hover:bg-red-50 hover:text-red-600" aria-label="حذف الدفعة النقدية" title="حذف الدفعة"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {paymentAmount <= 0 ? <p className="py-2 text-xs font-bold text-slate-400">لم تتم إضافة أي عملية دفع بعد</p> : null}
+                  </div>
+                </section>
+
+                <div className="mt-7 flex items-end justify-between gap-4 border-t-2 border-slate-950 pt-5">
+                  <div>
+                    <p className="text-xs font-black text-slate-400">المتبقي على العميل</p>
+                    <p className="mt-2 text-xs font-bold text-slate-400">{hasNoRemainingAmount ? 'تم سداد المبلغ بالكامل' : 'يظل مستحقًا بعد إتمام البيع'}</p>
+                  </div>
+                  <p className={`text-3xl font-black tracking-tight ${hasNoRemainingAmount ? 'text-emerald-600' : 'text-[#9b3645]'}`}>{formatMoney(remainingAmount)}</p>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -1089,7 +1298,13 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
       <footer className="border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-7">
         <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={reset} disabled={isCompleting} className="h-11 rounded-xl border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
+            {step === 3 && pendingSaleId ? (
+              <Button variant="secondary" onClick={deletePendingSale} disabled={isDeletingPendingSale || isCompleting} className="h-11 rounded-xl border-red-200 bg-white px-4 font-black text-red-600 hover:bg-red-50">
+                <Trash2 className="h-4 w-4" />
+                {isDeletingPendingSale ? 'جار الحذف...' : 'حذف الفاتورة'}
+              </Button>
+            ) : null}
+            <Button variant="secondary" onClick={reset} disabled={isCompleting || isDeletingPendingSale} className="h-11 rounded-xl border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
               مسح
             </Button>
             {step > 0 && (
@@ -1104,8 +1319,8 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
                 <ChevronLeft className="h-4 w-4" />
               </Button>
             ) : step === 2 ? (
-              <Button onClick={openSaleReview} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
-                مراجعة الفاتورة
+              <Button onClick={openPaymentStep} disabled={isCreatingPendingSale} className="h-11 rounded-xl bg-slate-900 px-7 font-black text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.78)] hover:bg-slate-800">
+                {isCreatingPendingSale ? 'جار إنشاء الفاتورة...' : 'الدفع'}
                 <ChevronLeft className="h-4 w-4" />
               </Button>
             ) : (
@@ -1116,6 +1331,101 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
           </div>
         </div>
       </footer>
+
+      <Sheet open={isCashPaymentSheetOpen} onOpenChange={setIsCashPaymentSheetOpen}>
+        <SheetContent side="right" className="w-full max-w-md border-l-0 bg-white p-0" dir="rtl">
+          <SheetHeader className="border-b border-slate-200 px-5 py-5 text-right">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <SheetTitle className="text-xl font-black text-slate-950">دفع نقدي</SheetTitle>
+                <p className="mt-1 text-xs font-bold text-slate-500">سجل المبلغ المستلم من العميل</p>
+              </div>
+              <SheetDismissButton />
+            </div>
+          </SheetHeader>
+          <SheetBody className="px-5 py-6">
+            <div className="space-y-5">
+              <label className="block">
+                <span className="mb-2 block text-xs font-black text-slate-600">المبلغ</span>
+                <Input type="number" inputMode="decimal" min="0" max={Math.max(total - advanceAmount, 0)} step="0.01" value={cashDraftAmount} onChange={(event) => {
+                  const value = event.target.value;
+                  setCashDraftAmount(value === '' ? '' : String(Math.min(Math.max(Number(value) || 0, 0), Math.max(total - advanceAmount, 0))));
+                }} placeholder="0" className="h-14 rounded-xl border-slate-300 text-xl font-black text-slate-950" autoFocus />
+                <span className="mt-2 block text-xs font-bold text-slate-400">الحد الأقصى {formatMoney(Math.max(total - advanceAmount, 0))}</span>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-black text-slate-600">ملاحظة</span>
+                <Input value={cashDraftNote} onChange={(event) => setCashDraftNote(event.target.value)} placeholder="مثال: دفعة نقدية من العميل" className="h-12 rounded-xl border-slate-300 text-sm font-bold" />
+              </label>
+            </div>
+          </SheetBody>
+          <div className="mt-auto flex gap-3 border-t border-slate-200 px-5 py-4">
+            <Button type="button" onClick={() => {
+              setPaidAmount(cashDraftAmount);
+              setPaymentNotes(cashDraftNote.trim());
+              setIsCashPaymentSheetOpen(false);
+            }} className="h-11 flex-1 rounded-xl bg-slate-950 font-black text-white hover:bg-slate-800">تأكيد الدفع</Button>
+            {Number(paidAmount) > 0 ? <Button type="button" variant="secondary" onClick={() => {
+              setPaidAmount('');
+              setPaymentNotes('');
+              setCashDraftAmount('');
+              setCashDraftNote('');
+              setIsCashPaymentSheetOpen(false);
+            }} className="h-11 rounded-xl font-black text-red-600">حذف</Button> : null}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={isAdvanceBalancesSheetOpen} onOpenChange={setIsAdvanceBalancesSheetOpen}>
+        <SheetContent side="right" className="w-full max-w-md border-l-0 bg-[#fffafb] p-0" dir="rtl">
+          <SheetHeader className="border-b border-[#e6c8cf] bg-white px-5 py-5 text-right">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <SheetTitle className="text-xl font-black text-[#4d1f28]">رصيد العميل</SheetTitle>
+                <p className="mt-1 text-xs font-bold text-[#8e6f76]">اختر المبلغ المستخدم من كل جهة</p>
+              </div>
+              <SheetDismissButton />
+            </div>
+          </SheetHeader>
+          <SheetBody className="space-y-3 px-5 py-5">
+            {advanceBalances.map((balance) => {
+              const avatar = getPartnerAvatarConfig({ name: balance.paymentEntityName, displayConfig: balance.displayConfig });
+              const allocated = advanceAllocations[balance.paymentEntityId] ?? '';
+              const maxForEntity = Math.min(balance.availableAmount, Math.max(total - (Number(paidAmount) || 0) - advanceAmount + (Number(allocated) || 0), 0));
+              return (
+                <div key={balance.paymentEntityId} className="rounded-2xl border border-[#ead9dd] bg-white p-4">
+                  <div className="mb-3 flex min-w-0 items-center gap-3">
+                    <span className={`flex h-11 w-11 shrink-0 items-center justify-center text-sm font-black ${avatar.shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`} style={{ backgroundColor: avatar.bg, color: avatar.color }}>{avatar.text}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black text-[#4d1f28]">{balance.paymentEntityName}</p>
+                      <p className="mt-0.5 text-xs font-bold text-emerald-700">الرصيد المتاح: {formatMoney(balance.availableAmount)}</p>
+                    </div>
+                  </div>
+                  <label className="block text-xs font-black text-[#668097]">
+                    <span className="mb-2 block">المبلغ المستخدم</span>
+                    <Input type="number" min="0" max={maxForEntity} step="0.01" value={allocated} placeholder="0" onChange={(event) => {
+                      const value = event.target.value;
+                      const safeValue = value === '' ? '' : String(Math.min(Math.max(Number(value) || 0, 0), maxForEntity));
+                      setAdvanceAllocations((current) => ({ ...current, [balance.paymentEntityId]: safeValue }));
+                    }} className="h-12 rounded-xl border-[#e6c8cf] text-lg font-black text-[#4d1f28]" />
+                  </label>
+                  <label className="mt-3 block text-xs font-black text-[#668097]">
+                    <span className="mb-2 block">ملاحظة</span>
+                    <Input value={advancePaymentNotes[balance.paymentEntityId] || ''} onChange={(event) => setAdvancePaymentNotes((current) => ({ ...current, [balance.paymentEntityId]: event.target.value }))} placeholder="ملاحظة الدفعة" className="h-11 rounded-xl border-[#e6c8cf] text-sm font-bold text-[#4d1f28]" />
+                  </label>
+                </div>
+              );
+            })}
+            <div className="sticky bottom-0 rounded-2xl bg-slate-950 p-4 text-white shadow-lg">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-bold text-slate-300">إجمالي المستخدم</span>
+                <span className="text-lg font-black">{formatMoney(advanceAmount)}</span>
+              </div>
+              <Button type="button" onClick={() => setIsAdvanceBalancesSheetOpen(false)} className="mt-3 h-11 w-full rounded-xl bg-white font-black text-slate-950 hover:bg-slate-100">تأكيد</Button>
+            </div>
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={productSheetOpen} onOpenChange={closeProductSheet}>
         <SheetContent side="bottom" className="mx-auto max-h-[96vh] min-h-[68vh] w-full max-w-[680px] rounded-t-[28px] border-0 bg-white shadow-none" dir="rtl">
@@ -1368,9 +1678,11 @@ export function ShowroomSalesCard({ onSaleCreated, showroomConfig }) {
 }
 
 function SaleReviewStep({ customer, cart, total, paidAmount, remainingAmount, paymentMethod, contractNote }) {
+  const showPaymentSummary = paidAmount !== undefined || remainingAmount !== undefined || Boolean(paymentMethod?.trim());
+
   return (
     <div className="mx-auto w-full max-w-[680px] space-y-3" dir="rtl">
-      <p className="text-right text-xs font-black text-red-600">مراجعة الفاتورة قبل التأكيد</p>
+      <p className="text-right text-xs font-black text-red-600">مراجعة الفاتورة قبل الدفع</p>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="grid gap-3 px-4 py-3 text-sm font-bold text-slate-700 sm:grid-cols-2">
@@ -1408,8 +1720,12 @@ function SaleReviewStep({ customer, cart, total, paidAmount, remainingAmount, pa
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
           <ReviewAmount label="الإجمالي" value={total} />
-          <ReviewAmount label="المدفوع" value={paidAmount} note={paymentMethod?.trim() || 'غير محددة'} />
-          <ReviewAmount label="المتبقي" value={remainingAmount} tone={remainingAmount > 0 ? 'danger' : 'success'} />
+          {showPaymentSummary ? (
+            <>
+              <ReviewAmount label="المدفوع" value={paidAmount} note={paymentMethod?.trim() || 'غير محددة'} />
+              <ReviewAmount label="المتبقي" value={remainingAmount} tone={remainingAmount > 0 ? 'danger' : 'success'} />
+            </>
+          ) : null}
         </div>
         {contractNote?.trim() ? (
           <div className="border-t border-slate-100 px-4 py-3">

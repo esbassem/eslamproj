@@ -88,6 +88,10 @@ function getGuardianshipLabel(note) {
   }[value] || value || '';
 }
 
+function getSaleBlockNotes(note) {
+  return String(note || '').match(/ملاحظات حظر البيع:\s*([^\n]+)/)?.[1]?.trim() || '';
+}
+
 export function PendingProcessorPaperworkDrawer({
   open,
   onOpenChange,
@@ -274,6 +278,11 @@ export function PendingProcessorPaperworkDrawer({
                                 ].filter(Boolean).join(' · ') || 'لا توجد أرقام تعريف';
                               })()}
                             </span>
+                            {getSaleBlockNotes(request.documentOwnerNote) ? (
+                              <span className="mt-1.5 block rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black text-red-800">
+                                حظر البيع: {getSaleBlockNotes(request.documentOwnerNote)}
+                              </span>
+                            ) : null}
                             <span className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
                               <span className="truncate text-[9px] font-bold text-blue-500">
                                 أُرسل للجهة: {formatSentAt(sentAt)}

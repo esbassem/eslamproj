@@ -21,10 +21,15 @@ const PAGE_META = {
     title: 'الموردون',
     subtitle: 'قائمة الجهات التي لديها صفة مورد.',
   },
+  financer: {
+    title: 'جهات الدفع',
+    subtitle: 'شركات التمويل والتقسيط المسجلة لاستخدامها في دفع فواتير الشو روم.',
+  },
 };
 
 function getTypeLabel(partner) {
   if (partner.contactType === 'contact') return 'جهة تابعة';
+  if (partner.financerRank > 0) return 'شركة تمويل / تقسيط';
   if (partner.isCompany) return partner.companyType || 'شركة';
   if (partner.isCustomer && partner.isSupplier) return 'عميل ومورد';
   if (partner.isCustomer) return 'عميل';
@@ -109,7 +114,7 @@ function formatMoney(value) {
   return `${Number(value ?? 0).toLocaleString()} EGP`;
 }
 
-export function PartnerList({ filterType = 'all' }) {
+export function PartnerList({ filterType = 'all', createInitialValues = null }) {
   const { tenant } = useWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [partners, setPartners] = useState([]);
@@ -406,7 +411,7 @@ export function PartnerList({ filterType = 'all' }) {
             setChildParentPartner(null);
           }
         }}
-        initialValues={editingPartner}
+        initialValues={editingPartner || (!childParentPartner ? createInitialValues : null)}
         onSubmit={editingPartner ? handleUpdate : handleCreate}
         isSubmitting={isSubmitting}
         parentPartner={childParentPartner}

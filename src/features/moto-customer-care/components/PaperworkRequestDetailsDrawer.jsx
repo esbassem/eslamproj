@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Building2, Check, ImagePlus, Search, X } from 'lucide-react';
+import { AlertCircle, Building2, Check, ImagePlus, MessageSquareText, Phone, Search, Send, UserRound, X } from 'lucide-react';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
+import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
 const EVENT_LABELS = {
   created: 'تم إنشاء الطلب',
@@ -60,6 +61,10 @@ function getGuardianshipLabel(note) {
     mother_guardian: 'وصاية والدته',
     none: 'بدون وصاية',
   }[value] || value || '--';
+}
+
+function getSaleBlockNotes(note) {
+  return String(note || '').match(/ملاحظات حظر البيع:\s*([^\n]+)/)?.[1]?.trim() || '';
 }
 
 function RequestImages({ request, onPreview }) {
@@ -297,7 +302,10 @@ export function PaperworkRequestDetailsDrawer({
   onSaved,
   onCustomerConfirmed,
   onRequestSent,
+  onCustomerNotified,
+  onDelivered,
 }) {
+  const { tenant } = useWorkspace();
   const [snapshot, setSnapshot] = useState(request);
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
@@ -311,6 +319,13 @@ export function PaperworkRequestDetailsDrawer({
   const [isSendingToProcessor, setIsSendingToProcessor] = useState(false);
   const [sendToProcessorError, setSendToProcessorError] = useState('');
   const [sendToProcessorNote, setSendToProcessorNote] = useState('');
+  const [customerNotificationOpen, setCustomerNotificationOpen] = useState(false);
+  const [isNotifyingCustomer, setIsNotifyingCustomer] = useState(false);
+  const [customerNotificationError, setCustomerNotificationError] = useState('');
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryImage, setDeliveryImage] = useState(null);
+  const [isDelivering, setIsDelivering] = useState(false);
+  const [deliveryError, setDeliveryError] = useState('');
   const [processorOverride, setProcessorOverride] = useState(null);
   const [processorPermissionNotice, setProcessorPermissionNotice] = useState('');
   const closeTimerRef = useRef(null);
@@ -318,7 +333,9 @@ export function PaperworkRequestDetailsDrawer({
   const contentTimerRef = useRef(null);
 
   useEffect(() => {
-    if (open && request) setSnapshot(request);
+    if (open && request) {
+      setSnapshot(request);
+    }
   }, [open, request]);
 
   useEffect(() => {
@@ -350,6 +367,14 @@ export function PaperworkRequestDetailsDrawer({
       setCustomerConfirmationOpen(false);
       setCustomerConfirmationError('');
       setSendConfirmationOpen(false);
+      setCustomerNotificationOpen(false);
+      setIsNotifyingCustomer(false);
+      setCustomerNotificationError('');
+      setDeliveryOpen(false);
+      if (deliveryImage?.previewUrl) URL.revokeObjectURL(deliveryImage.previewUrl);
+      setDeliveryImage(null);
+      setIsDelivering(false);
+      setDeliveryError('');
       setSendToProcessorError('');
       setSendToProcessorNote('');
       setProcessorPermissionNotice('');
@@ -376,13 +401,17 @@ export function PaperworkRequestDetailsDrawer({
       if (event.key !== 'Escape') return;
       if (previewOpen) setPreviewOpen(false);
       else if (processorOpen) setProcessorOpen(false);
+      else if (customerNotificationOpen) {
+        setCustomerNotificationOpen(false);
+      }
+      else if (deliveryOpen && !isDelivering) setDeliveryOpen(false);
       else if (customerConfirmationOpen) setCustomerConfirmationOpen(false);
       else if (sendConfirmationOpen) setSendConfirmationOpen(false);
       else onOpenChange(false);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [customerConfirmationOpen, mounted, onOpenChange, previewOpen, processorOpen, sendConfirmationOpen]);
+  }, [customerConfirmationOpen, customerNotificationOpen, deliveryOpen, isDelivering, mounted, onOpenChange, previewOpen, processorOpen, sendConfirmationOpen]);
 
   if (!mounted || !snapshot) return null;
 
@@ -390,6 +419,82 @@ export function PaperworkRequestDetailsDrawer({
   const processorName = displayedProcessor?.name || 'لم يتم تحديد جهة إصدار الأوراق';
   const customerName = snapshot.customer?.name || 'عميل غير محدد';
   const customerPhone = snapshot.customer?.phone || snapshot.customer?.phone1 || snapshot.customer?.phone2 || '--';
+  const showroomName = tenant?.name || tenant?.company_name || tenant?.display_name || 'معرض الوكيل';
+  const smsMessage = `الأستاذ/ ${customerName}، نحيط سيادتكم علمًا بوصول الأوراق الخاصة بـ ${snapshot.productName || 'طلبكم'}، وأصبحت جاهزة للاستلام. يسعدنا خدمتكم — ${showroomName}.`;
+  const smsHref = customerPhone === '--'
+    ? ''
+    : `sms:${customerPhone.replace(/[^+\d]/g, '')}?body=${encodeURIComponent(smsMessage)}`;
+  const confirmCustomerNotification = async () => {
+    if (isNotifyingCustomer) return;
+    setIsNotifyingCustomer(true);
+    setCustomerNotificationError('');
+    try {
+      const result = await motoCustomerCareService.notifyPaperworkCustomer({
+        tenantId,
+        requestId: snapshot.id,
+      });
+      setSnapshot((current) => ({
+        ...current,
+        currentStage: result.currentStage,
+        stage: { code: result.currentStage, name: 'تم إبلاغ العميل' },
+        stageEnteredAt: result.updatedAt,
+        updatedAt: result.updatedAt,
+      }));
+      onCustomerNotified?.(result);
+      setCustomerNotificationOpen(false);
+    } catch (nextError) {
+      setCustomerNotificationError(nextError?.message || 'تعذر تأكيد إبلاغ العميل.');
+    } finally {
+      setIsNotifyingCustomer(false);
+    }
+  };
+  const closeDelivery = (force = false) => {
+    if (isDelivering && !force) return;
+    if (deliveryImage?.previewUrl) URL.revokeObjectURL(deliveryImage.previewUrl);
+    setDeliveryImage(null);
+    setDeliveryError('');
+    setDeliveryOpen(false);
+  };
+  const selectDeliveryImage = (file) => {
+    if (!file) return;
+    if (!file.type?.startsWith('image/')) {
+      setDeliveryError('يمكن اختيار صورة فقط.');
+      return;
+    }
+    if (deliveryImage?.previewUrl) URL.revokeObjectURL(deliveryImage.previewUrl);
+    setDeliveryImage({ file, previewUrl: URL.createObjectURL(file) });
+    setDeliveryError('');
+  };
+  const confirmDelivery = async () => {
+    if (isDelivering) return;
+    setIsDelivering(true);
+    setDeliveryError('');
+    try {
+      const result = await motoCustomerCareService.deliverPaperworkToCustomer({
+        tenantId,
+        requestId: snapshot.id,
+        receiptImage: deliveryImage?.file || null,
+      });
+      setSnapshot((current) => ({
+        ...current,
+        currentStage: result.currentStage,
+        status: result.status,
+        stage: { code: result.currentStage, name: 'تم التسليم للعميل' },
+        stageEnteredAt: result.updatedAt,
+        updatedAt: result.updatedAt,
+      }));
+      onDelivered?.(result);
+      if (result.imageUploadError) {
+        setDeliveryError(`تم التسليم بنجاح، لكن ${result.imageUploadError}`);
+      } else {
+        closeDelivery(true);
+      }
+    } catch (nextError) {
+      setDeliveryError(nextError?.message || 'تعذر تسليم الأوراق للعميل.');
+    } finally {
+      setIsDelivering(false);
+    }
+  };
   const customerAddress = snapshot.customer?.address || '--';
   const documentOwnerName = snapshot.documentOwnerName
     || snapshot.documentOwner?.name
@@ -397,6 +502,7 @@ export function PaperworkRequestDetailsDrawer({
   const guardianshipLabel = snapshot.documentOwnerStatus === 'later'
     ? '--'
     : getGuardianshipLabel(snapshot.documentOwnerNote);
+  const saleBlockNotes = getSaleBlockNotes(snapshot.documentOwnerNote);
   const ownerImage = snapshot.ownerAttachments?.document_owner_id_card
     || snapshot.ownerAttachments?.document_owner_id_front
     || snapshot.ownerAttachments?.document_owner_id_back
@@ -627,6 +733,12 @@ export function PaperworkRequestDetailsDrawer({
                                     </span>
                                   ) : null}
                                 </div>
+                                {saleBlockNotes ? (
+                                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-right">
+                                    <p className="text-[10px] font-black text-red-700">ملاحظات حظر البيع</p>
+                                    <p className="mt-1 whitespace-pre-wrap text-xs font-bold leading-5 text-red-950">{saleBlockNotes}</p>
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           ) : null}
@@ -710,14 +822,32 @@ export function PaperworkRequestDetailsDrawer({
               </span>
             </div>
           ) : snapshot.currentStage === 'received_from_processor' ? (
-            <div className="flex min-h-[4.25rem] items-center justify-between gap-3 px-4 pb-[env(safe-area-inset-bottom)]">
+            <div className="grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_9.5rem] pb-[env(safe-area-inset-bottom)]">
               <div className="min-w-0">
-                <p className="text-[10px] font-bold text-slate-400">الإجراء التالي</p>
-                <p className="mt-0.5 text-xs font-black text-slate-800">إبلاغ العميل</p>
+                <div className="flex h-full flex-col justify-center px-4 py-2.5">
+                  <p className="text-[10px] font-bold text-slate-400">الإجراء التالي</p>
+                  <p className="mt-0.5 text-xs font-black text-slate-800">إبلاغ العميل بوصول الأوراق</p>
+                </div>
               </div>
-              <span className="shrink-0 rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-black text-amber-700">
-                بانتظار الإبلاغ
-              </span>
+              <button
+                type="button"
+                onClick={() => setCustomerNotificationOpen(true)}
+                className="flex items-center justify-center gap-2 border-r border-blue-700/25 bg-gradient-to-l from-blue-600 to-sky-500 px-3 text-xs font-black text-white transition hover:from-blue-700 hover:to-sky-600"
+              >
+                <Phone className="h-4 w-4" />
+                إبلاغ العميل
+              </button>
+            </div>
+          ) : snapshot.currentStage === 'client_notified' ? (
+            <div className="grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_9.5rem] pb-[env(safe-area-inset-bottom)]">
+              <div className="flex min-w-0 flex-col justify-center px-4 py-2.5">
+                <p className="text-[10px] font-bold text-slate-400">الإجراء التالي</p>
+                <p className="mt-0.5 text-xs font-black text-slate-800">تسليم الأوراق للعميل</p>
+              </div>
+              <button type="button" onClick={() => setDeliveryOpen(true)} className="flex items-center justify-center gap-2 border-r border-emerald-700/25 bg-gradient-to-l from-emerald-600 to-teal-500 px-3 text-xs font-black text-white transition hover:from-emerald-700 hover:to-teal-600">
+                <Check className="h-4 w-4" />
+                تسليم الأوراق
+              </button>
             </div>
           ) : snapshot.customerConfirmed ? (
             <div className="px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
@@ -726,6 +856,125 @@ export function PaperworkRequestDetailsDrawer({
             </div>
           ) : null}
         </footer>
+
+        {deliveryOpen ? (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/35 p-4" dir="rtl">
+            <button type="button" className="absolute inset-0" onClick={() => closeDelivery()} aria-label="إغلاق تأكيد التسليم" />
+            <section className="relative max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black text-emerald-600">الخطوة الأخيرة</p>
+                  <h3 className="mt-1 text-base font-black text-slate-950">تسليم الأوراق للعميل</h3>
+                  <p className="mt-1 text-xs font-bold text-slate-500">{customerName}</p>
+                </div>
+                <button type="button" disabled={isDelivering} onClick={() => closeDelivery()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 disabled:opacity-50" aria-label="إغلاق"><X className="h-4 w-4" /></button>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] font-bold leading-5 text-amber-800">
+                بالتأكيد سيتم إخراج الورقة من الخزنة وإنهاء طلب الأوراق.
+              </div>
+
+              <div className="mt-4">
+                {deliveryImage?.previewUrl ? (
+                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                    <img src={deliveryImage.previewUrl} alt="صورة استلام العميل" className="aspect-[4/3] w-full object-contain" />
+                    <label className="absolute bottom-2 right-2 flex h-9 cursor-pointer items-center gap-2 rounded-xl bg-white/95 px-3 text-[10px] font-black text-slate-700 shadow-sm">
+                      تغيير الصورة
+                      <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={isDelivering} onChange={(event) => { selectDeliveryImage(event.target.files?.[0]); event.target.value = ''; }} />
+                    </label>
+                    <button type="button" disabled={isDelivering} onClick={() => { URL.revokeObjectURL(deliveryImage.previewUrl); setDeliveryImage(null); }} className="absolute bottom-2 left-2 flex h-9 w-9 items-center justify-center rounded-xl bg-white/95 text-red-600 shadow-sm" aria-label="حذف الصورة"><X className="h-4 w-4" /></button>
+                  </div>
+                ) : (
+                  <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 text-center hover:border-emerald-300 hover:bg-emerald-50/40">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm"><ImagePlus className="h-5 w-5" /></span>
+                    <span><span className="block text-xs font-black text-slate-800">إضافة صورة استلام العميل</span><span className="mt-1 block text-[10px] font-bold text-slate-400">اختيارية ويمكن تخطيها</span></span>
+                    <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={isDelivering} onChange={(event) => { selectDeliveryImage(event.target.files?.[0]); event.target.value = ''; }} />
+                  </label>
+                )}
+              </div>
+
+              {deliveryError ? <p className="mt-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-bold leading-5 text-red-700">{deliveryError}</p> : null}
+
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <button type="button" disabled={isDelivering} onClick={() => closeDelivery()} className="h-10 rounded-xl bg-slate-100 text-xs font-black text-slate-700 disabled:opacity-50">إلغاء</button>
+                <button type="button" disabled={isDelivering} onClick={confirmDelivery} className="h-10 rounded-xl bg-emerald-600 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60">{isDelivering ? 'جاري التسليم...' : 'تأكيد التسليم'}</button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {customerNotificationOpen ? (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/35 p-4" dir="rtl">
+            <button type="button" className="absolute inset-0" onClick={() => {
+              setCustomerNotificationOpen(false);
+            }} aria-label="إغلاق نافذة إبلاغ العميل" />
+            <section className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black text-blue-600">الأوراق جاهزة للاستلام</p>
+                  <h3 className="mt-1 text-base font-black text-slate-950">إبلاغ العميل</h3>
+                </div>
+                <button type="button" onClick={() => {
+                  setCustomerNotificationOpen(false);
+                }} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500" aria-label="إغلاق">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm"><UserRound className="h-4 w-4" /></span>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-black text-slate-900">{customerName}</p>
+                    <p className="mt-0.5 text-[10px] font-bold text-slate-500" dir="ltr">{customerPhone}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <p className="text-[11px] font-black text-slate-600">إرشادات إبلاغ العميل</p>
+                <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/70 p-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white"><Phone className="h-4 w-4" /></span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-slate-900">أولًا: مكالمة هاتفية</p>
+                    <p className="mt-1 text-[10px] font-bold leading-5 text-slate-500">اتصل بالعميل وأبلغه بوصول الأوراق وجاهزيتها للاستلام.</p>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-700 text-white"><MessageSquareText className="h-4 w-4" /></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-black text-slate-900">ثانيًا: رسالة SMS</p>
+                        {smsHref ? (
+                          <a href={smsHref} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700" aria-label="فتح الرسالة في تطبيق الرسائل" title="إرسال عبر تطبيق الرسائل">
+                            <Send className="h-3.5 w-3.5" />
+                          </a>
+                        ) : (
+                          <span className="flex h-7 w-7 shrink-0 cursor-not-allowed items-center justify-center rounded-lg bg-slate-200 text-slate-400" title="لا يوجد رقم هاتف"><Send className="h-3.5 w-3.5" /></span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                    <p className="text-xs font-bold leading-6 text-slate-700">{smsMessage}</p>
+                  </div>
+                </div>
+              </div>
+
+              {customerNotificationError ? (
+                <p className="mt-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-bold leading-5 text-red-700">{customerNotificationError}</p>
+              ) : null}
+
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => {
+                  setCustomerNotificationOpen(false);
+                }} disabled={isNotifyingCustomer} className="h-10 rounded-xl bg-slate-100 text-xs font-black text-slate-700 disabled:opacity-50">إلغاء</button>
+                <button type="button" onClick={confirmCustomerNotification} disabled={isNotifyingCustomer} className="h-10 rounded-xl bg-blue-600 text-xs font-black text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">{isNotifyingCustomer ? 'جاري التأكيد...' : 'تأكيد تم الإبلاغ'}</button>
+              </div>
+            </section>
+          </div>
+        ) : null}
 
         {customerConfirmationOpen ? (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/30 p-4" dir="rtl">

@@ -1,5 +1,9 @@
 import { ROUTES } from '@/core/config/routes.config';
 
+const APP_CODE_ALIASES = {
+  accountant: 'accountant_app',
+};
+
 export const LEGACY_ROUTE_APP_CODES = {
   [ROUTES.dashboard]: 'dashboard',
   [ROUTES.partners]: 'partners',
@@ -18,7 +22,8 @@ export const LEGACY_ROUTE_APP_CODES = {
 };
 
 export function normalizeAppCode(value) {
-  return String(value ?? '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+  const normalizedCode = String(value ?? '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+  return APP_CODE_ALIASES[normalizedCode] ?? normalizedCode;
 }
 
 export function getAppCodeFromPathname(pathname = '') {
@@ -38,6 +43,12 @@ export function getAppCodeFromPathname(pathname = '') {
 
 export function getAppBasePath(appCode) {
   const normalizedAppCode = normalizeAppCode(appCode);
+  if (normalizedAppCode === 'accounting') {
+    return '/apps/accounting';
+  }
+  if (normalizedAppCode === 'accountant_app') {
+    return '/apps/accountant';
+  }
   if (normalizedAppCode === 'old_cashbox') {
     return '/apps/old-cashbox';
   }

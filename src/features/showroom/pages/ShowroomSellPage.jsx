@@ -502,6 +502,7 @@ export function ShowroomSellPage() {
   const [isSalesLoading, setIsSalesLoading] = useState(false);
   const [salesError, setSalesError] = useState('');
   const [selectedSale, setSelectedSale] = useState(null);
+  const [saleToResume, setSaleToResume] = useState(null);
   const [paperworkPromptSale, setPaperworkPromptSale] = useState(null);
   const [dismissedPaperworkPromptSaleId, setDismissedPaperworkPromptSaleId] = useState(null);
   const [isCreateConfigOpen, setIsCreateConfigOpen] = useState(false);
@@ -609,6 +610,7 @@ export function ShowroomSellPage() {
     const latestSale = sales[0] || null;
     if (
       latestSale
+      && latestSale.status === 'confirmed'
       && latestSale.id !== dismissedPaperworkPromptSaleId
       && getSalePendingPaperworkLines(latestSale).length
     ) {
@@ -634,14 +636,12 @@ export function ShowroomSellPage() {
     }
 
     try {
-      const savedSale = await showroomService.createSale({
+      const savedSale = await showroomService.completePendingSale({
         tenantId: tenant.id,
-        customerId: sale.customer?.id || null,
-        items: sale.items,
-        totalAmount: sale.totalAmount,
-        paidAmount: sale.paidAmount,
-        paymentMethodId: sale.paymentMethodId,
-        contractNote: sale.contractNote,
+        saleId: sale.pendingSaleId || null,
+        cashAmount: sale.cashAmount,
+        cashNote: sale.cashNote,
+        advanceAllocations: sale.advanceAllocations,
         showroomConfigId: currentShowroomConfigId,
       });
 
@@ -656,10 +656,56 @@ export function ShowroomSellPage() {
     }
   };
 
+  const handleSalePending = async (sale) => {
+    if (!tenant?.id) return { ok: false, error: 'لا توجد شركة نشطة.' };
+    if (!currentShowroomConfigId) return { ok: false, error: 'اختر نقطة معرض أولاً.' };
+    try {
+      const pendingSale = await showroomService.savePendingSale({
+        tenantId: tenant.id,
+        pendingSaleId: sale.pendingSaleId || null,
+        customerId: sale.customer?.id || null,
+        items: sale.items,
+        totalAmount: sale.totalAmount,
+        showroomConfigId: currentShowroomConfigId,
+      });
+      setSales((current) => [pendingSale, ...current.filter((item) => item.id !== pendingSale.id)]);
+      return { ok: true, sale: pendingSale };
+    } catch (error) {
+      return { ok: false, error: error.message || 'تعذر إنشاء الفاتورة المعلقة.' };
+    }
+  };
+
   const handleSaleDeleted = (saleId) => {
     setSales((current) => current.filter((item) => item.id !== saleId));
     setSelectedSale(null);
   };
+
+  const handlePendingSaleDelete = async (saleId) => {
+    if (!tenant?.id) return { ok: false, error: 'لا توجد شركة نشطة.' };
+    try {
+      await showroomService.deletePendingSale({ tenantId: tenant.id, saleId });
+      setSales((current) => current.filter((sale) => sale.id !== saleId));
+      setSaleToResume(null);
+      setSelectedSale(null);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error.message || 'تعذر حذف الفاتورة المعلقة.' };
+    }
+  };
+
+  const handleInvoiceSelect = useCallback((sale) => {
+    if (sale?.status === 'pending_payment') {
+      setSelectedSale(null);
+      setSaleToResume(sale);
+      return;
+    }
+    setSaleToResume(null);
+    setSelectedSale(sale);
+  }, []);
+
+  const handleResumeHandled = useCallback(() => {
+    setSaleToResume(null);
+  }, []);
 
   const handlePaperworkPromptSaved = useCallback(({ saleId, saleLineId, paperworkRequest }) => {
     if (!saleId || !saleLineId || !paperworkRequest?.id) return;
@@ -925,7 +971,14 @@ export function ShowroomSellPage() {
 
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_390px] xl:gap-7">
           <div className="showroom-panel-in overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_28px_60px_-34px_rgba(15,23,42,0.18)] xl:col-start-1">
-            <ShowroomSalesCard onSaleCreated={handleSaleCreated} showroomConfig={currentShowroomConfig} />
+            <ShowroomSalesCard
+              onSaleCreated={handleSaleCreated}
+              onSalePending={handleSalePending}
+              onPendingSaleDelete={handlePendingSaleDelete}
+              resumeSale={saleToResume}
+              onResumeHandled={handleResumeHandled}
+              showroomConfig={currentShowroomConfig}
+            />
           </div>
           <div className="showroom-panel-in overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_28px_60px_-34px_rgba(15,23,42,0.18)] xl:col-start-2" style={{ animationDelay: '0.04s' }}>
             <ShowroomInvoicesCard
@@ -935,7 +988,7 @@ export function ShowroomSellPage() {
               onReportMonthChange={setInvoiceReportMonth}
               isLoading={isSalesLoading}
               error={salesError}
-              onInvoiceSelect={setSelectedSale}
+              onInvoiceSelect={handleInvoiceSelect}
               onPaperworkRequestSelect={(saleToUpdate) => {
                 if (saleToUpdate && getSalePendingPaperworkLines(saleToUpdate).length) {
                   setDismissedPaperworkPromptSaleId(null);

@@ -14,7 +14,7 @@ export const ROUTES = {
   inventory: '/app/inventory',
   adminPos: '/app/pos',
   invoices: '/app/sales',
-  payments: '/app/accounting',
+  payments: '/apps/accounting',
   contracts: '/app/contracts',
   settings: '/app/settings',
   settingsTeam: '/app/settings/team',

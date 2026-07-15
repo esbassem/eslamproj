@@ -6,6 +6,7 @@ const FILTER_LABELS = {
   all: 'جميع الجهات',
   customer: 'العملاء',
   supplier: 'الموردون',
+  financer: 'جهات الدفع',
 };
 
 export function ContactsHeader({

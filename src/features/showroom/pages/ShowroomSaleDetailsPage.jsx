@@ -12,6 +12,7 @@ function formatMoney(value) {
 const statusConfig = {
   completed: { label: 'مكتملة', color: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
   pending: { label: 'معلقة', color: 'bg-amber-50 border-amber-200 text-amber-800' },
+  pending_payment: { label: 'بانتظار الدفع', color: 'bg-amber-50 border-amber-200 text-amber-800' },
   cancelled: { label: 'ملغاة', color: 'bg-red-50 border-red-200 text-red-800' },
   confirmed: { label: 'مؤكدة', color: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
   draft: { label: 'مسودة', color: 'bg-slate-50 border-slate-200 text-slate-600' },
