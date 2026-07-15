@@ -35,6 +35,8 @@ function normalizePartner(record) {
     jobAddress: record?.job_address ?? '',
     notes: record?.notes ?? '',
     companyType: record?.company_type ?? '',
+    displayConfig: record?.display_config ?? null,
+    display_config: record?.display_config ?? null,
     isCompany,
     customerRank,
     supplierRank,
@@ -58,6 +60,10 @@ function applyTypeFilter(query, filterType) {
 
   if (filterType === 'supplier') {
     return query.gt('supplier_rank', 0);
+  }
+
+  if (filterType === 'financer') {
+    return query.gt('financer_rank', 0).eq('is_company', true);
   }
 
   return query;
@@ -124,6 +130,10 @@ function buildPartnerPayload(data) {
 
   if (Object.prototype.hasOwnProperty.call(data, 'companyType') || Object.prototype.hasOwnProperty.call(data, 'company_type')) {
     payload.company_type = (data.companyType ?? data.company_type)?.trim() || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'displayConfig') || Object.prototype.hasOwnProperty.call(data, 'display_config')) {
+    payload.display_config = data.displayConfig ?? data.display_config ?? null;
   }
 
   if (Object.prototype.hasOwnProperty.call(data, 'isCompany') || Object.prototype.hasOwnProperty.call(data, 'is_company')) {
@@ -365,6 +375,29 @@ export const partnersService = {
       ...record,
       parent_name: parentNamesMap.get(record.parent_id) || '',
     }));
+  },
+
+  async getFinancerPartners({ tenantId } = {}) {
+    const client = requireSupabase();
+    let query = client
+      .from('partners')
+      .select('*')
+      .gt('financer_rank', 0)
+      .eq('is_company', true)
+      .eq('active', true)
+      .order('name', { ascending: true });
+
+    if (tenantId) {
+      query = query.eq('tenant_id', tenantId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message || 'تعذر تحميل شركات التمويل.');
+    }
+
+    return (data || []).map((record) => normalizePartner(record));
   },
 
   async getChildContacts({ tenantId, parentIds = [], status = 'active' } = {}) {

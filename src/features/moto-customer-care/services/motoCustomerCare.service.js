@@ -1388,6 +1388,7 @@ export const motoCustomerCareService = {
     const [
       saleLinesResult,
       requestsResult,
+      vaultDocumentsResult,
     ] = await Promise.all([
       client
         .from('showroom_sale_lines')
@@ -1398,6 +1399,11 @@ export const motoCustomerCareService = {
         .select('id, sale_line_id, status, current_stage, notes')
         .eq('tenant_id', tenantId)
         .not('sale_line_id', 'is', null),
+      client
+        .from('paperwork_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('status', 'in_custody'),
     ]);
 
     if (saleLinesResult.error) {
@@ -1408,10 +1414,13 @@ export const motoCustomerCareService = {
       throw requestsResult.error;
     }
 
+    if (vaultDocumentsResult.error) {
+      throw vaultDocumentsResult.error;
+    }
+
     const requests = requestsResult.data || [];
     const requestedSaleLineIds = new Set();
     const sentPendingReceiptSaleLineIds = new Set();
-    const vaultSaleLineIds = new Set();
 
     requests.forEach((request) => {
       if (!request?.sale_line_id) {
@@ -1425,15 +1434,11 @@ export const motoCustomerCareService = {
         return;
       }
 
-      const hasVaultNote = String(request.notes || '').includes('الورق موجود بالفعل في الخزنة');
-      if (request.current_stage === 'received_from_processor' || hasVaultNote) {
-        vaultSaleLineIds.add(request.sale_line_id);
-      }
     });
 
     return {
       missing: Math.max((saleLinesResult.count || 0) - requestedSaleLineIds.size, 0),
-      vault: vaultSaleLineIds.size,
+      vault: vaultDocumentsResult.count || 0,
       sentPendingReceipt: sentPendingReceiptSaleLineIds.size,
     };
   },
@@ -2717,6 +2722,63 @@ export const motoCustomerCareService = {
     });
 
     return { succeeded, failed, imageFailed };
+  },
+
+  async notifyPaperworkCustomer({ tenantId, requestId } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) {
+      throw new Error('تعذر تحديد طلب الأوراق.');
+    }
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('notify_paperwork_customer', {
+      p_tenant_id: tenantId,
+      p_request_id: requestId,
+    });
+
+    if (error) throw error;
+
+    return {
+      requestId: data?.request_id || requestId,
+      oldStage: data?.old_stage || 'received_from_processor',
+      currentStage: data?.current_stage || 'client_notified',
+      updatedAt: data?.updated_at || new Date().toISOString(),
+    };
+  },
+
+  async deliverPaperworkToCustomer({ tenantId, requestId, receiptImage } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) throw new Error('تعذر تحديد طلب الأوراق.');
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('deliver_paperwork_to_customer', {
+      p_tenant_id: tenantId,
+      p_request_id: requestId,
+    });
+    if (error) throw error;
+
+    let imageUploadError = '';
+    if (receiptImage && data?.document_id) {
+      try {
+        await motoCustomerCareService.savePaperworkDocumentAttachment({
+          tenantId,
+          documentId: data.document_id,
+          documentType: 'delivery_receipt_photo',
+          file: receiptImage,
+        });
+      } catch (nextError) {
+        imageUploadError = nextError?.message || 'تم التسليم لكن تعذر رفع صورة الاستلام.';
+      }
+    }
+
+    return {
+      requestId: data?.request_id || requestId,
+      documentId: data?.document_id || null,
+      currentStage: data?.current_stage || 'delivered',
+      status: data?.status || 'done',
+      updatedAt: data?.updated_at || new Date().toISOString(),
+      imageUploadError,
+    };
   },
 
   async saveTrackingUnitLicense({ tenantId, trackingUnitId, license = {} } = {}) {

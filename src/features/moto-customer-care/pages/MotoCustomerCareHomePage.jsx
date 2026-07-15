@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, CircleCheck, FileText, PhoneCall } from 'lucide-react';
+import { Building2, CircleCheck, FileText, PhoneCall, ShieldCheck } from 'lucide-react';
 import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
+import { PendingCustomerNotificationDrawer } from '@/features/moto-customer-care/components/PendingCustomerNotificationDrawer';
+import { CustomerNotificationDialog } from '@/features/moto-customer-care/components/CustomerNotificationDialog';
+import { VaultPaperworkDrawer } from '@/features/moto-customer-care/components/VaultPaperworkDrawer';
 import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -82,7 +85,14 @@ function getElapsedStageMeta(value) {
   return { label, className: 'bg-sky-50 text-sky-700 ring-sky-200' };
 }
 
-function CustomerCareIntroPanel({ pendingProcessorCount = 0, onOpenPendingProcessorPaperwork }) {
+function CustomerCareIntroPanel({
+  pendingProcessorCount = 0,
+  vaultPaperworkCount = 0,
+  pendingNotificationCount = 0,
+  onOpenPendingProcessorPaperwork,
+  onOpenVaultPaperwork,
+  onOpenPendingNotifications,
+}) {
   return (
     <div className="customer-care-fade-up relative z-[45] h-auto min-h-0 overflow-visible bg-[radial-gradient(circle_at_45%_22%,rgba(14,165,233,0.14)_0%,rgba(30,64,175,0.08)_34%,transparent_58%),linear-gradient(145deg,#0b253a_0%,#081d31_52%,#05111f_100%)] px-0 pb-8 pt-16 text-right text-white sm:px-0 sm:pt-20 lg:h-full lg:overflow-hidden lg:bg-none lg:px-8 lg:pb-0 lg:pt-14 xl:px-10">
       <div className="pointer-events-none absolute inset-0 hidden sm:block">
@@ -112,6 +122,36 @@ function CustomerCareIntroPanel({ pendingProcessorCount = 0, onOpenPendingProces
               <span className="block text-xs font-black leading-4 text-white">الأوراق المرسلة للجهات</span>
               <span className="mt-0.5 block text-[10px] font-bold leading-4 text-sky-100/75">
                 {pendingProcessorCount.toLocaleString('ar-EG')} بانتظار الاستلام
+              </span>
+            </span>
+          </button>
+          {pendingNotificationCount > 0 ? (
+            <button
+              type="button"
+              onClick={onOpenPendingNotifications}
+              className="inline-flex min-h-12 items-center gap-3 rounded-xl border border-white/20 bg-white/[0.13] px-4 py-2.5 text-right text-white shadow-[0_14px_30px_rgba(3,7,18,0.16)] backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.20] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25"
+              aria-label={`بانتظار الإبلاغ: ${pendingNotificationCount} عميل`}
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white shadow-sm"><PhoneCall className="h-4.5 w-4.5" /></span>
+              <span className="min-w-0">
+                <span className="block text-xs font-black leading-4 text-white">بانتظار الإبلاغ</span>
+                <span className="mt-0.5 block text-[10px] font-bold leading-4 text-sky-100/75">{pendingNotificationCount.toLocaleString('ar-EG')} عميل</span>
+              </span>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onOpenVaultPaperwork}
+            className="inline-flex min-h-12 items-center gap-3 rounded-xl border border-white/20 bg-white/[0.13] px-4 py-2.5 text-right text-white shadow-[0_14px_30px_rgba(3,7,18,0.16)] backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.20] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25"
+            aria-label={`الأوراق الموجودة: ${vaultPaperworkCount} ورقة`}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white shadow-sm">
+              <ShieldCheck className="h-4.5 w-4.5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-xs font-black leading-4 text-white">الأوراق الموجودة</span>
+              <span className="mt-0.5 block text-[10px] font-bold leading-4 text-sky-100/75">
+                {vaultPaperworkCount.toLocaleString('ar-EG')} في الخزنة
               </span>
             </span>
           </button>
@@ -148,17 +188,12 @@ function PaperworkCurrentStageCard({ currentStation }) {
           </span>
           <span className="mt-0.5 flex max-w-full items-center gap-1.5">
             <span className="min-w-0 truncate text-sm font-black leading-5 text-slate-950">
-              {currentStation.station.label}
+              {currentStation.stageLabel || currentStation.station.label}
             </span>
-            {currentStation.elapsed ? (
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black leading-4 ring-1 ${currentStation.elapsed.className}`}>
-                {currentStation.elapsed.label}
-              </span>
-            ) : null}
           </span>
         </div>
-        <span className="flex-shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
-          مرحلة {currentStation.stepNumber.toLocaleString('ar-EG')} من {currentStation.totalSteps.toLocaleString('ar-EG')}
+        <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black leading-4 ring-1 ${currentStation.elapsed?.className || 'bg-slate-100 text-slate-500 ring-slate-200'}`}>
+          {currentStation.elapsed?.label || 'المدة غير محددة'}
         </span>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200" dir="rtl">
@@ -312,14 +347,21 @@ function PaperworkRequestsCard({ requests, isLoading, error, onOpen }) {
 export function MotoCustomerCareHomePage() {
   const { tenant_user: tenantUser } = useAuth();
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [notificationRequest, setNotificationRequest] = useState(null);
   const [pendingProcessorPaperworkOpen, setPendingProcessorPaperworkOpen] = useState(false);
+  const [vaultPaperworkOpen, setVaultPaperworkOpen] = useState(false);
+  const [pendingNotificationsOpen, setPendingNotificationsOpen] = useState(false);
   const {
     tenantId,
     paperworkRequests,
+    paperworkDocuments,
+    paperworkReports,
+    sectionStatus,
     isLoading,
     error,
     refresh,
     updatePaperworkRequestLocally,
+    ensurePaperworkLoaded,
   } = useMotoCustomerCareSales({ limit: 20, enabled: true, activeSection: 'requests' });
   const recentRequests = useMemo(() => (
     [...paperworkRequests]
@@ -334,13 +376,16 @@ export function MotoCustomerCareHomePage() {
       ['sent_to_processor', 'processor_ready'].includes(request.currentStage)
     )).length
   ), [paperworkRequests]);
+  const pendingNotificationCount = useMemo(() => (
+    paperworkRequests.filter((request) => request.currentStage === 'received_from_processor').length
+  ), [paperworkRequests]);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
       return undefined;
     }
 
-    const hasOpenRequestDetails = Boolean(selectedRequest) || pendingProcessorPaperworkOpen;
+    const hasOpenRequestDetails = Boolean(selectedRequest) || Boolean(notificationRequest) || pendingProcessorPaperworkOpen || vaultPaperworkOpen || pendingNotificationsOpen;
     document.documentElement.classList.toggle('customer-care-section-open', hasOpenRequestDetails);
     document.body.classList.toggle('customer-care-section-open', hasOpenRequestDetails);
 
@@ -348,7 +393,7 @@ export function MotoCustomerCareHomePage() {
       document.documentElement.classList.remove('customer-care-section-open');
       document.body.classList.remove('customer-care-section-open');
     };
-  }, [selectedRequest]);
+  }, [notificationRequest, pendingNotificationsOpen, pendingProcessorPaperworkOpen, selectedRequest, vaultPaperworkOpen]);
 
   return (
     <section className="relative flex min-h-0 flex-1 flex-col items-stretch overflow-y-auto overflow-x-hidden text-white lg:overflow-hidden" dir="rtl">
@@ -371,20 +416,31 @@ export function MotoCustomerCareHomePage() {
       <div className="relative z-10 grid min-h-full w-full max-w-none flex-none gap-0 overflow-visible lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(18rem,0.72fr)_minmax(34rem,1.28fr)] lg:items-stretch lg:overflow-hidden lg:bg-[radial-gradient(circle_at_28%_18%,rgba(14,165,233,0.14)_0%,rgba(30,64,175,0.08)_32%,transparent_58%),linear-gradient(145deg,#0b253a_0%,#081d31_52%,#05111f_100%)]">
         <CustomerCareIntroPanel
           pendingProcessorCount={pendingProcessorRequestsCount}
+          vaultPaperworkCount={paperworkReports.vault}
+          pendingNotificationCount={pendingNotificationCount}
           onOpenPendingProcessorPaperwork={() => setPendingProcessorPaperworkOpen(true)}
+          onOpenVaultPaperwork={() => {
+            setVaultPaperworkOpen(true);
+            ensurePaperworkLoaded();
+          }}
+          onOpenPendingNotifications={() => setPendingNotificationsOpen(true)}
         />
         <PaperworkRequestsCard
           requests={recentRequests}
           isLoading={isLoading}
           error={error}
-          onOpen={setSelectedRequest}
+          onOpen={(request) => {
+            setSelectedRequest(request);
+          }}
         />
       </div>
       <PaperworkRequestDetailsDrawer
         request={selectedRequest}
         open={Boolean(selectedRequest)}
         onOpenChange={(open) => {
-          if (!open) setSelectedRequest(null);
+          if (!open) {
+            setSelectedRequest(null);
+          }
         }}
         tenantId={tenantId}
         canManageProcessor={tenantUser?.role === 'owner'}
@@ -420,6 +476,25 @@ export function MotoCustomerCareHomePage() {
           setSelectedRequest((current) => (
             current?.id === selectedRequest.id ? { ...current, ...patch } : current
           ));
+        }}
+        onCustomerNotified={(result) => {
+          updatePaperworkRequestLocally(result.requestId, {
+            currentStage: result.currentStage,
+            stageEnteredAt: result.updatedAt,
+            stage: { code: result.currentStage, name: 'تم إبلاغ العميل' },
+            updatedAt: result.updatedAt,
+          });
+          refresh();
+        }}
+        onDelivered={(result) => {
+          updatePaperworkRequestLocally(result.requestId, {
+            currentStage: result.currentStage,
+            status: result.status,
+            stageEnteredAt: result.updatedAt,
+            stage: { code: result.currentStage, name: 'تم التسليم للعميل' },
+            updatedAt: result.updatedAt,
+          });
+          refresh();
         }}
         onSaved={(processor) => {
           if (!selectedRequest?.id || !processor) return;
@@ -464,6 +539,37 @@ export function MotoCustomerCareHomePage() {
             });
           });
           refresh();
+        }}
+      />
+      <VaultPaperworkDrawer
+        open={vaultPaperworkOpen}
+        onOpenChange={setVaultPaperworkOpen}
+        documents={paperworkDocuments}
+        isLoading={sectionStatus.papers === 'loading'}
+      />
+      <PendingCustomerNotificationDrawer
+        open={pendingNotificationsOpen}
+        onOpenChange={setPendingNotificationsOpen}
+        requests={paperworkRequests}
+        onOpenRequest={(request) => {
+          setNotificationRequest(request);
+        }}
+      />
+      <CustomerNotificationDialog
+        request={notificationRequest}
+        open={Boolean(notificationRequest)}
+        tenantId={tenantId}
+        onNotified={(result) => {
+          updatePaperworkRequestLocally(result.requestId, {
+            currentStage: result.currentStage,
+            stageEnteredAt: result.updatedAt,
+            stage: { code: result.currentStage, name: 'تم إبلاغ العميل' },
+            updatedAt: result.updatedAt,
+          });
+          refresh();
+        }}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setNotificationRequest(null);
         }}
       />
     </section>

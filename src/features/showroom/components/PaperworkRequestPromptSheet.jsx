@@ -83,6 +83,8 @@ function PaperworkOwnerSection({
   onOwnerNameChange,
   guardianshipMode,
   onGuardianshipModeChange,
+  saleBlockNotes,
+  onSaleBlockNotesChange,
   identityPreviewUrl,
   onIdentitySelectRequest,
   onIdentityFileRemove,
@@ -210,6 +212,12 @@ function PaperworkOwnerSection({
                         </button>
                       ))}
                     </div>
+                    <Input
+                      value={saleBlockNotes}
+                      onChange={(event) => onSaleBlockNotesChange(event.target.value)}
+                      placeholder="ملاحظات حظر البيع (اختياري)"
+                      className="h-11 rounded-xl border-slate-200 bg-white text-sm font-bold text-slate-900 placeholder:text-slate-400 focus-visible:ring-blue-100"
+                    />
                   </div>
                 </div>
               </div>
@@ -669,6 +677,7 @@ export function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved,
   const [paperworkOwnerMode, setPaperworkOwnerMode] = useState('custom');
   const [paperworkOwnerName, setPaperworkOwnerName] = useState('');
   const [paperworkOwnerGuardianshipMode, setPaperworkOwnerGuardianshipMode] = useState('');
+  const [paperworkSaleBlockNotes, setPaperworkSaleBlockNotes] = useState('');
   const [paperworkOwnerIdentityFile, setPaperworkOwnerIdentityFile] = useState(null);
   const [paperworkOwnerIdentitySource, setPaperworkOwnerIdentitySource] = useState(null);
   const [paperworkOwnerIdentityCloudUrl, setPaperworkOwnerIdentityCloudUrl] = useState('');
@@ -695,6 +704,7 @@ export function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved,
     setPaperworkOwnerMode('custom');
     setPaperworkOwnerName('');
     setPaperworkOwnerGuardianshipMode('');
+    setPaperworkSaleBlockNotes('');
     setPaperworkOwnerIdentityFile(null);
     setPaperworkOwnerIdentitySource(null);
     setPaperworkOwnerIdentityCloudUrl('');
@@ -930,7 +940,10 @@ export function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved,
         ownerStatus: paperworkOwnerMode === 'later' ? 'later' : 'confirmed',
         ownerName: paperworkOwnerMode === 'later' ? '' : paperworkOwnerName,
         ownerNationalId: '',
-        ownerNote: paperworkOwnerGuardianshipMode ? `حالة الوصاية: ${paperworkOwnerGuardianshipMode}` : '',
+        ownerNote: [
+          paperworkOwnerGuardianshipMode ? `حالة الوصاية: ${paperworkOwnerGuardianshipMode}` : '',
+          paperworkSaleBlockNotes.trim() ? `ملاحظات حظر البيع: ${paperworkSaleBlockNotes.trim()}` : '',
+        ].filter(Boolean).join('\n'),
         identityFile: paperworkOwnerIdentityFile,
         identitySource: paperworkOwnerIdentitySource,
         trackingPhotosIgnored: false,
@@ -1139,6 +1152,8 @@ export function PaperworkRequestPromptSheet({ open, sale, onOpenChange, onSaved,
                         onOwnerNameChange={setPaperworkOwnerName}
                         guardianshipMode={paperworkOwnerGuardianshipMode}
                         onGuardianshipModeChange={setPaperworkOwnerGuardianshipMode}
+                        saleBlockNotes={paperworkSaleBlockNotes}
+                        onSaleBlockNotesChange={setPaperworkSaleBlockNotes}
                         identityPreviewUrl={paperworkOwnerIdentityPreviewUrl}
                         onIdentitySelectRequest={() => setIsIdentityPickerOpen(true)}
                         onIdentityFileRemove={removeIdentityPhoto}

@@ -21,6 +21,7 @@ import { QuickStockUnitSheet } from '@/features/dashboard/components/QuickStockU
 import { inventoryService } from '@/features/inventory/api/inventory.api';
 import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
 import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
+import { VaultPaperworkDrawer } from '@/features/moto-customer-care/components/VaultPaperworkDrawer';
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
 
@@ -3467,6 +3468,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const [paperworkRequestItem, setPaperworkRequestItem] = useState(null);
   const [paperworkRequestDetails, setPaperworkRequestDetails] = useState(null);
   const [pendingProcessorPaperworkOpen, setPendingProcessorPaperworkOpen] = useState(false);
+  const [vaultPaperworkOpen, setVaultPaperworkOpen] = useState(false);
   const [paperworkDocumentSheetOpen, setPaperworkDocumentSheetOpen] = useState(false);
   const [paperworkOutMoveDocument, setPaperworkOutMoveDocument] = useState(null);
   const prefersReducedMotion = useReducedMotion();
@@ -3487,6 +3489,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     refresh,
     updatePaperworkRequestLocally,
     ensurePaperworkLoaded,
+    sectionStatus,
   } = useMotoCustomerCareSales({ limit: salesLimit, enabled: true, activeSection });
   const displayedSales = useMemo(() => {
     if (activeSection !== 'sales') {
@@ -3521,6 +3524,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       || paperworkRequestItem
       || paperworkRequestDetails
       || pendingProcessorPaperworkOpen
+      || vaultPaperworkOpen
       || paperworkDocumentSheetOpen
       || paperworkOutMoveDocument,
   );
@@ -3566,6 +3570,12 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const handleReportFilterChange = (filterId) => {
     if (filterId === 'sent_pending_receipt') {
       setPendingProcessorPaperworkOpen(true);
+      ensurePaperworkLoaded();
+      return;
+    }
+
+    if (filterId === 'vault') {
+      setVaultPaperworkOpen(true);
       ensurePaperworkLoaded();
       return;
     }
@@ -3987,6 +3997,12 @@ export function MotoCustomerCareSalesFollowUpListPage() {
           });
           refresh();
         }}
+      />
+      <VaultPaperworkDrawer
+        open={vaultPaperworkOpen}
+        onOpenChange={setVaultPaperworkOpen}
+        documents={paperworkDocuments}
+        isLoading={sectionStatus?.papers === 'loading'}
       />
 
       <PaperworkDocumentSheet

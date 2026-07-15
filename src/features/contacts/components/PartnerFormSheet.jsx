@@ -27,8 +27,10 @@ const EMPTY_FORM = {
   notes: '',
   isCustomer: true,
   isSupplier: false,
+  isFinancer: false,
   isCompany: false,
   companyType: '',
+  displayConfigText: '',
   receivableAccount: '',
   payableAccount: '',
 };
@@ -51,11 +53,76 @@ function normalizeInitialValues(initialValues) {
     notes: initialValues.notes ?? '',
     isCustomer: initialValues.isCustomer ?? (Number(initialValues.customerRank ?? 0) > 0),
     isSupplier: initialValues.isSupplier ?? (Number(initialValues.supplierRank ?? 0) > 0),
+    isFinancer: initialValues.isFinancer ?? (Number(initialValues.financerRank ?? initialValues.financer_rank ?? 0) > 0),
     isCompany: initialValues.isCompany ?? initialValues.is_company ?? false,
     companyType: initialValues.companyType ?? initialValues.company_type ?? '',
+    displayConfigText: formatDisplayConfigText(initialValues.displayConfig ?? initialValues.display_config),
     receivableAccount: initialValues.receivableAccount ?? '',
     payableAccount: initialValues.payableAccount ?? '',
   };
+}
+
+function formatDisplayConfigText(value) {
+  if (!value || typeof value !== 'object') return '';
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+function parseDisplayConfigText(value) {
+  const trimmedValue = String(value || '').trim();
+
+  if (!trimmedValue) {
+    return { ok: true, value: null };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmedValue);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, value: null };
+    }
+
+    return { ok: true, value: parsed };
+  } catch {
+    return { ok: false, value: null };
+  }
+}
+
+function getDisplayAvatarConfig({ name, displayConfig }) {
+  const avatar = displayConfig?.avatar && typeof displayConfig.avatar === 'object' ? displayConfig.avatar : {};
+  const text = String(avatar.text || name || '-').trim().slice(0, 1) || '-';
+  const shape = avatar.shape === 'rounded' ? 'rounded' : 'circle';
+
+  return {
+    text,
+    bg: typeof avatar.bg === 'string' && avatar.bg.trim() ? avatar.bg : '#0F172A',
+    color: typeof avatar.color === 'string' && avatar.color.trim() ? avatar.color : '#FFFFFF',
+    shape,
+  };
+}
+
+function DisplayConfigPreview({ name, displayConfig }) {
+  const avatar = getDisplayAvatarConfig({ name, displayConfig });
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+      <div className="flex items-center gap-3">
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center text-base font-black ${avatar.shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`}
+          style={{ backgroundColor: avatar.bg, color: avatar.color }}
+        >
+          {avatar.text}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-slate-900">{name?.trim() || 'اسم الجهة'}</p>
+          <p className="mt-0.5 text-xs font-bold text-slate-500">معاينة شكل العرض</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function validateImageFile(file) {
@@ -208,10 +275,21 @@ export function PartnerFormSheet({
   const isEditMode = Boolean(initialValues?.id);
   const isChildContactMode = childContactMode || Boolean(parentPartner);
   const shouldShowFooter = (!submitInHeader && !inlineSubmit) || !hideFooterNote || !hideCancelButton;
+  const displayConfigParseResult = parseDisplayConfigText(form.displayConfigText);
+  const hasDisplayConfigError = Boolean(form.displayConfigText.trim()) && !displayConfigParseResult.ok;
 
   const handleChange = (field) => (event) => {
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
     setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleFinancerChange = (event) => {
+    const checked = event.target.checked;
+    setForm((current) => ({
+      ...current,
+      isFinancer: checked,
+      isCompany: checked ? true : current.isCompany,
+    }));
   };
 
   const handleFileChange = (field) => (event) => {
@@ -237,10 +315,16 @@ export function PartnerFormSheet({
       return;
     }
 
+    if (hasDisplayConfigError) {
+      setError('كود شكل العرض غير صحيح');
+      return;
+    }
+
     const isCustomer = isChildContactMode ? false : hideTypeFields ? true : form.isCustomer;
     const isSupplier = isChildContactMode ? false : hideTypeFields ? false : form.isSupplier;
     const parentId = parentPartner?.id || form.parentId || null;
-    const isCompany = isChildContactMode ? false : form.isCompany;
+    const isFinancer = !isChildContactMode && form.isFinancer;
+    const isCompany = isChildContactMode ? false : isFinancer ? true : form.isCompany;
     const contactType = isChildContactMode ? 'contact' : isCompany ? 'company' : parentId ? 'contact' : 'person';
 
     const result = await onSubmit({
@@ -254,6 +338,8 @@ export function PartnerFormSheet({
       isSupplier,
       customerRank: isCustomer ? 1 : 0,
       supplierRank: isSupplier ? 1 : 0,
+      financerRank: isFinancer ? 1 : 0,
+      displayConfig: displayConfigParseResult.value,
     });
 
     if (!result?.ok) {
@@ -333,6 +419,10 @@ export function PartnerFormSheet({
                     <input type="checkbox" checked={form.isCompany} onChange={handleChange('isCompany')} />
                     شركة / جهة اعتبارية
                   </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 md:col-span-2">
+                    <input type="checkbox" checked={form.isFinancer} onChange={handleFinancerChange} />
+                    شركة تمويل / تقسيط
+                  </label>
                 </>
               )}
 
@@ -409,6 +499,30 @@ export function PartnerFormSheet({
                 </div>
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="partner-display-config">كود شكل العرض</Label>
+              <textarea
+                id="partner-display-config"
+                value={form.displayConfigText}
+                onChange={handleChange('displayConfigText')}
+                rows={4}
+                dir="ltr"
+                className={`w-full rounded-lg border bg-white px-3 py-2 font-mono text-sm outline-none transition focus:ring-2 ${
+                  hasDisplayConfigError
+                    ? 'border-red-300 text-red-700 focus:border-red-400 focus:ring-red-100'
+                    : 'border-slate-200 text-slate-900 focus:border-slate-300 focus:ring-slate-100'
+                }`}
+                placeholder='{"avatar":{"text":"أ","bg":"#06B6D4","color":"#FFFFFF","shape":"circle"}}'
+              />
+              {hasDisplayConfigError ? (
+                <p className="text-xs font-bold text-red-600">كود شكل العرض غير صحيح</p>
+              ) : null}
+              <DisplayConfigPreview
+                name={form.name}
+                displayConfig={displayConfigParseResult.ok ? displayConfigParseResult.value : null}
+              />
+            </div>
 
             {!hideNotesField ? (
               <div className="space-y-2">
