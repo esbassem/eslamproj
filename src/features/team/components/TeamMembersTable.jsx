@@ -17,16 +17,23 @@ function TeamMemberStatusBadge({ isActive, t }) {
   );
 }
 
-export function TeamMembersTable({ members }) {
+export function TeamMembersTable({
+  members,
+  canCreateFinancialPartner = false,
+  processingMemberId = null,
+  onCreateFinancialPartner,
+  onViewFinancialPartner,
+}) {
   const { t } = useI18n();
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border">
-      <div className="hidden grid-cols-[1.4fr_1.2fr_0.9fr_0.8fr_52px] items-center gap-4 border-b border-border bg-slate-50/80 px-5 py-4 text-sm font-semibold text-slate-600 md:grid">
+      <div className="hidden grid-cols-[1.3fr_1.1fr_0.8fr_0.8fr_1fr_52px] items-center gap-4 border-b border-border bg-slate-50/80 px-5 py-4 text-sm font-semibold text-slate-600 md:grid">
         <div>{t('team.table.name')}</div>
         <div>{t('team.table.email')}</div>
         <div>{t('team.table.role')}</div>
         <div>{t('team.table.status')}</div>
+        <div>{t('team.table.financialProfile')}</div>
         <div className="text-left">{t('team.table.actions')}</div>
       </div>
 
@@ -34,7 +41,7 @@ export function TeamMembersTable({ members }) {
         {members.map((member) => (
           <div
             key={member.id}
-            className="grid gap-3 px-5 py-4 md:grid-cols-[1.4fr_1.2fr_0.9fr_0.8fr_52px] md:items-center md:gap-4"
+            className="grid gap-3 px-5 py-4 md:grid-cols-[1.3fr_1.1fr_0.8fr_0.8fr_1fr_52px] md:items-center md:gap-4"
           >
             <div className="space-y-1">
               <div className="font-semibold text-slate-950">{member.fullName}</div>
@@ -47,6 +54,11 @@ export function TeamMembersTable({ members }) {
             <div>
               <TeamMemberStatusBadge isActive={member.isActive} t={t} />
             </div>
+            <div>
+              <Badge variant={member.partnerId ? 'success' : 'warning'}>
+                {member.partnerId ? t('team.financialProfile.linked') : t('team.financialProfile.unlinked')}
+              </Badge>
+            </div>
             <div className="flex justify-end md:justify-start">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -55,7 +67,20 @@ export function TeamMembersTable({ members }) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  <DropdownMenuItem disabled>{t('team.actions.comingSoon')}</DropdownMenuItem>
+                  {member.partnerId ? (
+                    <DropdownMenuItem onSelect={() => onViewFinancialPartner?.(member)}>
+                      {t('team.actions.viewFinancialProfile')}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      disabled={!canCreateFinancialPartner || processingMemberId === member.id}
+                      onSelect={() => onCreateFinancialPartner?.(member)}
+                    >
+                      {processingMemberId === member.id
+                        ? t('team.actions.creatingFinancialProfile')
+                        : t('team.actions.createFinancialProfile')}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

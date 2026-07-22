@@ -10,6 +10,7 @@ import { productAttributeService, productCategoryAttributeService, productCatego
 import { ProductFormSheet } from '@/features/products/components/ProductFormSheet';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { showroomService } from '@/features/showroom/services/showroom.service';
+import { EmployeeCashDestinationNotice, useEmployeeCashDestination } from '@/features/showroom/components/EmployeeCashDestinationNotice';
 
 const NEW_CUSTOMER_INITIAL_VALUES = {
   isCustomer: true,
@@ -211,6 +212,11 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
   const [isCashPaymentSheetOpen, setIsCashPaymentSheetOpen] = useState(false);
   const [cashDraftAmount, setCashDraftAmount] = useState('');
   const [cashDraftNote, setCashDraftNote] = useState('');
+  const {
+    destination: cashDestination,
+    isLoading: isCashDestinationLoading,
+    error: cashDestinationError,
+  } = useEmployeeCashDestination(isCashPaymentSheetOpen);
 
   const loadCustomers = useCallback(async () => {
     if (!tenant?.id) {
@@ -421,6 +427,10 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
   const hasPaidAmount = paidAmount !== '' || advanceAmount > 0;
   const remainingAmount = Math.max(total - paymentAmount, 0);
   const hasNoRemainingAmount = hasPaidAmount && remainingAmount <= 0;
+  const hasIncompleteAdvanceNotes = advanceBalances.some((balance) => (
+    (Number(advanceAllocations[balance.paymentEntityId]) || 0) > 0
+    && !String(advancePaymentNotes[balance.paymentEntityId] || '').trim()
+  ));
   const customer = selectedCustomer;
   const pendingAttributeFields = useMemo(() => getProductAttributeFields(pendingProduct), [pendingProduct]);
 
@@ -974,6 +984,16 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
       return;
     }
 
+    if (cash > 0 && !paymentNotes.trim()) {
+      setMessage('اكتب ملاحظة للدفعة النقدية قبل إتمام البيع.');
+      return;
+    }
+
+    if (allocations.some((allocation) => !allocation.note)) {
+      setMessage('اكتب ملاحظة لكل دفعة مستخدمة من رصيد العميل.');
+      return;
+    }
+
     setIsCompleting(true);
 
     try {
@@ -1354,9 +1374,14 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
                 <span className="mt-2 block text-xs font-bold text-slate-400">الحد الأقصى {formatMoney(Math.max(total - advanceAmount, 0))}</span>
               </label>
               <label className="block">
-                <span className="mb-2 block text-xs font-black text-slate-600">ملاحظة</span>
-                <Input value={cashDraftNote} onChange={(event) => setCashDraftNote(event.target.value)} placeholder="مثال: دفعة نقدية من العميل" className="h-12 rounded-xl border-slate-300 text-sm font-bold" />
+                <span className="mb-2 block text-xs font-black text-slate-600">ملاحظة الدفع <span className="text-red-600">*</span></span>
+                <Input required value={cashDraftNote} onChange={(event) => setCashDraftNote(event.target.value)} placeholder="مثال: دفعة نقدية من العميل" className="h-12 rounded-xl border-slate-300 text-sm font-bold" />
               </label>
+              <EmployeeCashDestinationNotice
+                destination={cashDestination}
+                isLoading={isCashDestinationLoading}
+                error={cashDestinationError}
+              />
             </div>
           </SheetBody>
           <div className="mt-auto flex gap-3 border-t border-slate-200 px-5 py-4">
@@ -1364,7 +1389,7 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
               setPaidAmount(cashDraftAmount);
               setPaymentNotes(cashDraftNote.trim());
               setIsCashPaymentSheetOpen(false);
-            }} className="h-11 flex-1 rounded-xl bg-slate-950 font-black text-white hover:bg-slate-800">تأكيد الدفع</Button>
+            }} disabled={(Number(cashDraftAmount) || 0) <= 0 || !cashDraftNote.trim() || isCashDestinationLoading || Boolean(cashDestinationError) || !cashDestination?.accountId} className="h-11 flex-1 rounded-xl bg-slate-950 font-black text-white hover:bg-slate-800">تأكيد الدفع</Button>
             {Number(paidAmount) > 0 ? <Button type="button" variant="secondary" onClick={() => {
               setPaidAmount('');
               setPaymentNotes('');
@@ -1410,8 +1435,8 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
                     }} className="h-12 rounded-xl border-[#e6c8cf] text-lg font-black text-[#4d1f28]" />
                   </label>
                   <label className="mt-3 block text-xs font-black text-[#668097]">
-                    <span className="mb-2 block">ملاحظة</span>
-                    <Input value={advancePaymentNotes[balance.paymentEntityId] || ''} onChange={(event) => setAdvancePaymentNotes((current) => ({ ...current, [balance.paymentEntityId]: event.target.value }))} placeholder="ملاحظة الدفعة" className="h-11 rounded-xl border-[#e6c8cf] text-sm font-bold text-[#4d1f28]" />
+                    <span className="mb-2 block">ملاحظة الدفع <span className="text-red-600">*</span></span>
+                    <Input required={Number(allocated) > 0} value={advancePaymentNotes[balance.paymentEntityId] || ''} onChange={(event) => setAdvancePaymentNotes((current) => ({ ...current, [balance.paymentEntityId]: event.target.value }))} placeholder="ملاحظة الدفعة" className="h-11 rounded-xl border-[#e6c8cf] text-sm font-bold text-[#4d1f28]" />
                   </label>
                 </div>
               );
@@ -1421,7 +1446,7 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
                 <span className="text-xs font-bold text-slate-300">إجمالي المستخدم</span>
                 <span className="text-lg font-black">{formatMoney(advanceAmount)}</span>
               </div>
-              <Button type="button" onClick={() => setIsAdvanceBalancesSheetOpen(false)} className="mt-3 h-11 w-full rounded-xl bg-white font-black text-slate-950 hover:bg-slate-100">تأكيد</Button>
+              <Button type="button" disabled={hasIncompleteAdvanceNotes} onClick={() => setIsAdvanceBalancesSheetOpen(false)} className="mt-3 h-11 w-full rounded-xl bg-white font-black text-slate-950 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50">تأكيد</Button>
             </div>
           </SheetBody>
         </SheetContent>

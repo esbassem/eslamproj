@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertCircle, Banknote, CheckCircle2, Package, Printer, Trash2, User } from 'lucide-react';
 import { ShowroomContractPreview } from '@/features/showroom/components/ShowroomContractPreview';
-import { useShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
+import { useOptionalShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
 import { showroomService } from '@/features/showroom/services/showroom.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
+import { EmployeeCashDestinationNotice, useEmployeeCashDestination } from '@/features/showroom/components/EmployeeCashDestinationNotice';
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('ar-EG')} EGP`;
@@ -88,9 +89,12 @@ function SaleSheetContent({
   sale,
   onContractOpen,
   onPayRemaining,
+  onSettleBalance,
   onDelete,
   onPaperworkRequestOpen,
   canDelete,
+  canRecordPayment,
+  canSettleBalance,
   isPayingRemaining,
   isDeleting,
 }) {
@@ -99,7 +103,8 @@ function SaleSheetContent({
   const paymentsTotal = payments.length
     ? payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : 0;
-  const paidAmount = payments.length ? paymentsTotal : Number(sale?.paid_amount ?? sale?.paidAmount ?? 0);
+  const accountingPaidAmount = Number(sale?.paid_amount ?? sale?.paidAmount);
+  const paidAmount = Number.isFinite(accountingPaidAmount) ? accountingPaidAmount : paymentsTotal;
   const paymentEntries = payments.length
     ? payments
     : paidAmount > 0
@@ -295,21 +300,33 @@ function SaleSheetContent({
               <div className="min-w-0">
                 <p className="text-sm font-black">{remainingAmount > 0 ? 'على الفاتورة متبقي' : 'مدفوعة بالكامل'}</p>
                 <p className="mt-0.5 text-[0.7rem] font-bold opacity-70">
-                  {remainingAmount > 0 ? 'يمكن تسجيل دفع المتبقي الآن' : 'لا توجد مبالغ مستحقة على هذه الفاتورة'}
+                  {remainingAmount > 0
+                    ? (canRecordPayment || canSettleBalance ? 'يمكن تسوية المبلغ المستحق الآن' : 'المبلغ المستحق على هذه الفاتورة')
+                    : 'لا توجد مبالغ مستحقة على هذه الفاتورة'}
                 </p>
               </div>
             </div>
             {remainingAmount > 0 ? (
               <div className="flex shrink-0 items-center gap-2">
                 <span className="font-mono text-sm font-black">{formatMoney(remainingAmount)}</span>
-                <button
-                  type="button"
-                  onClick={onPayRemaining}
-                  disabled={isPayingRemaining}
-                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
-                >
-                  {isPayingRemaining ? 'جار التسجيل...' : 'تسجيل دفعة'}
-                </button>
+                {canSettleBalance ? (
+                  <button
+                    type="button"
+                    onClick={() => onSettleBalance?.(sale)}
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-red-700"
+                  >
+                    تسوية الرصيد
+                  </button>
+                ) : canRecordPayment ? (
+                  <button
+                    type="button"
+                    onClick={onPayRemaining}
+                    disabled={isPayingRemaining}
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+                  >
+                    {isPayingRemaining ? 'جار التسجيل...' : 'تسجيل دفعة'}
+                  </button>
+                ) : null}
               </div>
             ) : (
               <span className="shrink-0 rounded-full bg-white/80 px-3 py-1 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">
@@ -324,6 +341,11 @@ function SaleSheetContent({
 }
 
 function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitError }) {
+  const {
+    destination: cashDestination,
+    isLoading: isCashDestinationLoading,
+    error: cashDestinationError,
+  } = useEmployeeCashDestination(true);
   const payments = Array.isArray(sale?.payments) ? sale.payments : [];
   const paymentsTotal = payments.length
     ? payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
@@ -356,8 +378,13 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
       return;
     }
 
+    if (!notes.trim()) {
+      setFormError('اكتب ملاحظة توضح سبب أو طريقة الدفع.');
+      return;
+    }
+
     setFormError('');
-    const result = await onSubmit({ amount: paymentAmount, notes });
+    const result = await onSubmit({ amount: paymentAmount, notes: notes.trim() });
 
     if (result?.error) {
       setFormError(result.error);
@@ -416,16 +443,23 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-black text-slate-600">البيان</span>
+              <span className="mb-1.5 block text-xs font-black text-slate-600">ملاحظة الدفع <span className="text-red-600">*</span></span>
               <textarea
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
                 disabled={isSubmitting}
                 rows={3}
+                required
                 placeholder="مثال: دفعة نقدية أو تحويل بنكي"
                 className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-bold text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
             </label>
+
+            <EmployeeCashDestinationNotice
+              destination={cashDestination}
+              isLoading={isCashDestinationLoading}
+              error={cashDestinationError}
+            />
 
           </div>
 
@@ -438,7 +472,7 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
 
         <button
           type="submit"
-          disabled={isSubmitting || remainingAmount <= 0}
+          disabled={isSubmitting || remainingAmount <= 0 || !notes.trim() || isCashDestinationLoading || Boolean(cashDestinationError) || !cashDestination?.accountId}
           className="h-11 w-full rounded-xl bg-red-600 text-sm font-black text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
         >
           {isSubmitting ? 'جار تسجيل الدفعة...' : 'تسجيل الدفعة'}
@@ -448,9 +482,20 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
   );
 }
 
-export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted, onPaperworkRequestOpen }) {
+export function ShowroomSaleViewSheet({
+  sale,
+  isOpen,
+  onClose,
+  onDeleted,
+  onPaymentRecorded,
+  onPaperworkRequestOpen,
+  showroomConfigId: providedShowroomConfigId = null,
+  readOnly = false,
+  onSettleBalance,
+}) {
   const { tenant, tenantUser } = useWorkspace();
-  const { currentShowroomConfigId } = useShowroomConfig();
+  const showroomConfig = useOptionalShowroomConfig();
+  const currentShowroomConfigId = providedShowroomConfigId || showroomConfig?.currentShowroomConfigId || null;
   const canDeleteSale = tenantUser?.role === 'owner';
   const [fullSale, setFullSale] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -533,6 +578,7 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted, onPape
       });
       setFullSale(updatedSale);
       setSheetMode('details');
+      await onPaymentRecorded?.();
       return { ok: true };
     } catch (err) {
       const message = err.message || 'تعذر تسجيل الدفعة';
@@ -541,7 +587,7 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted, onPape
     } finally {
       setIsPayingRemaining(false);
     }
-  }, [currentShowroomConfigId, fullSale, isPayingRemaining, sale, tenant?.id]);
+  }, [currentShowroomConfigId, fullSale, isPayingRemaining, onPaymentRecorded, sale, tenant?.id]);
 
   const handleDeleteSale = useCallback(async () => {
     const targetSale = fullSale ?? sale;
@@ -591,7 +637,7 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted, onPape
             exit={{ opacity: 0 }}
             transition={{ duration: 0.12, ease: 'easeOut' }}
             onClick={onClose}
-            style={{ zIndex: 2147483640 }}
+            style={{ zIndex: 2147483640, pointerEvents: 'auto' }}
             className="fixed inset-0 bg-black/60"
           />
           <motion.div
@@ -600,7 +646,7 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted, onPape
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.14, ease: 'easeOut' }}
-            style={{ zIndex: 2147483641 }}
+            style={{ zIndex: 2147483641, pointerEvents: 'auto' }}
             className="fixed bottom-0 left-1/2 flex h-[92%] w-[calc(100vw-1rem)] max-w-[30rem] -translate-x-1/2 flex-col overflow-hidden rounded-t-2xl bg-white sm:w-[30rem] lg:bottom-4 lg:h-[80vh] lg:rounded-2xl"
           >
             {isLoading ? (
@@ -635,9 +681,12 @@ export function ShowroomSaleViewSheet({ sale, isOpen, onClose, onDeleted, onPape
                 sale={fullSale ?? sale}
                 onContractOpen={() => setIsContractOpen(true)}
                 onPayRemaining={handleOpenPaymentStep}
+                onSettleBalance={onSettleBalance}
                 onDelete={handleDeleteSale}
                 onPaperworkRequestOpen={onPaperworkRequestOpen}
-                canDelete={canDeleteSale}
+                canDelete={!readOnly && canDeleteSale}
+                canRecordPayment={!readOnly}
+                canSettleBalance={Boolean(onSettleBalance)}
                 isPayingRemaining={isPayingRemaining}
                 isDeleting={isDeletingSale}
               />

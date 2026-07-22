@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const TENANT_USER_COLUMNS = 'id, tenant_id, auth_user_id, full_name, phone, email, role, is_active, created_at, updated_at';
+const TENANT_USER_COLUMNS = 'id, tenant_id, auth_user_id, partner_id, full_name, phone, email, role, is_active, created_at, updated_at';
 const ALLOWED_ROLES = new Set(['owner', 'admin', 'cashier', 'sales', 'accountant', 'staff']);
 
 function logError(message: string, details?: unknown) {
@@ -46,8 +46,6 @@ serve(async (request) => {
   }
 
   const authHeader = request.headers.get('Authorization');
-  console.log('[create-tenant-user] authHeader', authHeader);
-
   if (!authHeader?.startsWith('Bearer ')) {
     return jsonResponse({ error: 'Missing authorization header.' }, 401);
   }

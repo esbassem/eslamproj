@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { AlertTriangle, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 
 function getInvoiceItems(invoice) {
   return Array.isArray(invoice?.items) && invoice.items.length > 0
@@ -25,17 +25,6 @@ function InvoiceStatusBadge({ status }) {
   }
 
   return null;
-}
-
-function MissingAccountingEntryBadge({ invoice }) {
-  if (!invoice?.isMissingAccountingEntry) return null;
-
-  return (
-    <span className="mt-2 flex w-fit items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-black text-red-700 ring-1 ring-inset ring-red-200">
-      <AlertTriangle className="h-3 w-3" />
-      لا يوجد قيد محاسبي
-    </span>
-  );
 }
 
 export function ShowroomInvoicesCard({
@@ -65,7 +54,6 @@ export function ShowroomInvoicesCard({
     return {
       count: filteredInvoices.length,
       total: filteredInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount ?? invoice.totalAmount ?? 0), 0),
-      missingAccountingCount: filteredInvoices.filter((invoice) => invoice.isMissingAccountingEntry).length,
     };
   }, [filteredInvoices]);
 
@@ -128,14 +116,6 @@ export function ShowroomInvoicesCard({
               <span className="text-xs font-bold text-slate-400">·</span>
               <span className="text-xs font-black text-slate-900">{monthStats.count.toLocaleString('en-US')}</span>
               <span className="text-xs font-bold text-slate-500">فاتورة</span>
-              {monthStats.missingAccountingCount > 0 ? (
-                <>
-                  <span className="text-xs font-bold text-red-300">·</span>
-                  <span className="text-xs font-black text-red-600">
-                    {monthStats.missingAccountingCount.toLocaleString('en-US')} بدون قيد
-                  </span>
-                </>
-              ) : null}
             </div>
           </div>
         </div>
@@ -169,14 +149,6 @@ export function ShowroomInvoicesCard({
               <span className="text-xs font-bold text-slate-400">·</span>
               <span className="text-xs font-black text-slate-900">{monthStats.count.toLocaleString('en-US')}</span>
               <span className="text-xs font-bold text-slate-500">فاتورة</span>
-              {monthStats.missingAccountingCount > 0 ? (
-                <>
-                  <span className="text-xs font-bold text-red-300">·</span>
-                  <span className="text-xs font-black text-red-600">
-                    {monthStats.missingAccountingCount.toLocaleString('en-US')} بدون قيد
-                  </span>
-                </>
-              ) : null}
             </div>
           </div>
         </div>
@@ -210,7 +182,6 @@ export function ShowroomInvoicesCard({
                         </p>
                       ) : null}
                       <InvoiceStatusBadge status={invoice.status} />
-                      <MissingAccountingEntryBadge invoice={invoice} />
                       <p className="mt-2 text-xs font-bold text-[#7e969f]">
                         {new Intl.DateTimeFormat('ar-EG', {
                           dateStyle: 'short',
@@ -268,7 +239,6 @@ export function ShowroomInvoicesCard({
                         </p>
                       ) : null}
                       <InvoiceStatusBadge status={invoice.status} />
-                      <MissingAccountingEntryBadge invoice={invoice} />
                       <p className="mt-2 text-xs font-bold text-[#7e969f]">
                         {new Intl.DateTimeFormat('ar-EG', {
                           dateStyle: 'short',

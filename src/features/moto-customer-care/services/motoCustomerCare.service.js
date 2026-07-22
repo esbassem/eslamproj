@@ -12,8 +12,6 @@ const SALE_COLUMNS = `
   sale_date,
   status,
   total_amount,
-  paid_amount,
-  remaining_amount,
   notes,
   account_move_id,
   created_by,
@@ -35,13 +33,14 @@ const SALE_LINE_COLUMNS = `
   ownership_name,
   created_at
 `;
-const SALE_PAYMENT_COLUMNS = `
+const SALE_PAYMENT_MOVE_COLUMNS = `
   id,
   tenant_id,
-  sale_id,
-  amount,
-  payment_date,
-  payment_method,
+  amount_total,
+  invoice_date,
+  date,
+  pay_method,
+  ref,
   notes,
   created_by,
   created_at
@@ -795,10 +794,11 @@ function normalizeSalePayment(record) {
   return {
     id: record.id,
     tenantId: record.tenant_id,
-    saleId: record.sale_id,
-    amount: toNumber(record.amount),
-    paymentDate: record.payment_date,
-    paymentMethod: record.payment_method || '',
+    saleId: String(record.ref || '').replace(/^showroom_sale:/, ''),
+    accountMoveId: record.id,
+    amount: toNumber(record.amount_total),
+    paymentDate: record.invoice_date || record.date || record.created_at,
+    paymentMethod: record.pay_method || '',
     notes: record.notes || '',
     createdBy: record.created_by,
     createdAt: record.created_at,
@@ -807,6 +807,9 @@ function normalizeSalePayment(record) {
 
 function normalizeSale(record, customerMap, linesMap = new Map(), paymentsMap = new Map()) {
   const customer = customerMap.get(record.customer_id) ?? null;
+  const payments = paymentsMap.get(record.id) || [];
+  const paidAmount = payments.reduce((sum, payment) => sum + toNumber(payment.amount), 0);
+  const totalAmount = toNumber(record.total_amount);
 
   return {
     id: record.id,
@@ -815,9 +818,9 @@ function normalizeSale(record, customerMap, linesMap = new Map(), paymentsMap = 
     customerId: record.customer_id,
     saleDate: record.sale_date,
     status: record.status || 'pending',
-    totalAmount: toNumber(record.total_amount),
-    paidAmount: toNumber(record.paid_amount),
-    remainingAmount: toNumber(record.remaining_amount),
+    totalAmount,
+    paidAmount,
+    remainingAmount: Math.max(totalAmount - paidAmount, 0),
     notes: record.notes || '',
     accountMoveId: record.account_move_id,
     createdBy: record.created_by,
@@ -826,7 +829,7 @@ function normalizeSale(record, customerMap, linesMap = new Map(), paymentsMap = 
     showroomConfigId: record.showroom_config_id,
     customer,
     items: linesMap.get(record.id) || [],
-    payments: paymentsMap.get(record.id) || [],
+    payments,
   };
 }
 
@@ -907,22 +910,25 @@ async function loadSalePaymentsMap(client, tenantId, sales) {
     return new Map();
   }
 
+  const saleRefs = saleIds.map((saleId) => `showroom_sale:${saleId}`);
   const { data, error } = await client
-    .from('showroom_sale_payments')
-    .select(SALE_PAYMENT_COLUMNS)
+    .from('account_moves')
+    .select(SALE_PAYMENT_MOVE_COLUMNS)
     .eq('tenant_id', tenantId)
-    .in('sale_id', saleIds)
-    .order('payment_date', { ascending: true })
+    .eq('move_type', 'payment')
+    .eq('state', 'posted')
+    .in('ref', saleRefs)
     .order('created_at', { ascending: true });
 
   if (error) {
     throw error;
   }
 
-  return (data || []).reduce((map, payment) => {
-    const current = map.get(payment.sale_id) || [];
-    current.push(normalizeSalePayment(payment));
-    map.set(payment.sale_id, current);
+  return (data || []).reduce((map, paymentMove) => {
+    const payment = normalizeSalePayment(paymentMove);
+    const current = map.get(payment.saleId) || [];
+    current.push(payment);
+    map.set(payment.saleId, current);
     return map;
   }, new Map());
 }
@@ -2744,6 +2750,33 @@ export const motoCustomerCareService = {
       currentStage: data?.current_stage || 'client_notified',
       updatedAt: data?.updated_at || new Date().toISOString(),
     };
+  },
+
+  async getPaperworkDeliveryBalance({ tenantId, saleId } = {}) {
+    requireTenantId(tenantId);
+
+    if (!saleId) {
+      return { totalAmount: 0, paidAmount: 0, remainingAmount: 0 };
+    }
+
+    const client = requireSupabase();
+    const { data, error } = await client
+      .from('showroom_sales')
+      .select('total_amount, paid_amount, remaining_amount')
+      .eq('tenant_id', tenantId)
+      .eq('id', saleId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw new Error('الفاتورة المرتبطة بطلب الأوراق غير موجودة.');
+
+    const totalAmount = toNumber(data.total_amount);
+    const paidAmount = toNumber(data.paid_amount);
+    const remainingAmount = data.remaining_amount == null
+      ? Math.max(totalAmount - paidAmount, 0)
+      : Math.max(toNumber(data.remaining_amount), 0);
+
+    return { totalAmount, paidAmount, remainingAmount };
   },
 
   async deliverPaperworkToCustomer({ tenantId, requestId, receiptImage } = {}) {

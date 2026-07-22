@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { ImagePlus, MoreHorizontal, PackagePlus, Settings, UserPlus } from 'lucide-react';
+import { ImagePlus, MoreHorizontal, Settings, Store, UserPlus, WalletCards } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { uiExperiments } from '@/core/config/app.config';
@@ -25,9 +25,10 @@ import { useAppContext } from '@/contexts/AppContext';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
 import { partnersService } from '@/features/contacts/services/partners.service';
+import { CashLocationSheet } from '@/features/accountant/components/CashLocationSheet';
 import { QuickImageUploadSheet } from '@/features/dashboard/components/QuickImageUploadSheet';
-import { QuickStockUnitSheet } from '@/features/dashboard/components/QuickStockUnitSheet';
 import { resolveModuleIcon } from '@/features/modules/modules.navigation';
+import { cashLocationsSettingsService } from '@/features/settings/services/cashLocationsSettings.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { appsService } from '@/services/apps.service';
 
@@ -68,13 +69,15 @@ export function DashboardPage() {
   const [catalogApps, setCatalogApps] = useState([]);
   const [catalogStatus, setCatalogStatus] = useState('idle');
   const [catalogError, setCatalogError] = useState(null);
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [selectedCatalogApp, setSelectedCatalogApp] = useState(null);
   const [isCustomerSheetOpen, setIsCustomerSheetOpen] = useState(false);
   const [isCustomerSubmitting, setIsCustomerSubmitting] = useState(false);
   const [isImageUploadSheetOpen, setIsImageUploadSheetOpen] = useState(false);
-  const [isStockUnitSheetOpen, setIsStockUnitSheetOpen] = useState(false);
+  const [cashCustodyAccount, setCashCustodyAccount] = useState(null);
+  const [isCashCustodySheetOpen, setIsCashCustodySheetOpen] = useState(false);
   const dashboardApps = apps.filter((app) => app.code !== 'dashboard');
-  const launcherApps = dashboardApps.some((app) => app.code === 'settings') || !isOwner
+  const installedLauncherApps = dashboardApps.some((app) => app.code === 'settings') || !isOwner
     ? dashboardApps
     : [
         ...dashboardApps,
@@ -88,6 +91,19 @@ export function DashboardPage() {
           href: ROUTES.settings,
         },
       ];
+  const launcherApps = isOwner
+    ? [
+        ...installedLauncherApps,
+        {
+          id: 'launcher-app-store',
+          code: 'app_store',
+          name: 'متجر التطبيقات',
+          icon: Store,
+          iconColor: '#e11d48',
+          isAppStore: true,
+        },
+      ]
+    : installedLauncherApps;
   const firstName = user?.fullName?.trim()?.split(' ')[0];
   const now = new Date();
   const hour = now.getHours();
@@ -175,6 +191,27 @@ export function DashboardPage() {
       mounted = false;
     };
   }, [isOwner, tenant?.id]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!tenant?.id || !tenantUser?.id) {
+      setCashCustodyAccount(null);
+      return undefined;
+    }
+
+    cashLocationsSettingsService.getEmployeeCustodyAccount(tenant.id, tenantUser.id)
+      .then((account) => {
+        if (mounted) setCashCustodyAccount(account);
+      })
+      .catch(() => {
+        if (mounted) setCashCustodyAccount(null);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [tenant?.id, tenantUser?.id]);
 
   const handleLaunchApp = (event, item) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
@@ -318,8 +355,9 @@ export function DashboardPage() {
             </p>
               <QuickCreateTools
                 onCreateCustomer={() => setIsCustomerSheetOpen(true)}
-                onCreateStockUnit={() => setIsStockUnitSheetOpen(true)}
                 onOpenImageUpload={() => setIsImageUploadSheetOpen(true)}
+                cashCustodyAccount={cashCustodyAccount}
+                onOpenCashCustody={() => setIsCashCustodySheetOpen(true)}
               />
           </div>
 
@@ -341,31 +379,48 @@ export function DashboardPage() {
                   {launcherApps.map((item, i) => {
                     const Icon = resolveModuleIcon(item.icon);
                     const title = item.title ?? item.name ?? t(item.titleKey);
-                    const isLaunching = launchingApp?.href === item.href;
+                    const isLaunching = !item.isAppStore && launchingApp?.href === item.href;
                     const canUninstall =
                       isOwner &&
+                      !item.isAppStore &&
                       item.isRemovable !== false &&
                       item.id &&
                       !String(item.id).startsWith('launcher-') &&
                       !String(item.id).startsWith('fallback-');
                     return (
                       <div
-                        key={item.href}
+                        key={item.id || item.href}
                         className="fade-up group relative min-h-0 sm:min-h-28"
                         style={{ animationDelay: isLaunching ? '0s' : `${0.06 + i * 0.035}s` }}
                       >
-                        <Link
-                          to={item.href}
-                          onClick={(event) => handleLaunchApp(event, { ...item, title, Icon })}
-                          className={`relative flex aspect-square min-h-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[1.65rem] p-3 text-white shadow-lg ring-1 ring-white/10 transition-all duration-150 ease-out hover:shadow-[0_12px_24px_rgba(15,23,42,0.14)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 sm:aspect-auto sm:min-h-28 sm:items-stretch sm:justify-between sm:gap-0 sm:rounded-2xl sm:p-4 ${isLaunching ? 'app-launching z-20 ring-2 ring-white/60' : ''}`}
-                          style={{ backgroundColor: item.iconColor || DEFAULT_APP_ICON_COLOR }}
-                        >
-                          <span className={`pointer-events-none absolute inset-0 bg-white/14 transition-opacity duration-200 ${isLaunching ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
-                          <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] bg-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] backdrop-blur-sm transition group-hover:bg-white/24 sm:h-11 sm:w-11 sm:rounded-xl">
-                            <Icon className="h-6 w-6 stroke-[2.1] sm:h-5 sm:w-5" />
-                          </div>
-                          <span className="block max-w-full break-words text-center text-xs font-bold leading-tight text-white drop-shadow-sm sm:truncate sm:text-right sm:text-sm">{title}</span>
-                        </Link>
+                        {item.isAppStore ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsCatalogOpen(true)}
+                            className="relative flex aspect-square min-h-0 w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-[1.65rem] p-3 text-white shadow-lg ring-1 ring-white/10 transition-all duration-150 ease-out hover:shadow-[0_12px_24px_rgba(15,23,42,0.14)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 sm:aspect-auto sm:min-h-28 sm:items-stretch sm:justify-between sm:gap-0 sm:rounded-2xl sm:p-4"
+                            style={{ backgroundColor: item.iconColor || DEFAULT_APP_ICON_COLOR }}
+                            aria-haspopup="dialog"
+                          >
+                            <span className="pointer-events-none absolute inset-0 bg-white/14 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                            <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] bg-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] backdrop-blur-sm transition group-hover:bg-white/24 sm:h-11 sm:w-11 sm:rounded-xl">
+                              <Icon className="h-6 w-6 stroke-[2.1] sm:h-5 sm:w-5" />
+                            </div>
+                            <span className="block max-w-full break-words text-center text-xs font-bold leading-tight text-white drop-shadow-sm sm:truncate sm:text-right sm:text-sm">{title}</span>
+                          </button>
+                        ) : (
+                          <Link
+                            to={item.href}
+                            onClick={(event) => handleLaunchApp(event, { ...item, title, Icon })}
+                            className={`relative flex aspect-square min-h-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[1.65rem] p-3 text-white shadow-lg ring-1 ring-white/10 transition-all duration-150 ease-out hover:shadow-[0_12px_24px_rgba(15,23,42,0.14)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 sm:aspect-auto sm:min-h-28 sm:items-stretch sm:justify-between sm:gap-0 sm:rounded-2xl sm:p-4 ${isLaunching ? 'app-launching z-20 ring-2 ring-white/60' : ''}`}
+                            style={{ backgroundColor: item.iconColor || DEFAULT_APP_ICON_COLOR }}
+                          >
+                            <span className={`pointer-events-none absolute inset-0 bg-white/14 transition-opacity duration-200 ${isLaunching ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
+                            <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] bg-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] backdrop-blur-sm transition group-hover:bg-white/24 sm:h-11 sm:w-11 sm:rounded-xl">
+                              <Icon className="h-6 w-6 stroke-[2.1] sm:h-5 sm:w-5" />
+                            </div>
+                            <span className="block max-w-full break-words text-center text-xs font-bold leading-tight text-white drop-shadow-sm sm:truncate sm:text-right sm:text-sm">{title}</span>
+                          </Link>
+                        )}
                         {canUninstall ? (
                           <div className="absolute left-2 top-2 z-30">
                             <DropdownMenu dir="rtl">
@@ -409,7 +464,9 @@ export function DashboardPage() {
           </div>
         </section>
 
-        <AppCatalogSection
+        <AppCatalogSheet
+          open={isCatalogOpen}
+          onOpenChange={setIsCatalogOpen}
           apps={catalogApps}
           status={catalogStatus}
           error={catalogError}
@@ -447,12 +504,15 @@ export function DashboardPage() {
           tenantId={tenant?.id}
           onUploaded={() => setToast({ tone: 'success', message: 'تم رفع الصورة.' })}
         />
-        <QuickStockUnitSheet
-          open={isStockUnitSheetOpen}
-          onOpenChange={setIsStockUnitSheetOpen}
+        <CashLocationSheet
+          location={isCashCustodySheetOpen ? cashCustodyAccount : null}
           tenantId={tenant?.id}
-          userId={tenantUser?.id || null}
-          onSaved={() => setToast({ tone: 'success', message: 'تم تسجيل الوحدة.' })}
+          onOpenChange={setIsCashCustodySheetOpen}
+          onOperationCreated={async () => {
+            if (!tenant?.id || !tenantUser?.id) return;
+            const account = await cashLocationsSettingsService.getEmployeeCustodyAccount(tenant.id, tenantUser.id);
+            setCashCustodyAccount(account);
+          }}
         />
         <FloatingNotice notice={toast} onClose={() => setToast(null)} />
       </div>
@@ -471,14 +531,17 @@ export function DashboardPage() {
   );
 }
 
-function QuickCreateTools({ onCreateCustomer, onCreateStockUnit, onOpenImageUpload }) {
+function QuickCreateTools({ onCreateCustomer, onOpenImageUpload, cashCustodyAccount, onOpenCashCustody }) {
   const tools = [
-    {
-      title: 'تسجيل منتج',
-      onClick: onCreateStockUnit,
-      Icon: PackagePlus,
-      color: '#2563eb',
-    },
+    ...(cashCustodyAccount ? [{
+      title: 'عهدتي النقدية',
+      subtitle: cashCustodyAccount.balance == null
+        ? 'الرصيد غير متاح'
+        : `معك ${Number(cashCustodyAccount.balance).toLocaleString('ar-EG')} ج.م`,
+      onClick: onOpenCashCustody,
+      Icon: WalletCards,
+      color: '#0f766e',
+    }] : []),
     {
       title: 'تسجيل عميل',
       onClick: onCreateCustomer,
@@ -496,7 +559,7 @@ function QuickCreateTools({ onCreateCustomer, onCreateStockUnit, onOpenImageUplo
   return (
     <div className="mt-5 max-w-sm sm:mt-6">
       <div className="flex flex-wrap gap-2.5">
-        {tools.map(({ title, href, onClick, Icon, color }) => {
+        {tools.map(({ title, subtitle, href, onClick, Icon, color }) => {
           const content = (
             <>
               <span
@@ -505,7 +568,10 @@ function QuickCreateTools({ onCreateCustomer, onCreateStockUnit, onOpenImageUplo
               >
                 <Icon className="h-4 w-4" />
               </span>
-              <span className="whitespace-nowrap text-sm font-black text-slate-950">{title}</span>
+              <span className="min-w-0">
+                <span className="block whitespace-nowrap text-sm font-black text-slate-950">{title}</span>
+                {subtitle ? <span className="mt-0.5 block whitespace-nowrap text-[10px] font-black text-teal-700">{subtitle}</span> : null}
+              </span>
             </>
           );
           const className = 'group inline-flex h-12 items-center gap-2.5 rounded-2xl border border-white/80 bg-white/74 px-3.5 text-right shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_16px_34px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70';
@@ -566,33 +632,54 @@ function UninstallAppDialog({ open, onOpenChange, onConfirm, isSubmitting }) {
   );
 }
 
-function AppCatalogSection({ apps, status, error, installingAppId, selectedApp, onSelectApp, onSelectedAppChange, onInstall }) {
+function AppCatalogSheet({ open, onOpenChange, apps, status, error, installingAppId, selectedApp, onSelectApp, onSelectedAppChange, onInstall }) {
   const suggestedApps = apps.filter((app) => app.tenantState !== 'installed');
 
-  if (status !== 'ready' || error || suggestedApps.length === 0) {
-    return null;
-  }
-
   return (
-    <section className="relative z-10 mt-7 w-full max-w-6xl text-right sm:mt-6" dir="rtl">
-      <div className="mb-4 flex items-end justify-between gap-4 sm:mb-3">
-        <div>
-          <h2 className="inline-flex items-center border-r-2 border-red-500 pr-2 text-xs font-extrabold text-slate-700 sm:rounded-lg sm:border sm:border-r sm:border-slate-200 sm:bg-white/75 sm:px-3 sm:py-1.5 sm:text-sm sm:text-slate-900 sm:shadow-[0_10px_28px_rgba(15,23,42,0.07)] sm:backdrop-blur-sm">
-            تطبيقات المنصة المقترحة
-          </h2>
-        </div>
-      </div>
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="left" className="w-full max-w-full border-r border-slate-200 bg-slate-50 p-0 sm:max-w-[560px]" dir="rtl">
+          <div className="border-b border-slate-200 bg-white px-5 pb-5 pt-6 sm:px-7">
+            <div className="flex items-center gap-3 pl-12">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-sm">
+                <Store className="h-5 w-5" />
+              </div>
+              <div>
+                <SheetTitle className="text-xl font-black text-slate-950">متجر التطبيقات</SheetTitle>
+                <p className="mt-1 text-sm font-semibold text-slate-500">اختر التطبيقات المناسبة لمساحة عملك</p>
+              </div>
+            </div>
+          </div>
+          <SheetDismissButton aria-label="إغلاق متجر التطبيقات" />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {suggestedApps.map((app) => (
-          <CatalogAppCard
-            key={app.id}
-            app={app}
-            onOpen={() => onSelectApp(app)}
-          />
-        ))}
-      </div>
-
+          <SheetBody className="px-5 py-5 sm:px-7">
+            {status === 'loading' || status === 'idle' ? (
+              <div className="flex min-h-52 items-center justify-center">
+                <LoadingSpinner title="جاري تحميل التطبيقات…" />
+              </div>
+            ) : error ? (
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-5 text-center text-sm font-bold leading-6 text-red-700">
+                تعذر تحميل متجر التطبيقات. حاول تحديث الصفحة أو مراجعة الاتصال.
+              </div>
+            ) : suggestedApps.length ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
+                {suggestedApps.map((app) => (
+                  <CatalogAppCard
+                    key={app.id}
+                    app={app}
+                    onOpen={() => onSelectApp(app)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
+                <Store className="mx-auto h-8 w-8 text-slate-300" />
+                <p className="mt-3 text-sm font-extrabold text-slate-700">كل تطبيقات المنصة مثبتة بالفعل</p>
+              </div>
+            )}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
       <CatalogAppDetailsSheet
         app={selectedApp}
         open={Boolean(selectedApp)}
@@ -600,7 +687,7 @@ function AppCatalogSection({ apps, status, error, installingAppId, selectedApp, 
         onOpenChange={(open) => onSelectedAppChange(open ? selectedApp : null)}
         onInstall={onInstall}
       />
-    </section>
+    </>
   );
 }
 

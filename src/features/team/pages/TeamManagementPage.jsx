@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Users2 } from 'lucide-react';
 import { Badge } from '@/core/ui/badge';
 import { Button } from '@/core/ui/button';
@@ -8,6 +8,7 @@ import { ResourcePageShell } from '@/core/ui/resource-page-shell';
 import { useI18n } from '@/core/i18n/useI18n';
 import { teamService } from '@/features/team/api/team.api';
 import { CreateTeamMemberSheet } from '@/features/team/components/CreateTeamMemberSheet';
+import { FinancialPartnerSheet } from '@/features/team/components/FinancialPartnerSheet';
 import { TeamMembersTable } from '@/features/team/components/TeamMembersTable';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
@@ -20,8 +21,37 @@ export function TeamManagementPage({ embedded = false }) {
   const [successMessage, setSuccessMessage] = useState('');
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [processingMemberId, setProcessingMemberId] = useState(null);
+  const [isBulkCreating, setIsBulkCreating] = useState(false);
+  const [isFinancialPartnerOpen, setIsFinancialPartnerOpen] = useState(false);
+  const [financialPartner, setFinancialPartner] = useState(null);
+  const [isFinancialPartnerLoading, setIsFinancialPartnerLoading] = useState(false);
+  const [financialPartnerError, setFinancialPartnerError] = useState('');
 
   const isOwner = tenantUser?.role === 'owner';
+  const unlinkedMembersCount = useMemo(
+    () => members.filter((member) => !member.partnerId).length,
+    [members],
+  );
+
+  const loadMembers = useCallback(async () => {
+    if (!tenant?.id) {
+      setMembers([]);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setPageError('');
+
+    try {
+      setMembers(await teamService.listTeamMembers(tenant.id));
+    } catch (error) {
+      setPageError(error.message || t('team.messages.loadError'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [t, tenant?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -61,6 +91,64 @@ export function TeamManagementPage({ embedded = false }) {
       mounted = false;
     };
   }, [t, tenant?.id]);
+
+  const handleCreateFinancialPartner = async (member) => {
+    if (!member?.id || member.partnerId || !isOwner) return;
+
+    try {
+      setProcessingMemberId(member.id);
+      setPageError('');
+      setSuccessMessage('');
+      const result = await teamService.createFinancialPartner(member.id);
+      setMembers((current) => current.map((item) => (
+        item.id === member.id ? { ...item, partnerId: result.partnerId } : item
+      )));
+      setSuccessMessage(t('team.messages.financialProfileCreateSuccess'));
+    } catch (error) {
+      setPageError(error.message || t('team.messages.financialProfileCreateError'));
+    } finally {
+      setProcessingMemberId(null);
+    }
+  };
+
+  const handleBulkCreateFinancialPartners = async () => {
+    if (!tenant?.id || !isOwner || !unlinkedMembersCount) return;
+
+    try {
+      setIsBulkCreating(true);
+      setPageError('');
+      setSuccessMessage('');
+      const createdCount = await teamService.createFinancialPartnersForUnlinkedUsers(tenant.id);
+      await loadMembers();
+      setSuccessMessage(t('team.messages.financialProfilesBulkSuccess', { count: String(createdCount) }));
+    } catch (error) {
+      setPageError(error.message || t('team.messages.financialProfilesBulkError'));
+    } finally {
+      setIsBulkCreating(false);
+    }
+  };
+
+  const handleViewFinancialPartner = async (member) => {
+    if (!tenant?.id || !member?.partnerId) return;
+
+    setIsFinancialPartnerOpen(true);
+    setIsFinancialPartnerLoading(true);
+    setFinancialPartner(null);
+    setFinancialPartnerError('');
+
+    try {
+      const partner = await teamService.getFinancialPartner({
+        tenantId: tenant.id,
+        partnerId: member.partnerId,
+      });
+      if (!partner) throw new Error(t('team.messages.financialProfileNotFound'));
+      setFinancialPartner(partner);
+    } catch (error) {
+      setFinancialPartnerError(error.message || t('team.messages.financialProfileLoadError'));
+    } finally {
+      setIsFinancialPartnerLoading(false);
+    }
+  };
 
   const handleCreateMember = async (payload) => {
     console.log('[Team] handleCreateMember called', {
@@ -125,6 +213,19 @@ export function TeamManagementPage({ embedded = false }) {
               {t('team.actions.addEmployee')}
             </Button>
           ) : null}
+          {isOwner ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={!unlinkedMembersCount || isBulkCreating}
+              onClick={handleBulkCreateFinancialPartners}
+            >
+              {isBulkCreating
+                ? t('team.actions.bulkCreatingFinancialProfiles')
+                : t('team.actions.bulkCreateFinancialProfiles')}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -137,7 +238,13 @@ export function TeamManagementPage({ embedded = false }) {
       {isLoading ? (
         <LoadingSpinner title="جاري تحميل الفريق" />
       ) : members.length ? (
-        <TeamMembersTable members={members} />
+        <TeamMembersTable
+          members={members}
+          canCreateFinancialPartner={isOwner}
+          processingMemberId={processingMemberId}
+          onCreateFinancialPartner={handleCreateFinancialPartner}
+          onViewFinancialPartner={handleViewFinancialPartner}
+        />
       ) : (
         <EmptyState
           icon={Users2}
@@ -157,6 +264,14 @@ export function TeamManagementPage({ embedded = false }) {
           isSubmitting={isSubmitting}
         />
       ) : null}
+
+      <FinancialPartnerSheet
+        open={isFinancialPartnerOpen}
+        onOpenChange={setIsFinancialPartnerOpen}
+        partner={financialPartner}
+        isLoading={isFinancialPartnerLoading}
+        errorMessage={financialPartnerError}
+      />
     </div>
   );
 

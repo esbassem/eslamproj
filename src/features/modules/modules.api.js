@@ -1,4 +1,5 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { listCurrentUserAllowedModuleIds } from '@/features/modules/appPermissions.api';
 
 const MODULE_COLUMNS = 'id, technical_name, name, icon, route_path, application, technical, active';
 const MENU_COLUMNS = 'id, module_id, parent_id, name, code, route_path, icon, sequence, active';
@@ -29,21 +30,7 @@ export const modulesApi = {
       return data ?? [];
     }
 
-    const { data: allowedApps, error: allowedAppsError } = await client.rpc('get_allowed_apps');
-
-    if (allowedAppsError) {
-      throw allowedAppsError;
-    }
-
-    const allowedAppByModuleId = new Map();
-
-    (allowedApps ?? []).forEach((row) => {
-      if (row?.module_id && !allowedAppByModuleId.has(row.module_id)) {
-        allowedAppByModuleId.set(row.module_id, row);
-      }
-    });
-
-    const moduleIds = Array.from(allowedAppByModuleId.keys());
+    const moduleIds = await listCurrentUserAllowedModuleIds(tenantId);
 
     if (!moduleIds.length) {
       return [];

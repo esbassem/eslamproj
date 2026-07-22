@@ -341,12 +341,27 @@
       "email": "البريد الإلكتروني",
       "role": "الدور",
       "status": "الحالة",
+      "financialProfile": "الملف المالي",
       "actions": "الإجراءات"
     },
     "actions": {
       "addEmployee": "إضافة موظف",
       "backToSettings": "العودة إلى الإعدادات",
-      "comingSoon": "إجراءات إضافية قريبًا"
+      "comingSoon": "إجراءات إضافية قريبًا",
+      "createFinancialProfile": "إنشاء ملف مالي",
+      "creatingFinancialProfile": "جارٍ إنشاء الملف المالي...",
+      "viewFinancialProfile": "عرض الملف المالي",
+      "bulkCreateFinancialProfiles": "إنشاء ملفات مالية للمستخدمين غير المرتبطين",
+      "bulkCreatingFinancialProfiles": "جارٍ إنشاء الملفات المالية..."
+    },
+    "financialProfile": {
+      "title": "الملف المالي للمستخدم",
+      "description": "بيانات الـPartner الداخلي المرتبط بمستخدم الشركة.",
+      "linked": "ملف مالي مرتبط",
+      "unlinked": "غير مرتبط",
+      "internalPartner": "Partner داخلي",
+      "partnerId": "معرّف Partner",
+      "loading": "جاري تحميل الملف المالي"
     },
     "roles": {
       "owner": "المالك",
@@ -379,7 +394,13 @@
       "loadError": "تعذر تحميل قائمة الموظفين.",
       "createError": "تعذر إنشاء الموظف حاليًا.",
       "createSuccess": "تمت إضافة الموظف بنجاح وتفعيل حسابه.",
-      "ownerOnly": "إضافة الموظفين متاحة فقط لمالك الشركة في هذه المرحلة."
+      "ownerOnly": "إضافة الموظفين متاحة فقط لمالك الشركة في هذه المرحلة.",
+      "financialProfileCreateSuccess": "تم إنشاء الملف المالي وربطه بالمستخدم.",
+      "financialProfileCreateError": "تعذر إنشاء الملف المالي للمستخدم.",
+      "financialProfilesBulkSuccess": "تم إنشاء وربط {count} ملف مالي.",
+      "financialProfilesBulkError": "تعذر إنشاء الملفات المالية للمستخدمين غير المرتبطين.",
+      "financialProfileLoadError": "تعذر تحميل الملف المالي.",
+      "financialProfileNotFound": "الملف المالي المرتبط غير موجود."
     }
   },
   "pos": {
