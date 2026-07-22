@@ -68,6 +68,10 @@ export const MENU_COMPONENTS = {
   '/apps/receivables/installments': lazyNamed(() => import('@/features/receivables/pages/ReceivablesPage'), 'ReceivablesPage'),
   '/app/contracts': lazyNamed(() => import('@/features/contracts/pages/ContractsPage'), 'ContractsPage'),
   '/app/settings': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
+  '/app/settings/accounting/cash-locations': lazyNamed(
+    () => import('@/features/settings/pages/CashLocationsSettingsPage'),
+    'CashLocationsSettingsPage',
+  ),
   '/app/settings/team': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
   '/app/settings/permissions': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
   '/app/team': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),

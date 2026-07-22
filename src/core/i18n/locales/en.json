@@ -341,12 +341,27 @@
       "email": "Email",
       "role": "Role",
       "status": "Status",
+      "financialProfile": "Financial profile",
       "actions": "Actions"
     },
     "actions": {
       "addEmployee": "Add employee",
       "backToSettings": "Back to settings",
-      "comingSoon": "More actions soon"
+      "comingSoon": "More actions soon",
+      "createFinancialProfile": "Create financial profile",
+      "creatingFinancialProfile": "Creating financial profile...",
+      "viewFinancialProfile": "View financial profile",
+      "bulkCreateFinancialProfiles": "Create profiles for unlinked users",
+      "bulkCreatingFinancialProfiles": "Creating financial profiles..."
+    },
+    "financialProfile": {
+      "title": "User financial profile",
+      "description": "The internal Partner record linked to this company user.",
+      "linked": "Financial profile linked",
+      "unlinked": "Not linked",
+      "internalPartner": "Internal Partner",
+      "partnerId": "Partner ID",
+      "loading": "Loading financial profile"
     },
     "roles": {
       "owner": "Owner",
@@ -379,7 +394,13 @@
       "loadError": "Unable to load team members.",
       "createError": "Unable to create the employee right now.",
       "createSuccess": "Employee created successfully and the account is now active.",
-      "ownerOnly": "Only the company owner can add employees in this phase."
+      "ownerOnly": "Only the company owner can add employees in this phase.",
+      "financialProfileCreateSuccess": "The financial profile was created and linked to the user.",
+      "financialProfileCreateError": "Unable to create the user's financial profile.",
+      "financialProfilesBulkSuccess": "Created and linked {count} financial profiles.",
+      "financialProfilesBulkError": "Unable to create financial profiles for unlinked users.",
+      "financialProfileLoadError": "Unable to load the financial profile.",
+      "financialProfileNotFound": "The linked financial profile was not found."
     }
   },
   "pos": {

@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { preloadProtectedRoute } from '@/app/router/lazyRoutes';
 import { useI18n } from '@/core/i18n/useI18n';
@@ -31,7 +33,7 @@ function normalizeActivePath(path = '') {
   return pathname || '/';
 }
 
-function SidebarLink({ item, depth = 0, appColor }) {
+function SidebarLink({ item, depth = 0, appColor, hasChildren = false, isExpanded = false, onToggle }) {
   const { t } = useI18n();
   const location = useLocation();
   const Icon = item.icon;
@@ -44,13 +46,13 @@ function SidebarLink({ item, depth = 0, appColor }) {
         <span
           className={cn(
             'flex h-8 w-8 items-center justify-center rounded-md',
-            depth > 0 && 'h-7 w-7',
+            depth > 0 && 'h-6 w-6 rounded-[5px]',
             isActive ? 'bg-white text-white' : 'bg-white/10 text-white',
             isDisabled && 'bg-white/6 text-white/55',
           )}
           style={isActive && !isDisabled ? { backgroundColor: appColor, color: 'white' } : {}}
         >
-          <Icon className="h-4 w-4" />
+          <Icon className={cn('h-4 w-4', depth > 0 && 'h-3.5 w-3.5')} />
         </span>
         <span className="min-w-0 truncate">{label}</span>
       </span>
@@ -58,6 +60,12 @@ function SidebarLink({ item, depth = 0, appColor }) {
         <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[0.68rem] font-black text-white/70">
           قريبًا
         </span>
+      ) : null}
+      {hasChildren && !isDisabled ? (
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 transition-transform duration-200', !isExpanded && '-rotate-90')}
+          aria-hidden="true"
+        />
       ) : null}
     </>
   );
@@ -68,13 +76,31 @@ function SidebarLink({ item, depth = 0, appColor }) {
         data-permission-key={item.permissionKey || undefined}
         className={cn(
           'flex w-full cursor-not-allowed items-center gap-3 rounded-lg bg-white/6 px-3 py-3 text-right text-sm font-bold text-white/60 opacity-55',
-          depth > 0 && 'py-2.5 text-sm',
+          depth > 0 && 'gap-2.5 rounded-md px-2.5 py-2 text-xs',
         )}
         aria-disabled="true"
         dir="rtl"
       >
         {content}
       </div>
+    );
+  }
+
+  if (hasChildren) {
+    return (
+      <button
+        type="button"
+        data-permission-key={item.permissionKey || undefined}
+        onClick={onToggle}
+        className={cn(
+          'flex w-full items-center gap-3 rounded-lg bg-white/6 px-3 py-3 text-right text-sm font-bold text-white/86 transition hover:bg-white/10',
+          depth > 0 && 'gap-2.5 rounded-md bg-white/[0.035] px-2.5 py-2 text-xs',
+        )}
+        aria-expanded={isExpanded}
+        dir="rtl"
+      >
+        {content}
+      </button>
     );
   }
 
@@ -88,7 +114,7 @@ function SidebarLink({ item, depth = 0, appColor }) {
       onTouchStart={() => preloadProtectedRoute(item.href)}
       className={cn(
         'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-right text-sm font-bold transition',
-        depth > 0 && 'py-2.5 text-sm',
+        depth > 0 && 'gap-2.5 rounded-md px-2.5 py-2 text-xs',
         isActive && 'bg-white text-white',
         !isActive && 'bg-white/6 text-white/86 hover:bg-white/10',
       )}
@@ -100,14 +126,43 @@ function SidebarLink({ item, depth = 0, appColor }) {
   );
 }
 
+function SidebarMenuItem({ item, depth, appColor }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const hasChildren = item.children.length > 0;
+
+  return (
+    <div className="space-y-1">
+      <SidebarLink
+        item={item}
+        depth={depth}
+        appColor={appColor}
+        hasChildren={hasChildren}
+        isExpanded={isExpanded}
+        onToggle={() => setIsExpanded((expanded) => !expanded)}
+      />
+      {hasChildren ? (
+        <div
+          className={cn(
+            'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
+            isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+          )}
+          aria-hidden={!isExpanded}
+          inert={!isExpanded}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <SidebarMenuItems items={item.children} depth={depth + 1} appColor={appColor} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SidebarMenuItems({ items, depth = 0, appColor }) {
   return (
-    <div className={cn('space-y-1', depth > 0 && 'border-r border-white/10 pr-2')}>
+    <div className={cn('space-y-1', depth > 0 && 'mr-4 border-r border-white/15 pr-3 pt-1')}>
       {items.map((item) => (
-        <div key={item.id || item.href} className="space-y-1">
-          <SidebarLink item={item} depth={depth} appColor={appColor} />
-          {item.children.length ? <SidebarMenuItems items={item.children} depth={depth + 1} appColor={appColor} /> : null}
-        </div>
+        <SidebarMenuItem key={item.id || item.href} item={item} depth={depth} appColor={appColor} />
       ))}
     </div>
   );

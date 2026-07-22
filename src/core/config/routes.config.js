@@ -17,6 +17,7 @@ export const ROUTES = {
   payments: '/apps/accounting',
   contracts: '/app/contracts',
   settings: '/app/settings',
+  settingsCashLocations: '/app/settings/accounting/cash-locations',
   settingsTeam: '/app/settings/team',
   settingsPermissions: '/app/settings/permissions',
   paymentSettings: '/app/settings?section=accounting&tab=methods',

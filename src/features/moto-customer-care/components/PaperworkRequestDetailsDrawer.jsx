@@ -28,6 +28,13 @@ function formatDate(value) {
   }).format(date);
 }
 
+function formatMoney(value) {
+  return `${new Intl.NumberFormat('ar-EG', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0)} ج.م`;
+}
+
 function getCreatedAtTime(record) {
   const value = record?.createdAt || record?.created_at;
   if (!value) return 0;
@@ -326,6 +333,9 @@ export function PaperworkRequestDetailsDrawer({
   const [deliveryImage, setDeliveryImage] = useState(null);
   const [isDelivering, setIsDelivering] = useState(false);
   const [deliveryError, setDeliveryError] = useState('');
+  const [deliveryBalanceStatus, setDeliveryBalanceStatus] = useState('idle');
+  const [deliveryRemainingAmount, setDeliveryRemainingAmount] = useState(0);
+  const [deliveryBalanceError, setDeliveryBalanceError] = useState('');
   const [processorOverride, setProcessorOverride] = useState(null);
   const [processorPermissionNotice, setProcessorPermissionNotice] = useState('');
   const closeTimerRef = useRef(null);
@@ -375,6 +385,9 @@ export function PaperworkRequestDetailsDrawer({
       setDeliveryImage(null);
       setIsDelivering(false);
       setDeliveryError('');
+      setDeliveryBalanceStatus('idle');
+      setDeliveryRemainingAmount(0);
+      setDeliveryBalanceError('');
       setSendToProcessorError('');
       setSendToProcessorNote('');
       setProcessorPermissionNotice('');
@@ -394,6 +407,47 @@ export function PaperworkRequestDetailsDrawer({
     setProcessorOverride(null);
     setProcessorPermissionNotice('');
   }, [snapshot?.id]);
+
+  useEffect(() => {
+    let active = true;
+
+    const balanceVisibleStages = new Set(['received_from_processor', 'client_notified']);
+
+    if (!open || !balanceVisibleStages.has(snapshot?.currentStage)) {
+      setDeliveryBalanceStatus('idle');
+      setDeliveryRemainingAmount(0);
+      setDeliveryBalanceError('');
+      return undefined;
+    }
+
+    if (!snapshot.saleId) {
+      setDeliveryBalanceStatus('ready');
+      setDeliveryRemainingAmount(0);
+      setDeliveryBalanceError('');
+      return undefined;
+    }
+
+    setDeliveryBalanceStatus('loading');
+    setDeliveryRemainingAmount(0);
+    setDeliveryBalanceError('');
+
+    motoCustomerCareService
+      .getPaperworkDeliveryBalance({ tenantId, saleId: snapshot.saleId })
+      .then((balance) => {
+        if (!active) return;
+        setDeliveryRemainingAmount(balance.remainingAmount);
+        setDeliveryBalanceStatus('ready');
+      })
+      .catch((nextError) => {
+        if (!active) return;
+        setDeliveryBalanceStatus('error');
+        setDeliveryBalanceError(nextError?.message || 'تعذر التحقق من رصيد الفاتورة.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [open, snapshot?.currentStage, snapshot?.saleId, tenantId]);
 
   useEffect(() => {
     if (!mounted) return undefined;
@@ -454,6 +508,11 @@ export function PaperworkRequestDetailsDrawer({
     setDeliveryImage(null);
     setDeliveryError('');
     setDeliveryOpen(false);
+  };
+  const openDelivery = () => {
+    if (deliveryBalanceStatus !== 'ready' || deliveryRemainingAmount > 0) return;
+    setDeliveryOpen(true);
+    setDeliveryError('');
   };
   const selectDeliveryImage = (file) => {
     if (!file) return;
@@ -822,11 +881,30 @@ export function PaperworkRequestDetailsDrawer({
               </span>
             </div>
           ) : snapshot.currentStage === 'received_from_processor' ? (
-            <div className="grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_9.5rem] pb-[env(safe-area-inset-bottom)]">
+            <div className={`grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_9.5rem] pb-[env(safe-area-inset-bottom)] ${deliveryRemainingAmount > 0 ? 'bg-red-50' : ''}`}>
               <div className="min-w-0">
                 <div className="flex h-full flex-col justify-center px-4 py-2.5">
-                  <p className="text-[10px] font-bold text-slate-400">الإجراء التالي</p>
-                  <p className="mt-0.5 text-xs font-black text-slate-800">إبلاغ العميل بوصول الأوراق</p>
+                  {['idle', 'loading'].includes(deliveryBalanceStatus) ? (
+                    <>
+                      <p className="text-[10px] font-bold text-blue-500">جاري مراجعة الفاتورة</p>
+                      <p className="mt-0.5 text-xs font-black text-slate-800">إبلاغ العميل بوصول الأوراق</p>
+                    </>
+                  ) : deliveryBalanceStatus === 'error' ? (
+                    <>
+                      <p className="text-[10px] font-bold text-amber-600">تعذر مراجعة رصيد الفاتورة</p>
+                      <p className="mt-0.5 truncate text-xs font-black text-amber-800">{deliveryBalanceError}</p>
+                    </>
+                  ) : deliveryRemainingAmount > 0 ? (
+                    <>
+                      <p className="text-[10px] font-black text-red-600">لا يمكن تسليم الأوراق</p>
+                      <p className="mt-0.5 text-xs font-black text-red-800">متبقي على الفاتورة {formatMoney(deliveryRemainingAmount)}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[10px] font-bold text-slate-400">الإجراء التالي</p>
+                      <p className="mt-0.5 text-xs font-black text-slate-800">إبلاغ العميل بوصول الأوراق</p>
+                    </>
+                  )}
                 </div>
               </div>
               <button
@@ -838,13 +916,39 @@ export function PaperworkRequestDetailsDrawer({
                 إبلاغ العميل
               </button>
             </div>
+          ) : snapshot.currentStage === 'client_notified' && ['idle', 'loading'].includes(deliveryBalanceStatus) ? (
+            <div className="flex min-h-[4.25rem] items-center gap-3 border-t border-blue-100 bg-blue-50 px-4 pb-[env(safe-area-inset-bottom)] text-blue-800">
+              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+              <div>
+                <p className="text-xs font-black">جاري مراجعة رصيد الفاتورة</p>
+                <p className="mt-0.5 text-[10px] font-bold text-blue-600">سيتم تحديد إمكانية التسليم بعد المراجعة.</p>
+              </div>
+            </div>
+          ) : snapshot.currentStage === 'client_notified' && deliveryBalanceStatus === 'error' ? (
+            <div className="flex min-h-[4.25rem] items-center gap-3 border-t border-amber-200 bg-amber-50 px-4 pb-[env(safe-area-inset-bottom)] text-amber-800">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <div>
+                <p className="text-xs font-black">لا يمكن التحقق من رصيد الفاتورة</p>
+                <p className="mt-0.5 text-[10px] font-bold leading-4">{deliveryBalanceError}</p>
+              </div>
+            </div>
+          ) : snapshot.currentStage === 'client_notified' && deliveryRemainingAmount > 0 ? (
+            <div className="flex min-h-[4.25rem] items-center gap-3 border-t border-red-200 bg-red-50 px-4 pb-[env(safe-area-inset-bottom)] text-red-800">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100">
+                <AlertCircle className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black">لا يمكن تسليم الأوراق</p>
+                <p className="mt-0.5 text-[11px] font-bold">متبقي على الفاتورة {formatMoney(deliveryRemainingAmount)}</p>
+              </div>
+            </div>
           ) : snapshot.currentStage === 'client_notified' ? (
             <div className="grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_9.5rem] pb-[env(safe-area-inset-bottom)]">
               <div className="flex min-w-0 flex-col justify-center px-4 py-2.5">
                 <p className="text-[10px] font-bold text-slate-400">الإجراء التالي</p>
                 <p className="mt-0.5 text-xs font-black text-slate-800">تسليم الأوراق للعميل</p>
               </div>
-              <button type="button" onClick={() => setDeliveryOpen(true)} className="flex items-center justify-center gap-2 border-r border-emerald-700/25 bg-gradient-to-l from-emerald-600 to-teal-500 px-3 text-xs font-black text-white transition hover:from-emerald-700 hover:to-teal-600">
+              <button type="button" onClick={openDelivery} className="flex items-center justify-center gap-2 border-r border-emerald-700/25 bg-gradient-to-l from-emerald-600 to-teal-500 px-3 text-xs font-black text-white transition hover:from-emerald-700 hover:to-teal-600">
                 <Check className="h-4 w-4" />
                 تسليم الأوراق
               </button>
@@ -897,7 +1001,14 @@ export function PaperworkRequestDetailsDrawer({
 
               <div className="mt-5 grid grid-cols-2 gap-2">
                 <button type="button" disabled={isDelivering} onClick={() => closeDelivery()} className="h-10 rounded-xl bg-slate-100 text-xs font-black text-slate-700 disabled:opacity-50">إلغاء</button>
-                <button type="button" disabled={isDelivering} onClick={confirmDelivery} className="h-10 rounded-xl bg-emerald-600 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60">{isDelivering ? 'جاري التسليم...' : 'تأكيد التسليم'}</button>
+                <button
+                  type="button"
+                  disabled={isDelivering || deliveryBalanceStatus !== 'ready' || deliveryRemainingAmount > 0}
+                  onClick={confirmDelivery}
+                  className="h-10 rounded-xl bg-emerald-600 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDelivering ? 'جاري التسليم...' : deliveryRemainingAmount > 0 ? 'التسليم غير متاح' : 'تأكيد التسليم'}
+                </button>
               </div>
             </section>
           </div>

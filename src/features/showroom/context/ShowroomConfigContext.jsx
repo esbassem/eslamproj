@@ -99,3 +99,7 @@ export function useShowroomConfig() {
 
   return context;
 }
+
+export function useOptionalShowroomConfig() {
+  return useContext(ShowroomConfigContext);
+}
