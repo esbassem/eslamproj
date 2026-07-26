@@ -121,8 +121,11 @@ export function ShowroomSaleDetailsPage() {
 
   const saleNumber = sale?.sale_number || sale?.invoice_number || sale?.id?.slice(0, 8).toUpperCase();
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
-  const paidAmount = Number(sale?.paid_amount ?? sale?.paidAmount ?? 0);
-  const remainingAmount = Number(sale?.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+  const paymentsTotal = Array.isArray(sale?.payments)
+    ? sale.payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
+    : Number(sale?.accounting_paid_amount ?? 0);
+  const paidAmount = paymentsTotal;
+  const remainingAmount = Math.max(totalAmount - paidAmount, 0);
   const items = Array.isArray(sale?.items) ? sale.items : [];
   const status = sale?.status;
   const statusInfo = statusConfig[status] || { label: status || '—', color: 'bg-slate-50 border-slate-200 text-slate-600' };

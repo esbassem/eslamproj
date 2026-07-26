@@ -163,8 +163,8 @@ export function ShowroomInvoicesCard({
           <div className="divide-y divide-slate-100">
             {filteredInvoices.map((invoice) => {
               const totalAmount = Number(invoice.total_amount ?? invoice.totalAmount ?? 0);
-              const paidAmount = Number(invoice.paid_amount ?? invoice.paidAmount ?? 0);
-              const remainingAmount = Number(invoice.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+              const paidAmount = Number(invoice.accounting_paid_amount ?? 0);
+              const remainingAmount = Number(invoice.accounting_remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
 
               return (
                 <button
@@ -221,8 +221,8 @@ export function ShowroomInvoicesCard({
           <div className="divide-y divide-slate-100">
             {filteredInvoices.map((invoice) => {
               const totalAmount = Number(invoice.total_amount ?? invoice.totalAmount ?? 0);
-              const paidAmount = Number(invoice.paid_amount ?? invoice.paidAmount ?? 0);
-              const remainingAmount = Number(invoice.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+              const paidAmount = Number(invoice.accounting_paid_amount ?? 0);
+              const remainingAmount = Number(invoice.accounting_remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
               return (
                 <button
                   type="button"

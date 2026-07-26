@@ -28,10 +28,10 @@ export const cashLocationsSettingsService = {
 
     const { data: lines, error: linesError } = await client
       .from('account_move_lines')
-      .select('debit, credit')
+      .select('debit, credit, account_move:account_moves!inner(state)')
       .eq('tenant_id', tenantId)
       .eq('account_id', data.id)
-      .eq('parent_state', 'posted');
+      .eq('account_move.state', 'posted');
 
     if (linesError) return { ...data, kind: 'custody', balance: null, balanceUnavailable: true };
 

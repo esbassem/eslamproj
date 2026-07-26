@@ -641,7 +641,7 @@ export function ShowroomSellPage() {
         saleId: sale.pendingSaleId || null,
         cashAmount: sale.cashAmount,
         cashNote: sale.cashNote,
-        advanceAllocations: sale.advanceAllocations,
+        openCreditAllocations: sale.openCreditAllocations,
         showroomConfigId: currentShowroomConfigId,
       });
 
