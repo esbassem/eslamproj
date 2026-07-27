@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, Banknote, CheckCircle2, Package, Printer, Trash2, User } from 'lucide-react';
+import { AlertCircle, Banknote, CheckCircle2, Package, Printer, RotateCcw, Trash2, User } from 'lucide-react';
 import { ShowroomContractPreview } from '@/features/showroom/components/ShowroomContractPreview';
+import { SaleCancellationDialog } from '@/features/showroom/components/SaleCancellationDialog';
 import { useOptionalShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
 import { showroomService } from '@/features/showroom/services/showroom.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
@@ -91,8 +92,10 @@ function SaleSheetContent({
   onPayRemaining,
   onSettleBalance,
   onDelete,
+  onCancel,
   onPaperworkRequestOpen,
   canDelete,
+  canCancel,
   canRecordPayment,
   canSettleBalance,
   isPayingRemaining,
@@ -139,6 +142,16 @@ function SaleSheetContent({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {canCancel ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex h-9 items-center gap-1.5 rounded-full bg-red-600 px-3 text-xs font-black text-white transition hover:bg-red-700 focus:outline-none focus:ring-4 focus:ring-red-100"
+              >
+                <RotateCcw className="h-4 w-4" />
+                إلغاء الفاتورة
+              </button>
+            ) : null}
             {canDelete ? (
               <button
                 type="button"
@@ -607,6 +620,7 @@ export function ShowroomSaleViewSheet({
   isOpen,
   onClose,
   onDeleted,
+  onCancelled,
   onPaymentRecorded,
   onPaperworkRequestOpen,
   showroomConfigId: providedShowroomConfigId = null,
@@ -623,6 +637,7 @@ export function ShowroomSaleViewSheet({
   const [isContractOpen, setIsContractOpen] = useState(false);
   const [isPayingRemaining, setIsPayingRemaining] = useState(false);
   const [isDeletingSale, setIsDeletingSale] = useState(false);
+  const [isCancellationOpen, setIsCancellationOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState('details');
   const [advanceBalances, setAdvanceBalances] = useState([]);
   const [isAdvanceBalancesLoading, setIsAdvanceBalancesLoading] = useState(false);
@@ -672,11 +687,13 @@ export function ShowroomSaleViewSheet({
       setIsContractOpen(false);
       setIsPayingRemaining(false);
       setIsDeletingSale(false);
+      setIsCancellationOpen(false);
       setSheetMode('details');
     }
   }, [isOpen, fetchDetails]);
 
   const activeSale = fullSale ?? sale;
+  const activeStatus = activeSale?.status;
   const activeCustomerId = activeSale?.customer?.id || activeSale?.customer_id || null;
 
   useEffect(() => {
@@ -842,8 +859,10 @@ export function ShowroomSaleViewSheet({
                 onPayRemaining={handleOpenPaymentStep}
                 onSettleBalance={onSettleBalance}
                 onDelete={handleDeleteSale}
+                onCancel={() => setIsCancellationOpen(true)}
                 onPaperworkRequestOpen={onPaperworkRequestOpen}
-                canDelete={!readOnly && canDeleteSale}
+                canDelete={!readOnly && canDeleteSale && activeStatus === 'pending_payment'}
+                canCancel={!readOnly && canDeleteSale && activeStatus === 'confirmed'}
                 canRecordPayment={!readOnly}
                 canSettleBalance={Boolean(onSettleBalance)}
                 isPayingRemaining={isPayingRemaining}
@@ -865,6 +884,22 @@ export function ShowroomSaleViewSheet({
             isOpen={isContractOpen}
             companyName={tenant?.name}
             onClose={() => setIsContractOpen(false)}
+          />
+          <SaleCancellationDialog
+            open={isCancellationOpen}
+            onOpenChange={setIsCancellationOpen}
+            tenantId={tenant?.id}
+            sale={fullSale ?? sale}
+            onSuccess={async (result) => {
+              setFullSale((current) => ({
+                ...(current ?? sale),
+                status: 'cancelled',
+                accounting_paid_amount: 0,
+                accounting_remaining_amount: 0,
+              }));
+              await onCancelled?.(result);
+              await fetchDetails();
+            }}
           />
         </>
       )}

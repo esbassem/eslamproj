@@ -15,8 +15,6 @@ const SALE_SELECT = `
   sale_date,
   status,
   total_amount,
-  paid_amount,
-  remaining_amount,
   notes,
   account_move_id,
   created_by,
@@ -918,21 +916,23 @@ async function attachSaleAccountingStatus(client, tenantId, sales) {
     paidByLineId.set(row.debit_move_id, toMoney(paidByLineId.get(row.debit_move_id)) + toMoney(row.amount));
   });
   const paidByMoveId = new Map();
+  const originalByMoveId = new Map();
   receivableLines.forEach((line) => {
     paidByMoveId.set(line.move_id, toMoney(paidByMoveId.get(line.move_id)) + toMoney(paidByLineId.get(line.id)));
+    originalByMoveId.set(line.move_id, toMoney(originalByMoveId.get(line.move_id)) + toMoney(line.debit));
   });
 
   const normalized = saleRows.map((sale) => {
     const move = moveBySaleId.get(sale.id) || null;
     const paidAmount = Math.round(toMoney(paidByMoveId.get(move?.id)) * 100) / 100;
-    const totalAmount = toMoney(sale.total_amount ?? sale.totalAmount);
-    const remainingAmount = Math.max(Math.round((totalAmount - paidAmount) * 100) / 100, 0);
+    const invoiceReceivableAmount = move
+      ? toMoney(originalByMoveId.get(move.id))
+      : toMoney(sale.total_amount ?? sale.totalAmount);
+    const remainingAmount = Math.max(Math.round((invoiceReceivableAmount - paidAmount) * 100) / 100, 0);
     return {
       ...sale,
       accounting_paid_amount: paidAmount,
       accounting_remaining_amount: remainingAmount,
-      paid_amount: paidAmount,
-      remaining_amount: remainingAmount,
     };
   });
 
@@ -1620,8 +1620,6 @@ export const showroomService = {
       const { data, error } = await client.from('showroom_sales').update({
         customer_id: customerId,
         total_amount: safeTotalAmount,
-        paid_amount: 0,
-        remaining_amount: safeTotalAmount,
         updated_at: new Date().toISOString(),
       }).eq('tenant_id', tenantId).eq('showroom_config_id', showroomConfigId)
         .eq('id', pendingSaleId).eq('status', 'pending_payment').select(SALE_SELECT).single();
@@ -1648,8 +1646,6 @@ export const showroomService = {
         sale_date: todayISODate(),
         status: 'pending_payment',
         total_amount: safeTotalAmount,
-        paid_amount: 0,
-        remaining_amount: safeTotalAmount,
         created_by: createdBy,
       }).select(SALE_SELECT).single();
       if (error) throw error;

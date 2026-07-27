@@ -24,6 +24,10 @@ function InvoiceStatusBadge({ status }) {
     return <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 ring-1 ring-inset ring-amber-200">معلقة بانتظار الدفع</span>;
   }
 
+  if (status === 'cancelled') {
+    return <span className="mt-2 inline-flex rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-black text-red-700 ring-1 ring-inset ring-red-200">ملغاة</span>;
+  }
+
   return null;
 }
 

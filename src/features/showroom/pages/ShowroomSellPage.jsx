@@ -680,6 +680,26 @@ export function ShowroomSellPage() {
     setSelectedSale(null);
   };
 
+  const handleSaleCancelled = useCallback(async (result) => {
+    const saleId = result?.sale_id;
+    if (!saleId) return;
+
+    const markCancelled = (targetSale) => (
+      targetSale?.id === saleId
+        ? {
+            ...targetSale,
+            status: 'cancelled',
+            accounting_paid_amount: 0,
+            accounting_remaining_amount: 0,
+          }
+        : targetSale
+    );
+
+    setSales((current) => current.map(markCancelled));
+    setSelectedSale((current) => markCancelled(current));
+    await loadSales();
+  }, [loadSales]);
+
   const handlePendingSaleDelete = async (saleId) => {
     if (!tenant?.id) return { ok: false, error: 'لا توجد شركة نشطة.' };
     try {
@@ -1004,6 +1024,7 @@ export function ShowroomSellPage() {
         isOpen={Boolean(selectedSale)}
         onClose={() => setSelectedSale(null)}
         onDeleted={handleSaleDeleted}
+        onCancelled={handleSaleCancelled}
         onPaperworkRequestOpen={(saleToUpdate) => {
           if (saleToUpdate && getSalePendingPaperworkLines(saleToUpdate).length) {
             setDismissedPaperworkPromptSaleId(null);
