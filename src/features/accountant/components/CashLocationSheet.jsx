@@ -1,17 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
+  ArrowRight,
   ArrowDownToLine,
   ArrowUpFromLine,
+  ChevronLeft,
   History,
-  Landmark,
   Loader2,
-  Plus,
-  WalletCards,
+  ReceiptText,
   X,
 } from 'lucide-react';
-import { Button } from '@/core/ui/button';
-import { Input } from '@/core/ui/input';
-import { Label } from '@/core/ui/label';
 import {
   Sheet,
   SheetBody,
@@ -26,18 +23,15 @@ function formatCurrency(value) {
   return `${Number(value ?? 0).toLocaleString('ar-EG')} ج.م`;
 }
 
-export function CashLocationSheet({ location, tenantId, onOpenChange, onOperationCreated }) {
-  const [activeTab, setActiveTab] = useState('history');
+export function CashLocationSheet({ location, tenantId, onOpenChange }) {
+  const [operationStage, setOperationStage] = useState('types');
   const [operations, setOperations] = useState([]);
-  const [counterAccounts, setCounterAccounts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [direction, setDirection] = useState('in');
-  const [counterAccountId, setCounterAccountId] = useState('');
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState('');
+  const [outstandingInvoices, setOutstandingInvoices] = useState([]);
+  const [invoiceTotal, setInvoiceTotal] = useState(0);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  const [invoiceLoadError, setInvoiceLoadError] = useState('');
 
   const loadSheetData = async () => {
     if (!tenantId || !location?.id) return;
@@ -45,15 +39,13 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
     setIsLoading(true);
     setLoadError('');
     try {
-      const [nextOperations, accounts] = await Promise.all([
-        accountantService.listCashLocationOperations({ tenantId, accountId: location.id }),
-        accountantService.listSettlementAccounts({ tenantId }),
-      ]);
+      const nextOperations = await accountantService.listCashLocationOperations({
+        tenantId,
+        accountId: location.id,
+      });
       setOperations(nextOperations);
-      setCounterAccounts(accounts.filter((account) => account.id !== location.id));
     } catch (error) {
       setOperations([]);
-      setCounterAccounts([]);
       setLoadError(error.message || 'تعذر تحميل بيانات الخزنة.');
     } finally {
       setIsLoading(false);
@@ -63,206 +55,198 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
   useEffect(() => {
     if (!location?.id) return;
 
-    setActiveTab('history');
-    setDirection('in');
-    setCounterAccountId('');
-    setAmount('');
-    setNote('');
-    setSubmitError('');
+    setOperationStage('types');
+    setOutstandingInvoices([]);
+    setInvoiceTotal(0);
+    setInvoiceLoadError('');
     loadSheetData();
   }, [location?.id, tenantId]);
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setIsSubmitting(true);
-    setSubmitError('');
+  const openInvoiceCollection = async () => {
+    setOperationStage('invoice-collection');
+    setIsLoadingInvoices(true);
+    setInvoiceLoadError('');
 
     try {
-      await accountantService.createCashLocationOperation({
-        tenantId,
-        cashAccountId: location.id,
-        counterAccountId,
-        direction,
-        amount,
-        note,
-      });
-      setAmount('');
-      setNote('');
-      setCounterAccountId('');
-      await Promise.all([loadSheetData(), onOperationCreated?.(location.id)]);
-      setActiveTab('history');
+      const summary = await accountantService.getSalesInvoiceSummary({ tenantId });
+      setOutstandingInvoices(summary.invoices || []);
+      setInvoiceTotal(summary.total || 0);
     } catch (error) {
-      setSubmitError(error.message || 'تعذر تسجيل العملية.');
+      setOutstandingInvoices([]);
+      setInvoiceTotal(0);
+      setInvoiceLoadError(error.message || 'تعذر تحميل الفواتير المستحقة.');
     } finally {
-      setIsSubmitting(false);
+      setIsLoadingInvoices(false);
     }
   };
 
+  const operationButtons = (
+    <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
+      <button
+        type="button"
+        onClick={openInvoiceCollection}
+        className="group flex min-h-[44px] w-full items-center gap-2 rounded-xl border border-slate-800/90 bg-slate-900/95 px-3 py-2 text-right text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] backdrop-blur-md transition hover:bg-slate-800 hover:shadow-[0_10px_24px_rgba(15,23,42,0.22)] active:scale-[0.98]"
+      >
+        <span className="min-w-0 flex-1 text-xs font-black leading-4">تحصيل فاتورة</span>
+        <ChevronLeft className="h-3.5 w-3.5 shrink-0 text-white/60 transition-transform group-hover:-translate-x-0.5 group-hover:text-white" />
+      </button>
+
+      {[2, 3, 4].map((item) => (
+        <button
+          key={item}
+          type="button"
+          disabled
+          className="flex min-h-[44px] w-full items-center gap-2 rounded-xl border border-white/80 bg-white/25 px-3 py-2 text-right text-slate-500 shadow-[0_5px_15px_rgba(15,23,42,0.05)] backdrop-blur-md"
+        >
+          <span className="min-w-0 flex-1 text-[11px] font-bold leading-4">نوع عملية جديد</span>
+          <ChevronLeft className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <Sheet open={Boolean(location)} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="w-full max-w-full bg-white p-0 sm:max-w-[560px]" dir="rtl">
-        <SheetHeader className="relative bg-slate-50 px-5 py-5 sm:px-7">
-          <SheetClose className="absolute left-5 top-5 flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:text-slate-900">
-            <X className="h-4 w-4" />
-            <span className="sr-only">إغلاق</span>
-          </SheetClose>
-          <div className="flex items-center gap-3 pl-12">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-              {location?.kind === 'main' ? <Landmark className="h-5 w-5" /> : <WalletCards className="h-5 w-5" />}
-            </span>
-            <div className="min-w-0">
-              <SheetTitle className="truncate text-lg font-black">{location?.name || 'الخزنة'}</SheetTitle>
-              <p className="mt-1 text-xs font-bold text-slate-500">
-                الرصيد الحالي: <span className="text-slate-900">{formatCurrency(location?.balance || 0)}</span>
-              </p>
-            </div>
-          </div>
-        </SheetHeader>
-
-        <div className="grid grid-cols-2 border-b border-slate-200 bg-white px-5 pt-3 sm:px-7">
-          <button
-            type="button"
-            onClick={() => setActiveTab('history')}
-            className={`flex items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-black transition ${
-              activeTab === 'history' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <History className="h-4 w-4" />
-            سجل الخزنة
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('new')}
-            className={`flex items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-black transition ${
-              activeTab === 'new' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Plus className="h-4 w-4" />
-            إضافة عملية
-          </button>
-        </div>
-
-        <SheetBody className="px-5 py-5 sm:px-7">
-          {activeTab === 'new' ? (
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div>
-                <Label className="mb-2 block font-black">نوع العملية</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setDirection('in')}
-                    className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-black transition ${
-                      direction === 'in' ? 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-100' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <ArrowDownToLine className="h-4 w-4" />
-                    وارد
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDirection('out')}
-                    className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-black transition ${
-                      direction === 'out' ? 'border-red-300 bg-red-50 text-red-700 ring-2 ring-red-100' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <ArrowUpFromLine className="h-4 w-4" />
-                    صادر
-                  </button>
-                </div>
+      <SheetContent side="left" className="w-full max-w-full bg-slate-50 p-0 sm:max-w-[560px]" dir="rtl">
+        <SheetHeader className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50 px-5 pb-6 pt-5 text-slate-950 sm:px-7">
+          <span className="pointer-events-none absolute -left-14 -top-20 h-52 w-52 rounded-full bg-white/80 blur-3xl" />
+          <span className="pointer-events-none absolute -bottom-24 right-4 h-48 w-48 rounded-full bg-blue-200/30 blur-3xl" />
+          {operationStage === 'invoice-collection' ? (
+            <div className="cash-sheet-stage-enter relative flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setOperationStage('types')}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white bg-white/70 text-slate-700 shadow-sm backdrop-blur-md transition hover:bg-white"
+                aria-label="رجوع"
+              >
+                <ArrowRight className="h-5 w-5" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <SheetTitle className="truncate text-base font-black text-slate-950">الفواتير المستحقة</SheetTitle>
+                <p className="mt-1 text-xs font-bold text-slate-500">الفواتير التي ما زال عليها رصيد</p>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="cash-operation-counter-account" className="font-black">الحساب المقابل</Label>
-                <select
-                  id="cash-operation-counter-account"
-                  value={counterAccountId}
-                  onChange={(event) => setCounterAccountId(event.target.value)}
-                  disabled={isLoading || isSubmitting}
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-right text-sm font-bold text-slate-900 outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-teal-50 disabled:opacity-60"
-                >
-                  <option value="">اختر الحساب المقابل</option>
-                  {counterAccounts.map((account) => (
-                    <option key={account.id} value={account.id}>{account.code} — {account.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="cash-operation-amount" className="font-black">المبلغ</Label>
-                <Input
-                  id="cash-operation-amount"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  disabled={isSubmitting}
-                  placeholder="0.00"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="cash-operation-note" className="font-black">بيان العملية</Label>
-                <textarea
-                  id="cash-operation-note"
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  disabled={isSubmitting}
-                  rows={3}
-                  placeholder="اكتب سبب أو وصف العملية"
-                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-300 focus:ring-4 focus:ring-teal-50 disabled:opacity-60"
-                />
-              </div>
-
-              {submitError ? (
-                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{submitError}</p>
-              ) : null}
-
-              <Button type="submit" disabled={isSubmitting || isLoading} className="w-full bg-teal-700 text-white hover:bg-teal-800">
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                {isSubmitting ? 'جاري تسجيل العملية...' : 'تسجيل العملية'}
-              </Button>
-            </form>
-          ) : isLoading ? (
-            <div className="flex min-h-48 items-center justify-center gap-2 text-sm font-black text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              جاري تحميل سجل الخزنة...
-            </div>
-          ) : loadError ? (
-            <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{loadError}</p>
-          ) : operations.length ? (
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <div className="divide-y divide-slate-100">
-                {operations.map((operation) => {
-                  const isIncoming = operation.direction === 'in';
-                  const OperationIcon = isIncoming ? ArrowDownToLine : ArrowUpFromLine;
-                  return (
-                    <div key={operation.id} className="flex items-center gap-3 px-4 py-3.5">
-                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                        isIncoming ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                      }`}>
-                        <OperationIcon className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-black text-slate-900">{operation.label}</p>
-                        <p className="mt-1 truncate text-[11px] font-bold text-slate-400">{operation.dateLabel || 'بدون تاريخ'}</p>
-                      </div>
-                      <p className={`shrink-0 text-sm font-black ${isIncoming ? 'text-emerald-700' : 'text-red-600'}`}>
-                        {isIncoming ? '+' : '-'} {formatCurrency(operation.amount)}
-                      </p>
-                    </div>
-                  );
-                })}
+              <div className="shrink-0 text-left">
+                <p className="text-[10px] font-bold text-slate-400">إجمالي المستحق</p>
+                <p className="mt-1 text-sm font-black text-red-600">
+                  {isLoadingInvoices ? '...' : formatCurrency(invoiceTotal)}
+                </p>
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
-              <History className="mx-auto h-7 w-7 text-slate-300" />
-              <p className="mt-3 text-sm font-black text-slate-700">لا توجد عمليات على هذه الخزنة.</p>
-              <button type="button" onClick={() => setActiveTab('new')} className="mt-3 text-sm font-black text-teal-700 hover:text-teal-800">
-                إضافة أول عملية
-              </button>
+            <div className="cash-sheet-stage-enter relative">
+              <SheetClose className="absolute left-0 top-0 flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/70 hover:text-slate-900">
+                <X className="h-5 w-5" />
+                <span className="sr-only">إغلاق</span>
+              </SheetClose>
+              <SheetTitle className="truncate pl-12 text-base font-black text-slate-950">{location?.name || 'الخزنة'}</SheetTitle>
+              <div className="mt-5 flex items-start gap-3">
+                <div className="w-[30%] shrink-0 pt-1">
+                  <p className="text-[11px] font-bold text-slate-500">الرصيد الحالي</p>
+                  <p className="mt-1 whitespace-nowrap text-lg font-black tracking-tight text-slate-950">
+                    {formatCurrency(location?.balance || 0)}
+                  </p>
+                </div>
+                {operationButtons}
+              </div>
+            </div>
+          )}
+        </SheetHeader>
+
+        <SheetBody className="px-5 py-6 sm:px-7">
+          {operationStage === 'invoice-collection' ? (
+            <div className="cash-sheet-stage-enter">
+              {isLoadingInvoices ? (
+                <div className="flex min-h-48 items-center justify-center gap-2 text-sm font-black text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  جاري تحميل الفواتير...
+                </div>
+              ) : invoiceLoadError ? (
+                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                  {invoiceLoadError}
+                </p>
+              ) : outstandingInvoices.length ? (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <div className="divide-y divide-slate-100">
+                    {outstandingInvoices.map((invoice) => (
+                      <button
+                        key={invoice.id}
+                        type="button"
+                        className="flex w-full items-center gap-3 px-4 py-3.5 text-right transition hover:bg-slate-50"
+                      >
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+                          <ReceiptText className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-black text-slate-900">{invoice.customerName}</span>
+                          <span className="mt-1 block truncate text-[11px] font-bold text-slate-400">
+                            {invoice.saleNumber ? `فاتورة ${invoice.saleNumber}` : 'فاتورة مبيعات'}
+                            {invoice.saleDate ? ` · ${new Date(invoice.saleDate).toLocaleDateString('ar-EG')}` : ''}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-left">
+                          <span className="block text-sm font-black text-red-600">{formatCurrency(invoice.remainingAmount)}</span>
+                          <span className="mt-1 block text-[10px] font-bold text-slate-400">متبقي</span>
+                        </span>
+                        <ChevronLeft className="h-4 w-4 shrink-0 text-slate-300" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center">
+                  <ReceiptText className="mx-auto h-7 w-7 text-slate-300" />
+                  <p className="mt-3 text-sm font-black text-slate-700">لا توجد فواتير مستحقة</p>
+                  <p className="mt-1 text-xs font-bold text-slate-400">جميع الفواتير مسددة حاليًا</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="cash-sheet-stage-enter">
+              <section>
+                <div className="mb-3 flex items-center gap-2 px-1">
+                  <History className="h-4 w-4 text-slate-500" />
+                  <h3 className="text-sm font-black text-slate-900">سجل العمليات</h3>
+                </div>
+
+                {isLoading ? (
+                  <div className="flex min-h-36 items-center justify-center gap-2 rounded-2xl border border-slate-200 text-sm font-black text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    جاري تحميل السجل...
+                  </div>
+                ) : loadError ? (
+                  <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{loadError}</p>
+                ) : operations.length ? (
+                  <div className="overflow-hidden rounded-2xl border border-slate-200">
+                    <div className="divide-y divide-slate-100">
+                      {operations.map((operation) => {
+                        const isIncoming = operation.direction === 'in';
+                        const OperationIcon = isIncoming ? ArrowDownToLine : ArrowUpFromLine;
+                        return (
+                          <div key={operation.id} className="flex items-center gap-3 px-4 py-3.5">
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                              isIncoming ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                            }`}>
+                              <OperationIcon className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-black text-slate-900">{operation.label}</p>
+                              <p className="mt-1 truncate text-[11px] font-bold text-slate-400">{operation.dateLabel || 'بدون تاريخ'}</p>
+                            </div>
+                            <p className={`shrink-0 text-sm font-black ${isIncoming ? 'text-emerald-700' : 'text-red-600'}`}>
+                              {isIncoming ? '+' : '-'} {formatCurrency(operation.amount)}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center">
+                    <History className="mx-auto h-6 w-6 text-slate-300" />
+                    <p className="mt-3 text-sm font-black text-slate-600">لا توجد عمليات حتى الآن</p>
+                  </div>
+                )}
+              </section>
             </div>
           )}
         </SheetBody>

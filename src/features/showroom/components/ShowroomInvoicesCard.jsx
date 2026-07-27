@@ -24,6 +24,10 @@ function InvoiceStatusBadge({ status }) {
     return <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 ring-1 ring-inset ring-amber-200">معلقة بانتظار الدفع</span>;
   }
 
+  if (status === 'cancelled') {
+    return <span className="mt-2 inline-flex rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-black text-red-700 ring-1 ring-inset ring-red-200">ملغاة</span>;
+  }
+
   return null;
 }
 
@@ -163,8 +167,8 @@ export function ShowroomInvoicesCard({
           <div className="divide-y divide-slate-100">
             {filteredInvoices.map((invoice) => {
               const totalAmount = Number(invoice.total_amount ?? invoice.totalAmount ?? 0);
-              const paidAmount = Number(invoice.paid_amount ?? invoice.paidAmount ?? 0);
-              const remainingAmount = Number(invoice.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+              const paidAmount = Number(invoice.accounting_paid_amount ?? 0);
+              const remainingAmount = Number(invoice.accounting_remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
 
               return (
                 <button
@@ -221,8 +225,8 @@ export function ShowroomInvoicesCard({
           <div className="divide-y divide-slate-100">
             {filteredInvoices.map((invoice) => {
               const totalAmount = Number(invoice.total_amount ?? invoice.totalAmount ?? 0);
-              const paidAmount = Number(invoice.paid_amount ?? invoice.paidAmount ?? 0);
-              const remainingAmount = Number(invoice.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+              const paidAmount = Number(invoice.accounting_paid_amount ?? 0);
+              const remainingAmount = Number(invoice.accounting_remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
               return (
                 <button
                   type="button"

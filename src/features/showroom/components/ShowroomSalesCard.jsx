@@ -203,12 +203,11 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
   const [isCreatingPendingSale, setIsCreatingPendingSale] = useState(false);
   const [isDeletingPendingSale, setIsDeletingPendingSale] = useState(false);
   const [pendingSaleId, setPendingSaleId] = useState('');
-  const [advanceBalances, setAdvanceBalances] = useState([]);
-  const [advanceAllocations, setAdvanceAllocations] = useState({});
-  const [advancePaymentNotes, setAdvancePaymentNotes] = useState({});
-  const [isAdvanceBalancesLoading, setIsAdvanceBalancesLoading] = useState(false);
-  const [advanceBalancesError, setAdvanceBalancesError] = useState('');
-  const [isAdvanceBalancesSheetOpen, setIsAdvanceBalancesSheetOpen] = useState(false);
+  const [openCredits, setOpenCredits] = useState([]);
+  const [openCreditAllocations, setOpenCreditAllocations] = useState({});
+  const [isOpenCreditsLoading, setIsOpenCreditsLoading] = useState(false);
+  const [openCreditsError, setOpenCreditsError] = useState('');
+  const [isOpenCreditsSheetOpen, setIsOpenCreditsSheetOpen] = useState(false);
   const [isCashPaymentSheetOpen, setIsCashPaymentSheetOpen] = useState(false);
   const [cashDraftAmount, setCashDraftAmount] = useState('');
   const [cashDraftNote, setCashDraftNote] = useState('');
@@ -295,8 +294,7 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
     setPendingSaleId(resumeSale.id);
     setPaidAmount('');
     setPaymentNotes('');
-    setAdvanceAllocations({});
-    setAdvancePaymentNotes({});
+    setOpenCreditAllocations({});
     setMessage('');
     setStep(3);
     onResumeHandled?.();
@@ -316,26 +314,30 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
     let mounted = true;
 
     if (step !== 3 || !tenant?.id || !selectedCustomer?.id) {
-      setAdvanceBalancesError('');
+      setOpenCreditsError('');
+      setOpenCredits([]);
+      setOpenCreditAllocations({});
       return undefined;
     }
 
-    setIsAdvanceBalancesLoading(true);
-    setAdvanceBalancesError('');
+    setIsOpenCreditsLoading(true);
+    setOpenCreditsError('');
+    setOpenCredits([]);
+    setOpenCreditAllocations({});
 
     showroomService
-      .getCustomerAdvanceBalances({ tenantId: tenant.id, customerId: selectedCustomer.id })
+      .getCustomerOpenCredits({ tenantId: tenant.id, customerId: selectedCustomer.id })
       .then((data) => {
         if (!mounted) return;
-        setAdvanceBalances(data);
+        setOpenCredits(data);
       })
       .catch((error) => {
         if (!mounted) return;
-        setAdvanceBalances([]);
-        setAdvanceBalancesError(error.message || 'تعذر تحميل الدفعات المسبقة.');
+        setOpenCredits([]);
+        setOpenCreditsError(error.message || 'تعذر تحميل الاعتمادات المفتوحة.');
       })
       .finally(() => {
-        if (mounted) setIsAdvanceBalancesLoading(false);
+        if (mounted) setIsOpenCreditsLoading(false);
       });
 
     return () => {
@@ -422,15 +424,11 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
   }, [productSearch, products]);
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
-  const advanceAmount = Object.values(advanceAllocations).reduce((sum, value) => sum + (Number(value) || 0), 0);
-  const paymentAmount = (Number(paidAmount) || 0) + advanceAmount;
-  const hasPaidAmount = paidAmount !== '' || advanceAmount > 0;
+  const openCreditAmount = Object.values(openCreditAllocations).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const paymentAmount = (Number(paidAmount) || 0) + openCreditAmount;
+  const hasPaidAmount = paidAmount !== '' || openCreditAmount > 0;
   const remainingAmount = Math.max(total - paymentAmount, 0);
   const hasNoRemainingAmount = hasPaidAmount && remainingAmount <= 0;
-  const hasIncompleteAdvanceNotes = advanceBalances.some((balance) => (
-    (Number(advanceAllocations[balance.paymentEntityId]) || 0) > 0
-    && !String(advancePaymentNotes[balance.paymentEntityId] || '').trim()
-  ));
   const customer = selectedCustomer;
   const pendingAttributeFields = useMemo(() => getProductAttributeFields(pendingProduct), [pendingProduct]);
 
@@ -932,10 +930,9 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
     setApprovalReference('');
     setPaymentNotes('');
     setContractNote('');
-    setAdvanceBalances([]);
-    setAdvanceAllocations({});
-    setAdvancePaymentNotes({});
-    setIsAdvanceBalancesSheetOpen(false);
+    setOpenCredits([]);
+    setOpenCreditAllocations({});
+    setIsOpenCreditsSheetOpen(false);
     setIsCashPaymentSheetOpen(false);
     setCashDraftAmount('');
     setCashDraftNote('');
@@ -969,11 +966,10 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
   const complete = async () => {
     if (!customer || !cart.length || isCompleting) return;
     const cash = Number(paidAmount) || 0;
-    const allocations = advanceBalances
-      .map((balance) => ({
-        paymentEntityId: balance.paymentEntityId,
-        amount: Number(advanceAllocations[balance.paymentEntityId]) || 0,
-        note: String(advancePaymentNotes[balance.paymentEntityId] || '').trim(),
+    const allocations = openCredits
+      .map((credit) => ({
+        openCreditLineId: credit.openCreditLineId,
+        amount: Number(openCreditAllocations[credit.openCreditLineId]) || 0,
       }))
       .filter((allocation) => allocation.amount > 0);
     const paid = cash + allocations.reduce((sum, allocation) => sum + allocation.amount, 0);
@@ -989,11 +985,6 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
       return;
     }
 
-    if (allocations.some((allocation) => !allocation.note)) {
-      setMessage('اكتب ملاحظة لكل دفعة مستخدمة من رصيد العميل.');
-      return;
-    }
-
     setIsCompleting(true);
 
     try {
@@ -1005,7 +996,7 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
         paidAmount: paid,
         cashAmount: cash,
         cashNote: paymentNotes.trim(),
-        advanceAllocations: allocations,
+        openCreditAllocations: allocations,
         contractNote: contractNote.trim(),
         paymentType,
         paymentMethodId: paymentType,
@@ -1242,7 +1233,7 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
                   <section>
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <p className="text-xs font-black text-slate-400">طرق الدفع المتاحة</p>
-                      {isAdvanceBalancesLoading ? <span className="text-[11px] font-bold text-slate-400">جار التحميل...</span> : null}
+                      {isOpenCreditsLoading ? <span className="text-[11px] font-bold text-slate-400">جار التحميل...</span> : null}
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <button type="button" onClick={() => {
@@ -1253,37 +1244,37 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white"><Banknote className="h-4 w-4" /></span>
                         <span className="text-sm font-black text-slate-800">تحصيل نقدي</span>
                       </button>
-                      {!isAdvanceBalancesLoading && !advanceBalancesError ? advanceBalances.map((balance) => {
-                        const avatar = getPartnerAvatarConfig({ name: balance.paymentEntityName, displayConfig: balance.displayConfig });
-                        const selectedAmount = Number(advanceAllocations[balance.paymentEntityId]) || 0;
+                      {!isOpenCreditsLoading && !openCreditsError ? openCredits.map((credit) => {
+                        const avatar = getPartnerAvatarConfig({ name: credit.paymentEntityName, displayConfig: credit.displayConfig });
+                        const selectedAmount = Number(openCreditAllocations[credit.openCreditLineId]) || 0;
                         return (
-                          <button key={balance.paymentEntityId} type="button" onClick={() => setIsAdvanceBalancesSheetOpen(true)} className={`flex min-h-16 items-center gap-3 border px-3 py-2 text-right transition focus:outline-none ${selectedAmount > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                          <button key={credit.openCreditLineId} type="button" onClick={() => setIsOpenCreditsSheetOpen(true)} className={`flex min-h-16 items-center gap-3 border px-3 py-2 text-right transition focus:outline-none ${selectedAmount > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-slate-400'}`}>
                             <span className={`flex h-9 w-9 shrink-0 items-center justify-center text-xs font-black ${avatar.shape === 'circle' ? 'rounded-full' : 'rounded-lg'}`} style={{ backgroundColor: avatar.bg, color: avatar.color }}>{avatar.text}</span>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-xs font-black text-slate-800">{balance.paymentEntityName}</span>
-                              <span className="mt-1 block truncate text-[11px] font-bold text-slate-400">متاح {formatMoney(balance.availableAmount)}</span>
+                              <span className="block truncate text-xs font-black text-slate-800">{credit.paymentEntityName}</span>
+                              <span className="mt-1 block truncate text-[11px] font-bold text-slate-400">متاح {formatMoney(credit.availableAmount)}</span>
                             </span>
                             {selectedAmount > 0 ? <span className="text-xs font-black text-emerald-700">{formatMoney(selectedAmount)}</span> : null}
                           </button>
                         );
                       }) : null}
                     </div>
-                    {advanceBalancesError ? <p className="mt-2 text-xs font-black text-red-600">{advanceBalancesError}</p> : null}
+                    {openCreditsError ? <p className="mt-2 text-xs font-black text-red-600">{openCreditsError}</p> : null}
                   </section>
                 </div>
 
                 <section className="pt-5">
                   <div className="space-y-2">
-                    {advanceBalances.filter((balance) => (Number(advanceAllocations[balance.paymentEntityId]) || 0) > 0).map((balance) => {
-                      const avatar = getPartnerAvatarConfig({ name: balance.paymentEntityName, displayConfig: balance.displayConfig });
-                      const amount = Number(advanceAllocations[balance.paymentEntityId]) || 0;
+                    {openCredits.filter((credit) => (Number(openCreditAllocations[credit.openCreditLineId]) || 0) > 0).map((credit) => {
+                      const avatar = getPartnerAvatarConfig({ name: credit.paymentEntityName, displayConfig: credit.displayConfig });
+                      const amount = Number(openCreditAllocations[credit.openCreditLineId]) || 0;
                       return (
-                        <div key={balance.paymentEntityId} className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <div key={credit.openCreditLineId} className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
                           <span className={`flex h-7 w-7 shrink-0 items-center justify-center text-[10px] font-black ${avatar.shape === 'circle' ? 'rounded-full' : 'rounded-md'}`} style={{ backgroundColor: avatar.bg, color: avatar.color }}>{avatar.text}</span>
-                          <span className="shrink-0 truncate text-xs font-black text-slate-700">{balance.paymentEntityName}</span>
-                          {advancePaymentNotes[balance.paymentEntityId] ? <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-400">{advancePaymentNotes[balance.paymentEntityId]}</span> : <span className="flex-1" />}
+                          <span className="shrink-0 truncate text-xs font-black text-slate-700">{credit.paymentEntityName}</span>
+                          <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-400">{credit.moveName || 'اعتماد جهة'}</span>
                           <span className="whitespace-nowrap text-xs font-black text-emerald-600">{formatMoney(amount)}</span>
-                          <button type="button" onClick={() => { setAdvanceAllocations((current) => ({ ...current, [balance.paymentEntityId]: '' })); setAdvancePaymentNotes((current) => ({ ...current, [balance.paymentEntityId]: '' })); }} className="flex h-7 w-7 shrink-0 items-center justify-center text-slate-400 transition hover:bg-red-50 hover:text-red-600" aria-label={`حذف دفعة ${balance.paymentEntityName}`} title="حذف الدفعة"><Trash2 className="h-3.5 w-3.5" /></button>
+                          <button type="button" onClick={() => setOpenCreditAllocations((current) => ({ ...current, [credit.openCreditLineId]: '' }))} className="flex h-7 w-7 shrink-0 items-center justify-center text-slate-400 transition hover:bg-red-50 hover:text-red-600" aria-label={`حذف اعتماد ${credit.paymentEntityName}`} title="حذف الاعتماد"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                       );
                     })}
@@ -1367,11 +1358,11 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
             <div className="space-y-5">
               <label className="block">
                 <span className="mb-2 block text-xs font-black text-slate-600">المبلغ</span>
-                <Input type="number" inputMode="decimal" min="0" max={Math.max(total - advanceAmount, 0)} step="0.01" value={cashDraftAmount} onChange={(event) => {
+                <Input type="number" inputMode="decimal" min="0" max={Math.max(total - openCreditAmount, 0)} step="0.01" value={cashDraftAmount} onChange={(event) => {
                   const value = event.target.value;
-                  setCashDraftAmount(value === '' ? '' : String(Math.min(Math.max(Number(value) || 0, 0), Math.max(total - advanceAmount, 0))));
+                  setCashDraftAmount(value === '' ? '' : String(Math.min(Math.max(Number(value) || 0, 0), Math.max(total - openCreditAmount, 0))));
                 }} placeholder="0" className="h-14 rounded-xl border-slate-300 text-xl font-black text-slate-950" autoFocus />
-                <span className="mt-2 block text-xs font-bold text-slate-400">الحد الأقصى {formatMoney(Math.max(total - advanceAmount, 0))}</span>
+                <span className="mt-2 block text-xs font-bold text-slate-400">الحد الأقصى {formatMoney(Math.max(total - openCreditAmount, 0))}</span>
               </label>
               <label className="block">
                 <span className="mb-2 block text-xs font-black text-slate-600">ملاحظة الدفع <span className="text-red-600">*</span></span>
@@ -1401,42 +1392,45 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
         </SheetContent>
       </Sheet>
 
-      <Sheet open={isAdvanceBalancesSheetOpen} onOpenChange={setIsAdvanceBalancesSheetOpen}>
+      <Sheet open={isOpenCreditsSheetOpen} onOpenChange={setIsOpenCreditsSheetOpen}>
         <SheetContent side="right" className="w-full max-w-md border-l-0 bg-[#fffafb] p-0" dir="rtl">
           <SheetHeader className="border-b border-[#e6c8cf] bg-white px-5 py-5 text-right">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <SheetTitle className="text-xl font-black text-[#4d1f28]">رصيد العميل</SheetTitle>
-                <p className="mt-1 text-xs font-bold text-[#8e6f76]">اختر المبلغ المستخدم من كل جهة</p>
+                <SheetTitle className="text-xl font-black text-[#4d1f28]">اعتمادات العميل المفتوحة</SheetTitle>
+                <p className="mt-1 text-xs font-bold text-[#8e6f76]">اختر كل اعتماد مستقل والمبلغ المستخدم منه</p>
               </div>
               <SheetDismissButton />
             </div>
           </SheetHeader>
           <SheetBody className="space-y-3 px-5 py-5">
-            {advanceBalances.map((balance) => {
-              const avatar = getPartnerAvatarConfig({ name: balance.paymentEntityName, displayConfig: balance.displayConfig });
-              const allocated = advanceAllocations[balance.paymentEntityId] ?? '';
-              const maxForEntity = Math.min(balance.availableAmount, Math.max(total - (Number(paidAmount) || 0) - advanceAmount + (Number(allocated) || 0), 0));
+            {openCredits.map((credit) => {
+              const avatar = getPartnerAvatarConfig({ name: credit.paymentEntityName, displayConfig: credit.displayConfig });
+              const allocated = openCreditAllocations[credit.openCreditLineId] ?? '';
+              const maxForCredit = Math.min(credit.availableAmount, Math.max(total - (Number(paidAmount) || 0) - openCreditAmount + (Number(allocated) || 0), 0));
               return (
-                <div key={balance.paymentEntityId} className="rounded-2xl border border-[#ead9dd] bg-white p-4">
+                <div key={credit.openCreditLineId} className="rounded-2xl border border-[#ead9dd] bg-white p-4">
                   <div className="mb-3 flex min-w-0 items-center gap-3">
                     <span className={`flex h-11 w-11 shrink-0 items-center justify-center text-sm font-black ${avatar.shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`} style={{ backgroundColor: avatar.bg, color: avatar.color }}>{avatar.text}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-black text-[#4d1f28]">{balance.paymentEntityName}</p>
-                      <p className="mt-0.5 text-xs font-bold text-emerald-700">الرصيد المتاح: {formatMoney(balance.availableAmount)}</p>
+                      <p className="truncate text-sm font-black text-[#4d1f28]">{credit.paymentEntityName}</p>
+                      <p className="mt-0.5 text-[11px] font-bold text-[#8e6f76]">
+                        أصلي {formatMoney(credit.originalAmount)} · مستخدم {formatMoney(credit.reconciledAmount)}
+                      </p>
+                      <p className="mt-0.5 text-xs font-bold text-emerald-700">المتاح: {formatMoney(credit.availableAmount)}</p>
+                      <p className="mt-0.5 text-[11px] font-bold text-slate-400">
+                        {credit.moveDate ? new Date(credit.moveDate).toLocaleDateString('ar-EG') : 'بدون تاريخ'}
+                        {credit.moveName ? ` · ${credit.moveName}` : ''}
+                      </p>
                     </div>
                   </div>
                   <label className="block text-xs font-black text-[#668097]">
                     <span className="mb-2 block">المبلغ المستخدم</span>
-                    <Input type="number" min="0" max={maxForEntity} step="0.01" value={allocated} placeholder="0" onChange={(event) => {
+                    <Input type="number" min="0" max={maxForCredit} step="0.01" value={allocated} placeholder="0" onChange={(event) => {
                       const value = event.target.value;
-                      const safeValue = value === '' ? '' : String(Math.min(Math.max(Number(value) || 0, 0), maxForEntity));
-                      setAdvanceAllocations((current) => ({ ...current, [balance.paymentEntityId]: safeValue }));
+                      const safeValue = value === '' ? '' : String(Math.min(Math.max(Number(value) || 0, 0), maxForCredit));
+                      setOpenCreditAllocations((current) => ({ ...current, [credit.openCreditLineId]: safeValue }));
                     }} className="h-12 rounded-xl border-[#e6c8cf] text-lg font-black text-[#4d1f28]" />
-                  </label>
-                  <label className="mt-3 block text-xs font-black text-[#668097]">
-                    <span className="mb-2 block">ملاحظة الدفع <span className="text-red-600">*</span></span>
-                    <Input required={Number(allocated) > 0} value={advancePaymentNotes[balance.paymentEntityId] || ''} onChange={(event) => setAdvancePaymentNotes((current) => ({ ...current, [balance.paymentEntityId]: event.target.value }))} placeholder="ملاحظة الدفعة" className="h-11 rounded-xl border-[#e6c8cf] text-sm font-bold text-[#4d1f28]" />
                   </label>
                 </div>
               );
@@ -1444,9 +1438,9 @@ export function ShowroomSalesCard({ onSaleCreated, onSalePending, onPendingSaleD
             <div className="sticky bottom-0 rounded-2xl bg-slate-950 p-4 text-white shadow-lg">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs font-bold text-slate-300">إجمالي المستخدم</span>
-                <span className="text-lg font-black">{formatMoney(advanceAmount)}</span>
+                <span className="text-lg font-black">{formatMoney(openCreditAmount)}</span>
               </div>
-              <Button type="button" disabled={hasIncompleteAdvanceNotes} onClick={() => setIsAdvanceBalancesSheetOpen(false)} className="mt-3 h-11 w-full rounded-xl bg-white font-black text-slate-950 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50">تأكيد</Button>
+              <Button type="button" onClick={() => setIsOpenCreditsSheetOpen(false)} className="mt-3 h-11 w-full rounded-xl bg-white font-black text-slate-950 hover:bg-slate-100">تأكيد</Button>
             </div>
           </SheetBody>
         </SheetContent>

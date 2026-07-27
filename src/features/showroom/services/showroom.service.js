@@ -15,8 +15,6 @@ const SALE_SELECT = `
   sale_date,
   status,
   total_amount,
-  paid_amount,
-  remaining_amount,
   notes,
   account_move_id,
   created_by,
@@ -918,22 +916,147 @@ async function attachSaleAccountingStatus(client, tenantId, sales) {
     paidByLineId.set(row.debit_move_id, toMoney(paidByLineId.get(row.debit_move_id)) + toMoney(row.amount));
   });
   const paidByMoveId = new Map();
+  const originalByMoveId = new Map();
   receivableLines.forEach((line) => {
     paidByMoveId.set(line.move_id, toMoney(paidByMoveId.get(line.move_id)) + toMoney(paidByLineId.get(line.id)));
+    originalByMoveId.set(line.move_id, toMoney(originalByMoveId.get(line.move_id)) + toMoney(line.debit));
   });
 
   const normalized = saleRows.map((sale) => {
     const move = moveBySaleId.get(sale.id) || null;
     const paidAmount = Math.round(toMoney(paidByMoveId.get(move?.id)) * 100) / 100;
-    const totalAmount = toMoney(sale.total_amount ?? sale.totalAmount);
+    const invoiceReceivableAmount = move
+      ? toMoney(originalByMoveId.get(move.id))
+      : toMoney(sale.total_amount ?? sale.totalAmount);
+    const remainingAmount = Math.max(Math.round((invoiceReceivableAmount - paidAmount) * 100) / 100, 0);
     return {
       ...sale,
-      paid_amount: paidAmount,
-      remaining_amount: Math.max(Math.round((totalAmount - paidAmount) * 100) / 100, 0),
+      accounting_paid_amount: paidAmount,
+      accounting_remaining_amount: remainingAmount,
     };
   });
 
   return Array.isArray(sales) ? normalized : normalized[0] || null;
+}
+
+async function loadReconciledSalePayments(client, tenantId, sale) {
+  if (!sale?.id) return [];
+
+  const [linkedMoveResult, referencedMoveResult, receivableAccountResult] = await Promise.all([
+    sale.account_move_id
+      ? client.from('account_moves').select('id').eq('tenant_id', tenantId)
+        .eq('id', sale.account_move_id).eq('move_type', 'sale').eq('state', 'posted').maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    client.from('account_moves').select('id').eq('tenant_id', tenantId)
+      .eq('ref', `showroom_sale:${sale.id}`).eq('move_type', 'sale').eq('state', 'posted')
+      .order('created_at', { ascending: true }).limit(1).maybeSingle(),
+    client.from('account_accounts').select('id').eq('tenant_id', tenantId)
+      .eq('code', '114001').eq('active', true),
+  ]);
+  const failedLookup = [linkedMoveResult, referencedMoveResult, receivableAccountResult]
+    .find((result) => result.error);
+  if (failedLookup?.error) throw failedLookup.error;
+
+  const saleMoveId = linkedMoveResult.data?.id || referencedMoveResult.data?.id || null;
+  const receivableAccountIds = (receivableAccountResult.data || []).map((account) => account.id);
+  if (!saleMoveId || !receivableAccountIds.length) return [];
+
+  const { data: invoiceLines, error: invoiceLinesError } = await client
+    .from('account_move_lines').select('id').eq('tenant_id', tenantId)
+    .eq('move_id', saleMoveId).in('account_id', receivableAccountIds).gt('debit', 0);
+  if (invoiceLinesError) throw invoiceLinesError;
+  const invoiceLineIds = (invoiceLines || []).map((line) => line.id);
+  if (!invoiceLineIds.length) return [];
+
+  const { data: reconciliations, error: reconciliationsError } = await client
+    .from('account_partial_reconcile').select('credit_move_id, amount, max_date')
+    .eq('tenant_id', tenantId).in('debit_move_id', invoiceLineIds);
+  if (reconciliationsError) throw reconciliationsError;
+  const creditLineIds = [...new Set((reconciliations || []).map((row) => row.credit_move_id).filter(Boolean))];
+  if (!creditLineIds.length) return [];
+
+  const { data: creditLines, error: creditLinesError } = await client
+    .from('account_move_lines').select('id, move_id, source_entity_id').eq('tenant_id', tenantId).in('id', creditLineIds);
+  if (creditLinesError) throw creditLinesError;
+  const moveIdByCreditLineId = new Map((creditLines || []).map((line) => [line.id, line.move_id]));
+  const sourceEntityIdByMoveId = new Map(
+    (creditLines || []).filter((line) => line.source_entity_id).map((line) => [line.move_id, line.source_entity_id]),
+  );
+  const paymentMoveIds = [...new Set((creditLines || []).map((line) => line.move_id).filter(Boolean))];
+  if (!paymentMoveIds.length) return [];
+
+  const [paymentMovesResult, debitLinesResult] = await Promise.all([
+    client.from('account_moves')
+      .select('id, partner_id, invoice_date, date, pay_method, notes, created_at')
+      .eq('tenant_id', tenantId).eq('state', 'posted').in('id', paymentMoveIds),
+    client.from('account_move_lines').select('move_id, account_id, debit')
+      .eq('tenant_id', tenantId).in('move_id', paymentMoveIds).gt('debit', 0),
+  ]);
+  if (paymentMovesResult.error) throw paymentMovesResult.error;
+  if (debitLinesResult.error) throw debitLinesResult.error;
+
+  const paymentMoves = paymentMovesResult.data || [];
+  const debitLines = debitLinesResult.data || [];
+  const partnerIds = [...new Set([
+    ...paymentMoves.map((move) => move.partner_id),
+    ...sourceEntityIdByMoveId.values(),
+  ].filter(Boolean))];
+  const destinationAccountIds = [...new Set(debitLines.map((line) => line.account_id).filter(Boolean))];
+  const [partnersResult, accountsResult] = await Promise.all([
+    partnerIds.length
+      ? client.from('partners').select('id, name').eq('tenant_id', tenantId).in('id', partnerIds)
+      : Promise.resolve({ data: [], error: null }),
+    destinationAccountIds.length
+      ? client.from('account_accounts').select('id, code, name').eq('tenant_id', tenantId).in('id', destinationAccountIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (partnersResult.error) throw partnersResult.error;
+  if (accountsResult.error) throw accountsResult.error;
+
+  const appliedByMoveId = new Map();
+  const paymentDateByMoveId = new Map();
+  (reconciliations || []).forEach((row) => {
+    const moveId = moveIdByCreditLineId.get(row.credit_move_id);
+    if (!moveId) return;
+    appliedByMoveId.set(moveId, toMoney(appliedByMoveId.get(moveId)) + toMoney(row.amount));
+    if (!paymentDateByMoveId.has(moveId)) paymentDateByMoveId.set(moveId, row.max_date || null);
+  });
+  const partnersById = new Map((partnersResult.data || []).map((partner) => [partner.id, partner]));
+  const accountsById = new Map((accountsResult.data || []).map((account) => [account.id, account]));
+  const destinationLineByMoveId = new Map();
+  debitLines.forEach((line) => {
+    const current = destinationLineByMoveId.get(line.move_id);
+    if (!current || toMoney(line.debit) > toMoney(current.debit)) destinationLineByMoveId.set(line.move_id, line);
+  });
+
+  return paymentMoves
+    .map((move) => {
+      const destinationLine = destinationLineByMoveId.get(move.id);
+      const destinationAccount = accountsById.get(destinationLine?.account_id) || null;
+      return {
+        id: move.id,
+        account_move_id: move.id,
+        amount: Math.round(toMoney(appliedByMoveId.get(move.id)) * 100) / 100,
+        payment_date: move.invoice_date || move.date || paymentDateByMoveId.get(move.id) || move.created_at,
+        payment_method: move.pay_method === 'cash'
+          ? 'تحصيل نقدي'
+          : move.pay_method === 'advance_credit'
+            ? `رصيد مسبق - ${partnersById.get(move.partner_id)?.name || 'جهة دفع'}`
+            : move.pay_method === 'payment_entity_credit'
+              ? `اعتماد جهة - ${partnersById.get(sourceEntityIdByMoveId.get(move.id))?.name || 'جهة دفع'}`
+            : move.pay_method === 'account_settlement'
+              ? 'تسوية محاسبية'
+              : move.pay_method || 'قيد محاسبي',
+        payment_type: move.pay_method || 'account_move',
+        destination_account_id: destinationAccount?.id || null,
+        destination_account_code: destinationAccount?.code || null,
+        destination_account_name: destinationAccount?.name || null,
+        notes: move.notes || null,
+        created_at: move.created_at,
+      };
+    })
+    .filter((payment) => payment.amount > 0)
+    .sort((first, second) => new Date(first.payment_date || 0) - new Date(second.payment_date || 0));
 }
 export const showroomService = {
   async getCashOverview({ tenantId } = {}) {
@@ -961,9 +1084,9 @@ export const showroomService = {
     const accountIds = accounts.map((account) => account.id);
     const lines = await fetchAllPages(() => client
       .from('account_move_lines')
-      .select('account_id, debit, credit')
+      .select('account_id, debit, credit, account_move:account_moves!inner(state)')
       .eq('tenant_id', tenantId)
-      .eq('parent_state', 'posted')
+      .eq('account_move.state', 'posted')
       .in('account_id', accountIds));
 
     const balancesByAccountId = lines.reduce((balances, line) => {
@@ -1497,8 +1620,6 @@ export const showroomService = {
       const { data, error } = await client.from('showroom_sales').update({
         customer_id: customerId,
         total_amount: safeTotalAmount,
-        paid_amount: 0,
-        remaining_amount: safeTotalAmount,
         updated_at: new Date().toISOString(),
       }).eq('tenant_id', tenantId).eq('showroom_config_id', showroomConfigId)
         .eq('id', pendingSaleId).eq('status', 'pending_payment').select(SALE_SELECT).single();
@@ -1525,8 +1646,6 @@ export const showroomService = {
         sale_date: todayISODate(),
         status: 'pending_payment',
         total_amount: safeTotalAmount,
-        paid_amount: 0,
-        remaining_amount: safeTotalAmount,
         created_by: createdBy,
       }).select(SALE_SELECT).single();
       if (error) throw error;
@@ -1593,24 +1712,33 @@ export const showroomService = {
     return { ...sale, lines: detailedLines, payments: [] };
   },
 
-  async completePendingSale({ saleId, cashAmount = 0, cashNote, advanceAllocations = [], tenantId, showroomConfigId }) {
+  async completePendingSale({
+    saleId,
+    cashAmount = 0,
+    cashNote,
+    openCreditAllocations = [],
+    tenantId,
+    showroomConfigId,
+  }) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
     if (!saleId) throw new Error('تعذر تحديد الفاتورة المعلقة.');
     const normalizedCashAmount = toMoney(cashAmount);
     const normalizedCashNote = String(cashNote || '').trim();
-    const normalizedAdvanceAllocations = (Array.isArray(advanceAllocations) ? advanceAllocations : []).map((allocation) => ({
-      financier_partner_id: allocation.paymentEntityId,
-      amount: toMoney(allocation.amount),
-      note: String(allocation.note || '').trim(),
+    const normalizedOpenCreditAllocations = (
+      Array.isArray(openCreditAllocations) ? openCreditAllocations : []
+    ).map((allocation) => ({
+      open_credit_line_id: allocation.openCreditLineId,
+      amount: Math.round(toMoney(allocation.amount) * 100) / 100,
     }));
 
     if (normalizedCashAmount > 0 && !normalizedCashNote) {
       throw new Error('ملاحظة الدفع النقدي مطلوبة.');
     }
-
-    if (normalizedAdvanceAllocations.some((allocation) => allocation.amount > 0 && !allocation.note)) {
-      throw new Error('ملاحظة كل دفعة مستخدمة من رصيد العميل مطلوبة.');
+    if (normalizedOpenCreditAllocations.some(
+      (allocation) => !allocation.open_credit_line_id || allocation.amount <= 0,
+    )) {
+      throw new Error('بيانات تخصيص الاعتمادات المفتوحة غير صحيحة.');
     }
 
     const client = requireSupabase();
@@ -1618,10 +1746,7 @@ export const showroomService = {
       p_sale_id: saleId,
       p_cash_amount: normalizedCashAmount,
       p_cash_note: normalizedCashNote || null,
-      p_advance_payments: normalizedAdvanceAllocations.map((allocation) => ({
-        ...allocation,
-        note: allocation.note || null,
-      })),
+      p_open_credit_allocations: normalizedOpenCreditAllocations,
     });
     if (error) throw new Error(error.message || 'تعذر إتمام البيع.');
     const sale = await showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });
@@ -1670,7 +1795,7 @@ export const showroomService = {
     cashAmount,
     cashNote,
     paymentNotes,
-    advanceAllocations = [],
+    openCreditAllocations = [],
     userId,
     showroomConfigId,
   }) {
@@ -1689,7 +1814,7 @@ export const showroomService = {
       saleId: pendingSale.id,
       cashAmount: cashAmount ?? paidAmount,
       cashNote: cashNote ?? paymentNotes,
-      advanceAllocations,
+      openCreditAllocations,
       showroomConfigId,
     });
   },
@@ -1780,6 +1905,35 @@ export const showroomService = {
     })).filter((balance) => balance.availableAmount > 0);
   },
 
+  async getCustomerOpenCredits({ tenantId, customerId, includeFullyUsed = false }) {
+    requireTenantId(tenantId);
+    if (!customerId) return [];
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('list_customer_open_credits', {
+      p_tenant_id: tenantId,
+      p_customer_id: customerId,
+      p_include_fully_used: Boolean(includeFullyUsed),
+    });
+    if (error) throw new Error(error.message || 'تعذر تحميل اعتمادات العميل المتاحة.');
+
+    return (data || []).map((credit) => ({
+      openCreditLineId: credit.open_credit_line_id,
+      moveId: credit.move_id,
+      customerId: credit.customer_id,
+      paymentEntityId: credit.payment_entity_id,
+      paymentEntityName: credit.payment_entity_name || 'جهة دفع',
+      originalAmount: toMoney(credit.original_amount),
+      reconciledAmount: toMoney(credit.reconciled_amount),
+      availableAmount: toMoney(credit.available_amount),
+      moveDate: credit.move_date,
+      moveName: credit.move_name || '',
+      currencyCode: credit.currency_code || 'EGP',
+      status: credit.status || 'open',
+      attachment: credit.attachment || null,
+    }));
+  },
+
   async getSaleDetails({ tenantId, saleId, showroomConfigId }) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
@@ -1803,37 +1957,7 @@ export const showroomService = {
 
     if (linesError) throw linesError;
 
-    const { data: ledgerPaymentMoves, error: ledgerPaymentMovesError } = await client
-      .from('account_moves')
-      .select('id, partner_id, amount_total, invoice_date, date, pay_method, notes, created_at')
-      .eq('tenant_id', tenantId)
-      .in('move_type', ['payment', 'journal'])
-      .eq('state', 'posted')
-      .eq('ref', `showroom_sale:${saleId}`)
-      .order('created_at', { ascending: true });
-    if (ledgerPaymentMovesError) throw ledgerPaymentMovesError;
-    const ledgerPartnerIds = [...new Set((ledgerPaymentMoves || []).map((move) => move.partner_id).filter(Boolean))];
-    const { data: ledgerPartners, error: ledgerPartnersError } = ledgerPartnerIds.length
-      ? await client.from('partners').select('id, name').eq('tenant_id', tenantId).in('id', ledgerPartnerIds)
-      : { data: [], error: null };
-    if (ledgerPartnersError) throw ledgerPartnersError;
-    const ledgerPartnersById = new Map((ledgerPartners || []).map((partner) => [partner.id, partner]));
-    const ledgerPayments = (ledgerPaymentMoves || []).map((move) => ({
-      id: move.id,
-      account_move_id: move.id,
-      amount: toMoney(move.amount_total),
-      payment_date: move.invoice_date || move.date || move.created_at,
-      payment_method: move.pay_method === 'cash'
-        ? 'تحصيل نقدي'
-        : move.pay_method === 'advance_credit'
-          ? `رصيد مسبق - ${ledgerPartnersById.get(move.partner_id)?.name || 'جهة دفع'}`
-          : move.pay_method === 'account_settlement'
-            ? 'تسوية محاسبية'
-          : move.pay_method || 'دفعة',
-      payment_type: move.pay_method || 'payment',
-      notes: move.notes || null,
-      created_at: move.created_at,
-    }));
+    const ledgerPayments = await loadReconciledSalePayments(client, tenantId, sale);
 
     const saleWithCustomer = await attachCustomers(client, tenantId, sale);
     const saleWithAccountingStatus = await attachSaleAccountingStatus(client, tenantId, saleWithCustomer);
@@ -1932,21 +2056,41 @@ export const showroomService = {
     return { ok: true, saleId };
   },
 
-  async paySaleRemaining({ tenantId, saleId, showroomConfigId, amount, notes, paymentMethod = 'cash' }) {
+  async paySaleRemaining({
+    tenantId,
+    saleId,
+    showroomConfigId,
+    amount,
+    notes,
+    paymentMethod = 'cash',
+    openCreditAllocations = [],
+  }) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
+    const allocations = (Array.isArray(openCreditAllocations) ? openCreditAllocations : [])
+      .map((allocation) => ({
+        open_credit_line_id: allocation.openCreditLineId,
+        amount: Math.round(Math.max(toMoney(allocation.amount), 0) * 100) / 100,
+      }))
+      .filter((allocation) => allocation.open_credit_line_id && allocation.amount > 0);
     const paymentAmount = Math.round(Math.max(toMoney(amount), 0) * 100) / 100;
-    if (!saleId || paymentAmount <= 0) throw new Error('اكتب مبلغ دفع صحيح.');
+    if (!saleId || (!allocations.length && paymentAmount <= 0)) throw new Error('اكتب مبلغ دفع صحيح.');
     const paymentNotes = String(notes || '').trim();
-    if (!paymentNotes) throw new Error('ملاحظة الدفع مطلوبة.');
+    if (!allocations.length && !paymentNotes) throw new Error('ملاحظة الدفع مطلوبة.');
 
     const client = requireSupabase();
-    const { error } = await client.rpc('pay_showroom_sale_accounting', {
-      p_sale_id: saleId,
-      p_amount: paymentAmount,
-      p_notes: paymentNotes,
-      p_payment_method: paymentMethod || 'cash',
-    });
+    const { error } = allocations.length
+      ? await client.rpc('settle_showroom_sale_with_open_credits', {
+          p_tenant_id: tenantId,
+          p_sale_id: saleId,
+          p_allocations: allocations,
+        })
+      : await client.rpc('pay_showroom_sale_accounting', {
+          p_sale_id: saleId,
+          p_amount: paymentAmount,
+          p_notes: paymentNotes,
+          p_payment_method: paymentMethod || 'cash',
+        });
     if (error) throw new Error(error.message || 'تعذر تسجيل الدفعة المحاسبية.');
 
     return showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });

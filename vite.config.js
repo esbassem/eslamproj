@@ -17,12 +17,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  server: useHttps
-    ? {
+  server: {
+    host: true,
+    ...(useHttps
+      ? {
       https: {
         key: fs.readFileSync(httpsKeyPath),
         cert: fs.readFileSync(httpsCertPath),
       },
-    }
-    : undefined,
+        }
+      : {}),
+  },
+  preview: {
+    host: true,
+  },
 });

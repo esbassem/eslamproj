@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as Dialog from '@radix-ui/react-dialog';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Building2,
   ChevronRight,
@@ -33,6 +35,7 @@ import { CashLocationSheet } from '@/features/accountant/components/CashLocation
 import { LedgerAccountOperationsSheet } from '@/features/accountant/components/LedgerAccountOperationsSheet';
 import { accountantService } from '@/features/accountant/services/accountant.service';
 import { ShowroomSaleViewSheet } from '@/features/showroom/components/ShowroomSaleViewSheet';
+import { showroomService } from '@/features/showroom/services/showroom.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
 const NEW_CUSTOMER_INITIAL_VALUES = {
@@ -749,6 +752,9 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
   const [mode, setMode] = useState('cash');
   const [accounts, setAccounts] = useState([]);
   const [destinationAccountId, setDestinationAccountId] = useState('');
+  const [openCredits, setOpenCredits] = useState([]);
+  const [creditAmounts, setCreditAmounts] = useState({});
+  const [isLoadingAdvanceBalances, setIsLoadingAdvanceBalances] = useState(false);
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
@@ -758,12 +764,13 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
   useEffect(() => {
     if (!open) return;
 
-    setMode('cash');
+    setMode(invoice?.preferredMode || 'cash');
     setDestinationAccountId('');
+    setCreditAmounts({});
     setAmount(String(invoice?.remainingAmount || ''));
     setNotes('');
     setError('');
-  }, [invoice?.id, invoice?.remainingAmount, open]);
+  }, [invoice?.id, invoice?.preferredMode, invoice?.remainingAmount, open]);
 
   useEffect(() => {
     let mounted = true;
@@ -786,9 +793,42 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
     };
   }, [open, tenantId]);
 
+  useEffect(() => {
+    let mounted = true;
+    if (!open || !tenantId || !invoice?.customerId) {
+      setOpenCredits([]);
+      return undefined;
+    }
+
+    setIsLoadingAdvanceBalances(true);
+    showroomService.getCustomerOpenCredits({ tenantId, customerId: invoice.customerId })
+      .then((records) => {
+        if (!mounted) return;
+        setOpenCredits(records);
+      })
+      .catch((loadError) => {
+        if (mounted) setError(loadError.message || 'تعذر تحميل رصيد العميل المقدم.');
+      })
+      .finally(() => {
+        if (mounted) setIsLoadingAdvanceBalances(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [invoice?.customerId, invoice?.preferredMode, invoice?.remainingAmount, open, tenantId]);
+
   const selectedAccount = accounts.find((account) => account.id === destinationAccountId) || null;
-  const safeAmount = Number(amount || 0);
+  const openCreditAllocations = openCredits
+    .map((credit) => ({
+      openCreditLineId: credit.openCreditLineId,
+      amount: Number(creditAmounts[credit.openCreditLineId] || 0),
+    }))
+    .filter((allocation) => Number.isFinite(allocation.amount) && allocation.amount > 0);
+  const allocatedAmount = openCreditAllocations.reduce((sum, allocation) => sum + allocation.amount, 0);
+  const safeAmount = mode === 'advance_credit' ? allocatedAmount : Number(amount || 0);
   const remainingAmount = Number(invoice?.remainingAmount || 0);
+  const maximumAmount = remainingAmount;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -798,12 +838,24 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
       setError('اكتب مبلغ صحيح أكبر من صفر.');
       return;
     }
-    if (safeAmount > remainingAmount) {
-      setError('المبلغ أكبر من المتبقي على الفاتورة.');
+    if (safeAmount > maximumAmount) {
+      setError(mode === 'advance_credit' ? 'المبلغ أكبر من الرصيد المتاح لدى الجهة.' : 'المبلغ أكبر من المتبقي على الفاتورة.');
       return;
     }
     if (mode === 'account' && !destinationAccountId) {
       setError('اختر حساب التسوية.');
+      return;
+    }
+    if (mode === 'advance_credit' && !openCreditAllocations.length) {
+      setError('اختر اعتمادًا واحدًا على الأقل وحدد مبلغ الاستخدام.');
+      return;
+    }
+    const invalidAllocation = openCreditAllocations.find((allocation) => {
+      const credit = openCredits.find((record) => record.openCreditLineId === allocation.openCreditLineId);
+      return !credit || allocation.amount > Number(credit.availableAmount || 0);
+    });
+    if (invalidAllocation) {
+      setError('أحد مبالغ الاستخدام أكبر من المتاح في الاعتماد المحدد.');
       return;
     }
 
@@ -815,6 +867,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
         amount: safeAmount,
         mode,
         destinationAccountId,
+        openCreditAllocations,
         notes,
       });
       onSettled?.(result);
@@ -850,9 +903,10 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
               <span className="text-lg font-black text-red-700">{formatCurrency(remainingAmount)}</span>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[
                 { id: 'cash', label: 'تحصيل نقدي', detail: 'إيداع في الخزنة الرئيسية 111001', icon: WalletCards },
+                { id: 'advance_credit', label: 'رصيد العميل', detail: isLoadingAdvanceBalances ? 'جاري التحميل...' : `${openCredits.length} اعتماد متاح`, icon: CreditCard },
                 { id: 'account', label: 'تسوية على حساب', detail: 'اختيار حساب مقابل', icon: Landmark },
               ].map((option) => {
                 const Icon = option.icon;
@@ -875,6 +929,76 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
             </div>
 
             <div className="mt-4 space-y-4">
+              {mode === 'advance_credit' ? (
+                <div className="space-y-2">
+                  <Label className="text-xs font-black text-slate-600">الاعتمادات المفتوحة على 114001</Label>
+                  {isLoadingAdvanceBalances ? (
+                    <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-slate-500">جاري تحميل الاعتمادات...</p>
+                  ) : openCredits.length ? (
+                    <div className="max-h-64 space-y-2 overflow-y-auto pl-1">
+                      {openCredits.map((credit) => {
+                        const currentAmount = creditAmounts[credit.openCreditLineId] || '';
+                        const isSelected = Number(currentAmount) > 0;
+                        const available = Number(credit.availableAmount || 0);
+                        return (
+                          <div key={credit.openCreditLineId} className={`rounded-xl border p-3 ${isSelected ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-black text-slate-900">{credit.paymentEntityName}</p>
+                                <p className="mt-0.5 text-[10px] font-bold text-slate-500">
+                                  {credit.moveName || 'اعتماد جهة'}
+                                  {credit.moveDate ? ` · ${new Date(credit.moveDate).toLocaleDateString('ar-EG')}` : ''}
+                                  {credit.attachment ? ' · مرفق' : ''}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setCreditAmounts((current) => ({
+                                  ...current,
+                                  [credit.openCreditLineId]: isSelected
+                                    ? ''
+                                    : String(Math.min(available, Math.max(remainingAmount - allocatedAmount, 0))),
+                                }))}
+                                className={`shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-black ${isSelected ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-700'}`}
+                              >
+                                {isSelected ? 'إلغاء' : 'اختيار'}
+                              </button>
+                            </div>
+                            <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] font-bold">
+                              <span>الأصلي<br /><b>{formatCurrency(credit.originalAmount)}</b></span>
+                              <span>المستخدم<br /><b>{formatCurrency(credit.reconciledAmount)}</b></span>
+                              <span className="text-emerald-700">المتاح<br /><b>{formatCurrency(available)}</b></span>
+                            </div>
+                            {isSelected ? (
+                              <Input
+                                type="number"
+                                min="0.01"
+                                max={available}
+                                step="0.01"
+                                value={currentAmount}
+                                onChange={(event) => setCreditAmounts((current) => ({
+                                  ...current,
+                                  [credit.openCreditLineId]: event.target.value,
+                                }))}
+                                className="mt-2 h-9 rounded-lg text-left font-black"
+                                dir="ltr"
+                                aria-label={`المبلغ المستخدم من اعتماد ${credit.paymentEntityName}`}
+                              />
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-slate-500">لا توجد اعتمادات مفتوحة متاحة لهذا العميل.</p>
+                  )}
+                  <div className="flex items-center justify-between rounded-lg bg-amber-100 px-3 py-2 text-xs font-black text-amber-900">
+                    <span>إجمالي المختار</span>
+                    <span>{formatCurrency(allocatedAmount)}</span>
+                  </div>
+                </div>
+              ) : null}
+
               {mode === 'account' ? (
                 <div className="space-y-2">
                   <Label htmlFor="settlement-account" className="text-xs font-black text-slate-600">حساب التسوية</Label>
@@ -893,23 +1017,23 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
                 </div>
               ) : null}
 
-              <div className="grid grid-cols-[0.8fr_1.2fr] gap-3">
-                <div className="min-w-0 space-y-2">
+              <div className={`grid gap-3 ${mode === 'advance_credit' ? 'grid-cols-1' : 'grid-cols-[0.8fr_1.2fr]'}`}>
+                {mode !== 'advance_credit' ? <div className="min-w-0 space-y-2">
                   <Label htmlFor="settlement-amount" className="text-xs font-black text-slate-600">المبلغ</Label>
                   <Input
                     id="settlement-amount"
                     type="number"
                     min="0.01"
-                    max={remainingAmount}
+                    max={maximumAmount}
                     step="0.01"
                     value={amount}
                     onChange={(event) => setAmount(event.target.value)}
                     className="h-11 rounded-xl text-left text-base font-black"
                     dir="ltr"
                   />
-                </div>
+                </div> : null}
 
-                <div className="min-w-0 space-y-2">
+                {mode !== 'advance_credit' ? <div className="min-w-0 space-y-2">
                   <Label htmlFor="settlement-notes" className="text-xs font-black text-slate-600">البيان</Label>
                   <Input
                     id="settlement-notes"
@@ -918,13 +1042,17 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
                     placeholder="سبب أو مرجع التسوية"
                     className="h-11 rounded-xl text-sm font-bold"
                   />
-                </div>
+                </div> : null}
               </div>
             </div>
 
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-[10px] font-black text-slate-500">معاينة القيد</p>
-              <div className="mt-2 space-y-1.5 text-xs font-bold">
+              <p className="text-[10px] font-black text-slate-500">{mode === 'advance_credit' ? 'أثر التسوية' : 'معاينة القيد'}</p>
+              {mode === 'advance_credit' ? (
+                <p className="mt-2 text-xs font-bold text-slate-700">
+                  لن يُنشأ قيد جديد. ستُنشأ مصالحة مباشرة بين سطر الفاتورة المدين وسطور الاعتمادات المفتوحة الدائنة على 114001 بقيمة {formatCurrency(safeAmount)}.
+                </p>
+              ) : <div className="mt-2 space-y-1.5 text-xs font-bold">
                 <div className="flex items-center justify-between gap-3 text-emerald-700">
                   <span>مدين: {mode === 'cash' ? '111001 — الخزنة الرئيسية' : selectedAccount ? `${selectedAccount.code} — ${selectedAccount.name}` : 'حساب التسوية'}</span>
                   <span>{formatCurrency(safeAmount)}</span>
@@ -933,17 +1061,17 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
                   <span>دائن: 114001 — ذمم العملاء</span>
                   <span>{formatCurrency(safeAmount)}</span>
                 </div>
-              </div>
+              </div>}
             </div>
 
             {error ? <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</p> : null}
 
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || safeAmount <= 0 || safeAmount > remainingAmount}
               className="mt-4 h-11 w-full rounded-xl bg-blue-700 text-sm font-black text-white hover:bg-blue-800"
             >
-              {isSubmitting ? <><Loader2 className="h-4 w-4 animate-spin" /> جاري التسجيل...</> : mode === 'cash' ? 'تسجيل التحصيل' : 'اعتماد التسوية'}
+              {isSubmitting ? <><Loader2 className="h-4 w-4 animate-spin" /> جاري التسجيل...</> : mode === 'cash' ? 'تسجيل التحصيل' : mode === 'advance_credit' ? 'استخدام الرصيد المقدم' : 'اعتماد التسوية'}
             </Button>
           </form>
         </Dialog.Content>
@@ -1034,36 +1162,41 @@ function SalesInvoicesDrawer({
   isLoading = false,
   total = 0,
   onInvoiceSelect,
-  shouldKeepOpen,
 }) {
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen && shouldKeepOpen?.()) return;
-        onOpenChange(nextOpen);
-      }}
-    >
-      <SheetContent
-        side="right"
-        className="w-full max-w-full border-l-0 bg-white p-0 sm:max-w-xl"
-        dir="rtl"
-        onInteractOutside={(event) => {
-          event.preventDefault();
-        }}
-        onPointerDownOutside={(event) => {
-          event.preventDefault();
-          if (!shouldKeepOpen?.()) onOpenChange(false);
-        }}
-        onFocusOutside={(event) => {
-          event.preventDefault();
-        }}
-        onEscapeKeyDown={(event) => {
-          event.preventDefault();
-          if (!shouldKeepOpen?.()) onOpenChange(false);
-        }}
-      >
-        <SheetHeader className="border-b border-slate-200 px-5 pb-4 pt-5">
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <AnimatePresence>
+      {open ? (
+        <>
+          <motion.button
+            key="sales-invoices-backdrop"
+            type="button"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            className="fixed inset-0 z-[100] cursor-default bg-slate-950/25 backdrop-blur-sm"
+            aria-label="إغلاق قائمة فواتير العملاء"
+            onClick={() => onOpenChange(false)}
+          />
+          <motion.aside
+            key="sales-invoices-drawer"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'tween', duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            className="fixed right-0 top-0 z-[110] flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-slate-200 bg-white shadow-2xl outline-none will-change-transform"
+            dir="rtl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sales-invoices-drawer-title"
+            tabIndex={-1}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') onOpenChange(false);
+            }}
+          >
+        <div className="border-b border-slate-200 px-5 pb-4 pt-5">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -1075,7 +1208,7 @@ function SalesInvoicesDrawer({
               <ChevronRight className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <SheetTitle className="text-lg font-black">ذمم فواتير المبيعات</SheetTitle>
+              <h2 id="sales-invoices-drawer-title" className="text-lg font-black text-slate-950">ذمم فواتير المبيعات</h2>
               <p className="mt-0.5 truncate text-xs font-bold text-slate-500">الفواتير التي ما زالت عليها مبالغ مستحقة</p>
             </div>
             <div className="shrink-0 text-left">
@@ -1083,9 +1216,9 @@ function SalesInvoicesDrawer({
               <p className="mt-0.5 text-sm font-black text-red-600">{isLoading ? '...' : formatCurrency(total)}</p>
             </div>
           </div>
-        </SheetHeader>
+        </div>
 
-        <SheetBody className="px-5 pb-6 pt-4">
+        <div className="flex-1 overflow-y-auto px-5 pb-6 pt-4">
           {isLoading ? (
             <div className="flex min-h-40 items-center justify-center gap-2 text-sm font-black text-slate-500">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1129,9 +1262,12 @@ function SalesInvoicesDrawer({
               <p className="mt-1 text-xs font-bold text-slate-500">كل فواتير المبيعات مسددة حاليًا.</p>
             </div>
           )}
-        </SheetBody>
-      </SheetContent>
-    </Sheet>
+        </div>
+          </motion.aside>
+        </>
+      ) : null}
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -1650,7 +1786,6 @@ function AccountantOperationsPanel({
 }
 
 export function AccountantHomePage() {
-  const keepSalesInvoicesOpenRef = useRef(false);
   const [salesInvoicesOpen, setSalesInvoicesOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [paymentApprovalOpen, setPaymentApprovalOpen] = useState(false);
@@ -1673,6 +1808,7 @@ export function AccountantHomePage() {
   const [selectedLedgerAccount, setSelectedLedgerAccount] = useState(null);
   const [selectedSalesInvoice, setSelectedSalesInvoice] = useState(null);
   const [settlementInvoice, setSettlementInvoice] = useState(null);
+
   const { tenant, tenantUser } = useWorkspace();
   const tenantId = tenant?.id ?? null;
   const tenantUserId = tenantUser?.id ?? null;
@@ -1913,18 +2049,11 @@ export function AccountantHomePage() {
       />
       <SalesInvoicesDrawer
         open={salesInvoicesOpen}
-        onOpenChange={(open) => {
-          if (!open && keepSalesInvoicesOpenRef.current) return;
-          setSalesInvoicesOpen(open);
-        }}
+        onOpenChange={setSalesInvoicesOpen}
         invoices={salesInvoiceSummary.invoices}
         isLoading={isLoadingSalesInvoiceSummary}
         total={salesInvoiceSummary.total}
-        shouldKeepOpen={() => keepSalesInvoicesOpenRef.current}
-        onInvoiceSelect={(invoice) => {
-          keepSalesInvoicesOpenRef.current = true;
-          setSelectedSalesInvoice(invoice);
-        }}
+        onInvoiceSelect={setSelectedSalesInvoice}
       />
       <TemporaryAccountDialog
         open={temporaryAccountOpen}
@@ -1974,27 +2103,30 @@ export function AccountantHomePage() {
       <ShowroomSaleViewSheet
         sale={selectedSalesInvoice ? {
           id: selectedSalesInvoice.id,
-          customer: { name: selectedSalesInvoice.customerName },
+          customer_id: selectedSalesInvoice.customerId,
+          customer: { id: selectedSalesInvoice.customerId, name: selectedSalesInvoice.customerName },
           total_amount: selectedSalesInvoice.totalAmount,
-          paid_amount: selectedSalesInvoice.paidAmount,
-          remaining_amount: selectedSalesInvoice.remainingAmount,
+          accounting_paid_amount: selectedSalesInvoice.paidAmount,
+          accounting_remaining_amount: selectedSalesInvoice.remainingAmount,
           created_at: selectedSalesInvoice.saleDate,
         } : null}
         showroomConfigId={selectedSalesInvoice?.showroomConfigId || null}
         isOpen={Boolean(selectedSalesInvoice)}
         onClose={() => {
           setSelectedSalesInvoice(null);
-          setSalesInvoicesOpen(true);
-          window.setTimeout(() => {
-            keepSalesInvoicesOpenRef.current = false;
-          }, 0);
         }}
-        onSettleBalance={(sale) => {
+        onSettleBalance={(sale, options = {}) => {
+          const totalAmount = Number(sale?.total_amount ?? selectedSalesInvoice?.totalAmount ?? 0);
+          const paidAmount = Array.isArray(sale?.payments)
+            ? sale.payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
+            : Number(selectedSalesInvoice?.paidAmount || 0);
           setSettlementInvoice({
             ...selectedSalesInvoice,
-            totalAmount: Number(sale?.total_amount ?? selectedSalesInvoice?.totalAmount ?? 0),
-            paidAmount: Number(sale?.paid_amount ?? selectedSalesInvoice?.paidAmount ?? 0),
-            remainingAmount: Number(sale?.remaining_amount ?? selectedSalesInvoice?.remainingAmount ?? 0),
+            customerId: sale?.customer?.id || sale?.customer_id || selectedSalesInvoice?.customerId || null,
+            totalAmount,
+            paidAmount,
+            remainingAmount: Math.max(totalAmount - paidAmount, 0),
+            preferredMode: options.preferredMode || 'cash',
           });
           setSelectedSalesInvoice(null);
         }}
@@ -2007,29 +2139,17 @@ export function AccountantHomePage() {
         }}
         tenantId={tenantId}
         invoice={settlementInvoice}
-        onSettled={(result) => {
-          const settledSaleId = settlementInvoice?.id;
-          const nextRemaining = Number(result?.remaining_amount || 0);
-          const settledAmount = Number(result?.amount || 0);
-
-          setSalesInvoiceSummary((current) => {
-            const invoices = current.invoices
-              .map((invoice) => invoice.id === settledSaleId
-                ? {
-                    ...invoice,
-                    paidAmount: Number(result?.paid_amount ?? invoice.paidAmount),
-                    remainingAmount: nextRemaining,
-                  }
-                : invoice)
-              .filter((invoice) => invoice.remainingAmount > 0);
-
-            return {
-              invoices,
-              count: invoices.length,
-              total: Math.max(Number(current.total || 0) - settledAmount, 0),
-            };
-          });
+        onSettled={async () => {
           setSettlementInvoice(null);
+          setIsLoadingSalesInvoiceSummary(true);
+          try {
+            const nextSummary = await accountantService.getSalesInvoiceSummary({ tenantId });
+            setSalesInvoiceSummary(nextSummary);
+          } catch {
+            // Keep the current snapshot if refreshing the ledger-backed summary fails.
+          } finally {
+            setIsLoadingSalesInvoiceSummary(false);
+          }
         }}
       />
     </section>

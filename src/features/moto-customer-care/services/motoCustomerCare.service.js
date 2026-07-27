@@ -2762,7 +2762,7 @@ export const motoCustomerCareService = {
     const client = requireSupabase();
     const { data, error } = await client
       .from('showroom_sales')
-      .select('total_amount, paid_amount, remaining_amount')
+      .select('id, total_amount, account_move_id')
       .eq('tenant_id', tenantId)
       .eq('id', saleId)
       .maybeSingle();
@@ -2771,10 +2771,40 @@ export const motoCustomerCareService = {
     if (!data) throw new Error('الفاتورة المرتبطة بطلب الأوراق غير موجودة.');
 
     const totalAmount = toNumber(data.total_amount);
-    const paidAmount = toNumber(data.paid_amount);
-    const remainingAmount = data.remaining_amount == null
-      ? Math.max(totalAmount - paidAmount, 0)
-      : Math.max(toNumber(data.remaining_amount), 0);
+    const [linkedMoveResult, referencedMoveResult, receivableAccountResult] = await Promise.all([
+      data.account_move_id
+        ? client.from('account_moves').select('id').eq('tenant_id', tenantId)
+          .eq('id', data.account_move_id).eq('move_type', 'sale').eq('state', 'posted').maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      client.from('account_moves').select('id').eq('tenant_id', tenantId)
+        .eq('ref', `showroom_sale:${saleId}`).eq('move_type', 'sale').eq('state', 'posted')
+        .order('created_at', { ascending: true }).limit(1).maybeSingle(),
+      client.from('account_accounts').select('id').eq('tenant_id', tenantId)
+        .eq('code', '114001').eq('active', true),
+    ]);
+    const failedLookup = [linkedMoveResult, referencedMoveResult, receivableAccountResult]
+      .find((result) => result.error);
+    if (failedLookup?.error) throw failedLookup.error;
+
+    const saleMoveId = linkedMoveResult.data?.id || referencedMoveResult.data?.id || null;
+    const receivableAccountIds = (receivableAccountResult.data || []).map((account) => account.id);
+    let paidAmount = 0;
+    if (saleMoveId && receivableAccountIds.length) {
+      const { data: invoiceLines, error: invoiceLinesError } = await client
+        .from('account_move_lines').select('id').eq('tenant_id', tenantId)
+        .eq('move_id', saleMoveId).in('account_id', receivableAccountIds).gt('debit', 0);
+      if (invoiceLinesError) throw invoiceLinesError;
+      const invoiceLineIds = (invoiceLines || []).map((line) => line.id);
+      if (invoiceLineIds.length) {
+        const { data: reconciliations, error: reconciliationsError } = await client
+          .from('account_partial_reconcile').select('amount').eq('tenant_id', tenantId)
+          .in('debit_move_id', invoiceLineIds);
+        if (reconciliationsError) throw reconciliationsError;
+        paidAmount = (reconciliations || []).reduce((sum, row) => sum + toNumber(row.amount), 0);
+      }
+    }
+    paidAmount = Math.round(paidAmount * 100) / 100;
+    const remainingAmount = Math.max(Math.round((totalAmount - paidAmount) * 100) / 100, 0);
 
     return { totalAmount, paidAmount, remainingAmount };
   },

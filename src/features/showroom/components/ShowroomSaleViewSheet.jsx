@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, Banknote, CheckCircle2, Package, Printer, Trash2, User } from 'lucide-react';
+import { AlertCircle, Banknote, CheckCircle2, Package, Printer, RotateCcw, Trash2, User } from 'lucide-react';
 import { ShowroomContractPreview } from '@/features/showroom/components/ShowroomContractPreview';
+import { SaleCancellationDialog } from '@/features/showroom/components/SaleCancellationDialog';
 import { useOptionalShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
 import { showroomService } from '@/features/showroom/services/showroom.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
@@ -91,32 +92,29 @@ function SaleSheetContent({
   onPayRemaining,
   onSettleBalance,
   onDelete,
+  onCancel,
   onPaperworkRequestOpen,
   canDelete,
+  canCancel,
   canRecordPayment,
   canSettleBalance,
   isPayingRemaining,
   isDeleting,
+  advanceBalances = [],
+  isAdvanceBalancesLoading = false,
+  onUseAdvanceBalance,
 }) {
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
   const payments = Array.isArray(sale?.payments) ? sale.payments : [];
   const paymentsTotal = payments.length
     ? payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : 0;
-  const accountingPaidAmount = Number(sale?.paid_amount ?? sale?.paidAmount);
-  const paidAmount = Number.isFinite(accountingPaidAmount) ? accountingPaidAmount : paymentsTotal;
-  const paymentEntries = payments.length
-    ? payments
-    : paidAmount > 0
-      ? [{
-          id: 'initial-payment',
-          amount: paidAmount,
-          payment_date: sale?.payment_date || sale?.created_at,
-          payment_method: sale?.payment_method || sale?.paymentMethod || '',
-          notes: 'دفعة أولى',
-        }]
-      : [];
-  const remainingAmount = Number(sale?.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+  const paidAmount = paymentsTotal;
+  // The payment history must only contain posted accounting moves loaded by
+  // showroomService. Never manufacture a payment from the invoice total.
+  const paymentEntries = payments;
+  const remainingAmount = Math.max(totalAmount - paidAmount, 0);
+  const availableAdvanceTotal = advanceBalances.reduce((sum, balance) => sum + Number(balance?.availableAmount || 0), 0);
   const items = Array.isArray(sale?.items) && sale.items.length > 0
     ? sale.items
     : Array.isArray(sale?.lines)
@@ -144,6 +142,16 @@ function SaleSheetContent({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {canCancel ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex h-9 items-center gap-1.5 rounded-full bg-red-600 px-3 text-xs font-black text-white transition hover:bg-red-700 focus:outline-none focus:ring-4 focus:ring-red-100"
+              >
+                <RotateCcw className="h-4 w-4" />
+                إلغاء الفاتورة
+              </button>
+            ) : null}
             {canDelete ? (
               <button
                 type="button"
@@ -245,7 +253,7 @@ function SaleSheetContent({
             </section>
           )}
 
-          {paidAmount > 0 && (
+          {paymentEntries.length > 0 && (
             <section className="border-b border-slate-200">
               <div className="flex items-center justify-between gap-3 bg-emerald-50/75 px-5 py-4">
                 <div className="flex items-center gap-2">
@@ -257,7 +265,7 @@ function SaleSheetContent({
                     <p className="mt-0.5 text-[0.7rem] font-semibold text-slate-400">سجل التحصيل</p>
                   </div>
                 </div>
-                <span className="shrink-0 font-mono text-lg font-black text-emerald-600">{formatMoney(paidAmount)}</span>
+                <span className="shrink-0 font-mono text-lg font-black text-emerald-600">{formatMoney(paymentsTotal)}</span>
               </div>
               {paymentEntries.length ? (
                 <div className="px-5 pb-4">
@@ -265,6 +273,9 @@ function SaleSheetContent({
                   {paymentEntries.map((payment, index) => {
                     const paymentDate = payment?.payment_date || payment?.created_at;
                     const paymentMethod = payment?.payment_method || payment?.paymentMethod || '';
+                    const destinationAccount = payment?.destination_account_code
+                      ? `${payment.destination_account_code}${payment.destination_account_name ? ` — ${payment.destination_account_name}` : ''}`
+                      : '';
                     const statement = payment?.notes || `دفعة ${index + 1}`;
 
                     return (
@@ -274,6 +285,7 @@ function SaleSheetContent({
                           <p className="mt-0.5 truncate text-[0.7rem] text-slate-400">
                             {[
                               paymentMethod || 'طريقة دفع غير محددة',
+                              destinationAccount,
                               paymentDate ? new Intl.DateTimeFormat('ar-EG', { dateStyle: 'medium' }).format(new Date(paymentDate)) : '',
                             ].filter(Boolean).join(' - ')}
                           </p>
@@ -287,6 +299,27 @@ function SaleSheetContent({
               ) : null}
             </section>
           )}
+
+          {remainingAmount > 0 && (isAdvanceBalancesLoading || availableAdvanceTotal > 0) ? (
+            <button
+              type="button"
+              onClick={availableAdvanceTotal > 0 ? onUseAdvanceBalance : undefined}
+              disabled={isAdvanceBalancesLoading || availableAdvanceTotal <= 0}
+              className="flex w-full items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3.5 text-right transition hover:bg-amber-100 disabled:cursor-wait"
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-black text-amber-900">
+                  {isAdvanceBalancesLoading ? 'جاري فحص رصيد العميل المقدم...' : 'يمكن تسوية الفاتورة من رصيد العميل المقدم'}
+                </p>
+                {!isAdvanceBalancesLoading ? (
+                  <p className="mt-1 truncate text-[0.7rem] font-bold text-amber-700">
+                    {advanceBalances.map((balance) => balance.paymentEntityName).join('، ')}
+                  </p>
+                ) : null}
+              </div>
+              {!isAdvanceBalancesLoading ? <span className="shrink-0 text-sm font-black text-amber-900">{formatMoney(availableAdvanceTotal)}</span> : null}
+            </button>
+          ) : null}
 
           <div className={`flex items-center justify-between gap-3 px-5 py-4 ${
             remainingAmount > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
@@ -340,7 +373,7 @@ function SaleSheetContent({
   );
 }
 
-function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitError }) {
+function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitError, openCredits = [], initialSource = 'cash' }) {
   const {
     destination: cashDestination,
     isLoading: isCashDestinationLoading,
@@ -351,40 +384,70 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
     ? payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : 0;
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
-  const paidAmount = payments.length ? paymentsTotal : Number(sale?.paid_amount ?? sale?.paidAmount ?? 0);
-  const remainingAmount = Math.max(Number(sale?.remaining_amount ?? totalAmount - paidAmount), 0);
+  const paidAmount = paymentsTotal;
+  const remainingAmount = Math.max(totalAmount - paidAmount, 0);
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
+  const [paymentSource, setPaymentSource] = useState(initialSource === 'open_credit' ? 'open_credit' : 'cash');
+  const [creditAmounts, setCreditAmounts] = useState({});
+  const openCreditAllocations = openCredits
+    .map((credit) => ({
+      openCreditLineId: credit.openCreditLineId,
+      amount: Number(creditAmounts[credit.openCreditLineId] || 0),
+    }))
+    .filter((allocation) => Number.isFinite(allocation.amount) && allocation.amount > 0);
+  const allocatedAmount = openCreditAllocations.reduce((sum, allocation) => sum + allocation.amount, 0);
+  const maximumAmount = remainingAmount;
 
   useEffect(() => {
     setAmount('');
     setNotes('');
     setFormError('');
-  }, [remainingAmount, sale?.id]);
+    setPaymentSource(initialSource === 'open_credit' ? 'open_credit' : 'cash');
+    setCreditAmounts({});
+  }, [remainingAmount, sale?.id, initialSource]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    const paymentAmount = Number(amount);
+    const paymentAmount = paymentSource === 'open_credit' ? allocatedAmount : Number(amount);
 
     if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
       setFormError('اكتب مبلغ صحيح للدفعة.');
       return;
     }
 
-    if (paymentAmount > remainingAmount) {
+    if (paymentAmount > maximumAmount) {
       setFormError('مبلغ الدفعة أكبر من المتبقي على الفاتورة.');
       return;
     }
 
-    if (!notes.trim()) {
+    const invalidAllocation = openCreditAllocations.find((allocation) => {
+      const credit = openCredits.find((record) => record.openCreditLineId === allocation.openCreditLineId);
+      return !credit || allocation.amount > Number(credit.availableAmount || 0);
+    });
+    if (invalidAllocation) {
+      setFormError('أحد مبالغ الاستخدام أكبر من المتاح في الاعتماد المحدد.');
+      return;
+    }
+
+    if (paymentSource === 'open_credit' && !openCreditAllocations.length) {
+      setFormError('اختر اعتمادًا واحدًا على الأقل.');
+      return;
+    }
+
+    if (paymentSource === 'cash' && !notes.trim()) {
       setFormError('اكتب ملاحظة توضح سبب أو طريقة الدفع.');
       return;
     }
 
     setFormError('');
-    const result = await onSubmit({ amount: paymentAmount, notes: notes.trim() });
+    const result = await onSubmit({
+      amount: paymentAmount,
+      notes: notes.trim(),
+      openCreditAllocations,
+    });
 
     if (result?.error) {
       setFormError(result.error);
@@ -419,6 +482,14 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 grid gap-2 sm:grid-cols-2">
+            <button type="button" onClick={() => { setPaymentSource('cash'); setAmount(''); }} className={`rounded-xl border px-3 py-2.5 text-right text-xs font-black ${paymentSource === 'cash' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-700'}`}>
+              تحصيل نقدي
+            </button>
+            <button type="button" onClick={() => { setPaymentSource('open_credit'); setAmount(''); }} className={`rounded-xl border px-3 py-2.5 text-right text-xs font-black ${paymentSource === 'open_credit' ? 'border-amber-400 bg-amber-50 text-slate-900' : 'border-slate-200 text-slate-700'}`}>
+              استخدام اعتماد مفتوح ({openCredits.length})
+            </button>
+          </div>
           <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
             <div>
               <p className="text-xs font-black text-slate-500">المتبقي على الفاتورة</p>
@@ -427,12 +498,12 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
           </div>
 
           <div className="mt-4 space-y-3">
-            <label className="block">
+            {paymentSource === 'cash' ? <label className="block">
               <span className="mb-1.5 block text-xs font-black text-slate-600">مبلغ الدفعة</span>
               <input
                 type="number"
                 min="0"
-                max={remainingAmount}
+                max={maximumAmount}
                 step="0.01"
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
@@ -440,9 +511,69 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
                 className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-right font-mono text-sm font-black text-slate-900 outline-none transition focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                 inputMode="decimal"
               />
-            </label>
+            </label> : (
+              <div className="space-y-2">
+                {openCredits.length ? openCredits.map((credit) => {
+                  const currentAmount = creditAmounts[credit.openCreditLineId] || '';
+                  const isSelected = Number(currentAmount) > 0;
+                  const available = Number(credit.availableAmount || 0);
+                  return (
+                    <div key={credit.openCreditLineId} className={`rounded-xl border p-3 ${isSelected ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-black text-slate-900">{credit.paymentEntityName}</p>
+                          <p className="mt-0.5 text-[10px] font-bold text-slate-500">
+                            {credit.moveName || 'اعتماد جهة'}
+                            {credit.moveDate ? ` · ${new Date(credit.moveDate).toLocaleDateString('ar-EG')}` : ''}
+                            {credit.attachment ? ' · مرفق' : ''}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCreditAmounts((current) => ({
+                            ...current,
+                            [credit.openCreditLineId]: isSelected
+                              ? ''
+                              : String(Math.min(available, Math.max(remainingAmount - allocatedAmount, 0))),
+                          }))}
+                          className={`shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-black ${isSelected ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-700'}`}
+                        >
+                          {isSelected ? 'إلغاء' : 'اختيار'}
+                        </button>
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] font-bold">
+                        <span>الأصلي<br /><b>{formatMoney(credit.originalAmount)}</b></span>
+                        <span>المستخدم<br /><b>{formatMoney(credit.reconciledAmount)}</b></span>
+                        <span className="text-emerald-700">المتاح<br /><b>{formatMoney(available)}</b></span>
+                      </div>
+                      {isSelected ? (
+                        <input
+                          type="number"
+                          min="0.01"
+                          max={available}
+                          step="0.01"
+                          value={currentAmount}
+                          onChange={(event) => setCreditAmounts((current) => ({
+                            ...current,
+                            [credit.openCreditLineId]: event.target.value,
+                          }))}
+                          className="mt-2 h-9 w-full rounded-lg border border-amber-200 bg-white px-3 text-left font-mono text-sm font-black outline-none focus:ring-4 focus:ring-amber-100"
+                          dir="ltr"
+                        />
+                      ) : null}
+                    </div>
+                  );
+                }) : (
+                  <p className="rounded-xl bg-slate-100 px-3 py-4 text-center text-xs font-bold text-slate-500">لا توجد اعتمادات مفتوحة متاحة.</p>
+                )}
+                <div className="flex items-center justify-between rounded-lg bg-amber-100 px-3 py-2 text-xs font-black text-amber-900">
+                  <span>إجمالي المختار</span>
+                  <span>{formatMoney(allocatedAmount)}</span>
+                </div>
+              </div>
+            )}
 
-            <label className="block">
+            {paymentSource === 'cash' ? <label className="block">
               <span className="mb-1.5 block text-xs font-black text-slate-600">ملاحظة الدفع <span className="text-red-600">*</span></span>
               <textarea
                 value={notes}
@@ -453,13 +584,15 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
                 placeholder="مثال: دفعة نقدية أو تحويل بنكي"
                 className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-bold text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
-            </label>
+            </label> : null}
 
-            <EmployeeCashDestinationNotice
-              destination={cashDestination}
-              isLoading={isCashDestinationLoading}
-              error={cashDestinationError}
-            />
+            {paymentSource === 'cash' ? (
+              <EmployeeCashDestinationNotice
+                destination={cashDestination}
+                isLoading={isCashDestinationLoading}
+                error={cashDestinationError}
+              />
+            ) : null}
 
           </div>
 
@@ -472,10 +605,10 @@ function PaymentRegistrationStep({ sale, onBack, onSubmit, isSubmitting, submitE
 
         <button
           type="submit"
-          disabled={isSubmitting || remainingAmount <= 0 || !notes.trim() || isCashDestinationLoading || Boolean(cashDestinationError) || !cashDestination?.accountId}
+          disabled={isSubmitting || maximumAmount <= 0 || (paymentSource === 'open_credit' ? allocatedAmount <= 0 || allocatedAmount > remainingAmount : !notes.trim() || isCashDestinationLoading || Boolean(cashDestinationError) || !cashDestination?.accountId)}
           className="h-11 w-full rounded-xl bg-red-600 text-sm font-black text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
         >
-          {isSubmitting ? 'جار تسجيل الدفعة...' : 'تسجيل الدفعة'}
+          {isSubmitting ? 'جار تسجيل الدفعة...' : paymentSource === 'open_credit' ? 'استخدام الاعتمادات المختارة' : 'تسجيل الدفعة'}
         </button>
       </form>
     </div>
@@ -487,6 +620,7 @@ export function ShowroomSaleViewSheet({
   isOpen,
   onClose,
   onDeleted,
+  onCancelled,
   onPaymentRecorded,
   onPaperworkRequestOpen,
   showroomConfigId: providedShowroomConfigId = null,
@@ -503,7 +637,11 @@ export function ShowroomSaleViewSheet({
   const [isContractOpen, setIsContractOpen] = useState(false);
   const [isPayingRemaining, setIsPayingRemaining] = useState(false);
   const [isDeletingSale, setIsDeletingSale] = useState(false);
+  const [isCancellationOpen, setIsCancellationOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState('details');
+  const [advanceBalances, setAdvanceBalances] = useState([]);
+  const [isAdvanceBalancesLoading, setIsAdvanceBalancesLoading] = useState(false);
+  const [initialPaymentSource, setInitialPaymentSource] = useState('cash');
 
   const fetchDetails = useCallback(async () => {
     if (!sale?.id) return;
@@ -549,16 +687,47 @@ export function ShowroomSaleViewSheet({
       setIsContractOpen(false);
       setIsPayingRemaining(false);
       setIsDeletingSale(false);
+      setIsCancellationOpen(false);
       setSheetMode('details');
     }
   }, [isOpen, fetchDetails]);
 
-  const handleOpenPaymentStep = useCallback(() => {
+  const activeSale = fullSale ?? sale;
+  const activeStatus = activeSale?.status;
+  const activeCustomerId = activeSale?.customer?.id || activeSale?.customer_id || null;
+
+  useEffect(() => {
+    let mounted = true;
+    if (!isOpen || !tenant?.id || !activeCustomerId) {
+      setAdvanceBalances([]);
+      setIsAdvanceBalancesLoading(false);
+      return undefined;
+    }
+
+    setIsAdvanceBalancesLoading(true);
+    showroomService.getCustomerOpenCredits({ tenantId: tenant.id, customerId: activeCustomerId })
+      .then((balances) => {
+        if (mounted) setAdvanceBalances(balances);
+      })
+      .catch(() => {
+        if (mounted) setAdvanceBalances([]);
+      })
+      .finally(() => {
+        if (mounted) setIsAdvanceBalancesLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeCustomerId, isOpen, tenant?.id]);
+
+  const handleOpenPaymentStep = useCallback((source = 'cash') => {
     setFetchError('');
+    setInitialPaymentSource(typeof source === 'string' ? source : 'cash');
     setSheetMode('payment');
   }, []);
 
-  const handleSubmitPayment = useCallback(async ({ amount, notes }) => {
+  const handleSubmitPayment = useCallback(async ({ amount, notes, openCreditAllocations = [] }) => {
     const targetSale = fullSale ?? sale;
 
     if (!tenant?.id || !currentShowroomConfigId || !targetSale?.id || isPayingRemaining) {
@@ -575,8 +744,13 @@ export function ShowroomSaleViewSheet({
         showroomConfigId: currentShowroomConfigId,
         amount,
         notes,
+        openCreditAllocations,
       });
       setFullSale(updatedSale);
+      if (activeCustomerId) {
+        const balances = await showroomService.getCustomerOpenCredits({ tenantId: tenant.id, customerId: activeCustomerId });
+        setAdvanceBalances(balances);
+      }
       setSheetMode('details');
       await onPaymentRecorded?.();
       return { ok: true };
@@ -587,7 +761,7 @@ export function ShowroomSaleViewSheet({
     } finally {
       setIsPayingRemaining(false);
     }
-  }, [currentShowroomConfigId, fullSale, isPayingRemaining, onPaymentRecorded, sale, tenant?.id]);
+  }, [activeCustomerId, currentShowroomConfigId, fullSale, isPayingRemaining, onPaymentRecorded, sale, tenant?.id]);
 
   const handleDeleteSale = useCallback(async () => {
     const targetSale = fullSale ?? sale;
@@ -675,6 +849,8 @@ export function ShowroomSaleViewSheet({
                 onSubmit={handleSubmitPayment}
                 isSubmitting={isPayingRemaining}
                 submitError={fetchError}
+                openCredits={advanceBalances}
+                initialSource={initialPaymentSource}
               />
             ) : (
               <SaleSheetContent
@@ -683,12 +859,23 @@ export function ShowroomSaleViewSheet({
                 onPayRemaining={handleOpenPaymentStep}
                 onSettleBalance={onSettleBalance}
                 onDelete={handleDeleteSale}
+                onCancel={() => setIsCancellationOpen(true)}
                 onPaperworkRequestOpen={onPaperworkRequestOpen}
-                canDelete={!readOnly && canDeleteSale}
+                canDelete={!readOnly && canDeleteSale && activeStatus === 'pending_payment'}
+                canCancel={!readOnly && canDeleteSale && activeStatus === 'confirmed'}
                 canRecordPayment={!readOnly}
                 canSettleBalance={Boolean(onSettleBalance)}
                 isPayingRemaining={isPayingRemaining}
                 isDeleting={isDeletingSale}
+                advanceBalances={advanceBalances}
+                isAdvanceBalancesLoading={isAdvanceBalancesLoading}
+                onUseAdvanceBalance={() => {
+                  if (onSettleBalance) {
+                    onSettleBalance(fullSale ?? sale, { preferredMode: 'advance_credit' });
+                    return;
+                  }
+                  handleOpenPaymentStep(advanceBalances.length ? 'open_credit' : 'cash');
+                }}
               />
             )}
           </motion.div>
@@ -697,6 +884,22 @@ export function ShowroomSaleViewSheet({
             isOpen={isContractOpen}
             companyName={tenant?.name}
             onClose={() => setIsContractOpen(false)}
+          />
+          <SaleCancellationDialog
+            open={isCancellationOpen}
+            onOpenChange={setIsCancellationOpen}
+            tenantId={tenant?.id}
+            sale={fullSale ?? sale}
+            onSuccess={async (result) => {
+              setFullSale((current) => ({
+                ...(current ?? sale),
+                status: 'cancelled',
+                accounting_paid_amount: 0,
+                accounting_remaining_amount: 0,
+              }));
+              await onCancelled?.(result);
+              await fetchDetails();
+            }}
           />
         </>
       )}
@@ -714,8 +917,8 @@ function ShowroomContractWindow({ sale, isOpen, companyName, onClose }) {
   const paymentsTotal = Array.isArray(sale?.payments)
     ? sale.payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : 0;
-  const paidAmount = Number(sale?.paid_amount ?? sale?.paidAmount ?? paymentsTotal);
-  const remainingAmount = Number(sale?.remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+  const paidAmount = paymentsTotal;
+  const remainingAmount = Math.max(totalAmount - paidAmount, 0);
   const items = Array.isArray(sale?.items) && sale.items.length > 0
     ? sale.items
     : Array.isArray(sale?.lines)
