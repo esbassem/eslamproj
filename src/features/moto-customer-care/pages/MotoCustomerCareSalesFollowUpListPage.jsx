@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useReducedMotion } from 'framer-motion';
-import { ArrowRight, Building2, Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, PackagePlus, PhoneCall, Search, UploadCloud, UserPlus } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Building2, Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, Loader2, PackagePlus, PhoneCall, Search, UploadCloud, UserPlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
@@ -18,7 +18,7 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { QuickStockUnitSheet } from '@/features/dashboard/components/QuickStockUnitSheet';
-import { inventoryService } from '@/features/inventory/api/inventory.api';
+import { inventoryService, normalizeTrackingIdentifierValue } from '@/features/inventory/api/inventory.api';
 import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
 import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
 import { VaultPaperworkDrawer } from '@/features/moto-customer-care/components/VaultPaperworkDrawer';
@@ -3004,74 +3004,126 @@ function PaperworkImagePicker({ value, onChange, tenantId }) {
   );
 }
 
-function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, onSaved }) {
+export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, onSaved }) {
   const [step, setStep] = useState('unit');
   const [documentTitle, setDocumentTitle] = useState('');
   const initialLocation = 'الفرع';
   const [notes, setNotes] = useState('');
   const [jawabPhoto, setJawabPhoto] = useState(null);
-  const [units, setUnits] = useState([]);
-  const [unitsStatus, setUnitsStatus] = useState('idle');
-  const [unitSearch, setUnitSearch] = useState('');
+  const [chassisNumber, setChassisNumber] = useState('');
+  const [engineNumber, setEngineNumber] = useState('');
+  const [searchStatus, setSearchStatus] = useState('idle');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchSource, setSearchSource] = useState('');
   const [selectedUnit, setSelectedUnit] = useState(null);
   const [quickUnitOpen, setQuickUnitOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
-
-  const loadUnits = useCallback(async () => {
-    if (!tenantId) {
-      setUnits([]);
-      setUnitsStatus('idle');
-      return;
-    }
-
-    setUnitsStatus('loading');
-    setError('');
-
-    try {
-      const rows = await inventoryService.getSerialUnits({ tenantId, status: 'all' });
-      setUnits(rows || []);
-      setUnitsStatus('ready');
-    } catch (loadError) {
-      setUnits([]);
-      setUnitsStatus('error');
-      setError(loadError.message || 'تعذر تحميل القطع المسجلة.');
-    }
-  }, [tenantId]);
+  const searchRequestRef = useRef(0);
 
   useEffect(() => {
     if (!open) return;
     setDocumentTitle('');
     setNotes('');
     setJawabPhoto(null);
-    setUnitSearch('');
+    setChassisNumber('');
+    setEngineNumber('');
+    setSearchStatus('idle');
+    setSearchResults([]);
+    setSearchSource('');
     setSelectedUnit(null);
     setQuickUnitOpen(false);
     setStep('unit');
     setError('');
     setIsSaving(false);
-    loadUnits();
-  }, [loadUnits, open]);
+    searchRequestRef.current += 1;
+  }, [open]);
 
-  const filteredUnits = useMemo(() => {
-    const query = unitSearch.trim().toLowerCase();
-    if (!query) return units;
+  useEffect(() => {
+    if (!open || step !== 'unit') return undefined;
 
-    return units.filter((unit) => [
-      unit.trackingNumber,
-      unit.product?.displayName,
-      unit.product?.name,
-      unit.product?.sku,
-      unit.notes,
-      unit.status,
-    ].filter(Boolean).join(' ').toLowerCase().includes(query));
-  }, [unitSearch, units]);
+    const normalizedChassis = normalizeTrackingIdentifierValue(chassisNumber);
+    const normalizedEngine = normalizeTrackingIdentifierValue(engineNumber);
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
+
+    if (normalizedChassis.length < 6) {
+      setSearchStatus('idle');
+      setSearchResults([]);
+      setSearchSource('');
+      return undefined;
+    }
+
+    setSearchStatus('searching');
+    setError('');
+
+    const timer = window.setTimeout(() => {
+      inventoryService.searchSerialUnitsByIdentifiers({
+        tenantId,
+        chassisNumber,
+        engineNumber,
+        limit: 10,
+      }).then((result) => {
+        if (searchRequestRef.current !== requestId) return;
+
+        const units = result?.units || [];
+        setSearchResults(units);
+        setSearchSource(result?.matchSource || '');
+
+        if (!units.length) {
+          setSelectedUnit(null);
+          setSearchStatus('not_found');
+          return;
+        }
+
+        if (result.matchSource === 'engine') {
+          setSelectedUnit(null);
+          setSearchStatus(units.length > 1 ? 'multiple' : 'found');
+          return;
+        }
+
+        if (normalizedEngine) {
+          const engineMatches = units.filter((unit) => unit.engineMatchType);
+          if (engineMatches.length === 1) {
+            setSelectedUnit(engineMatches[0]);
+            setSearchResults(engineMatches);
+            setSearchStatus('found');
+          } else if (engineMatches.length > 1) {
+            setSelectedUnit(null);
+            setSearchResults(engineMatches);
+            setSearchStatus('multiple');
+          } else {
+            setSelectedUnit(null);
+            setSearchStatus('conflict');
+          }
+          return;
+        }
+
+        if (units.length === 1) {
+          setSelectedUnit(units[0]);
+          setSearchStatus('found');
+        } else {
+          setSelectedUnit(null);
+          setSearchStatus('multiple');
+        }
+      }).catch((searchError) => {
+        if (searchRequestRef.current !== requestId) return;
+        setSelectedUnit(null);
+        setSearchResults([]);
+        setSearchStatus('error');
+        setError(searchError.message || 'تعذر البحث عن القطعة.');
+      });
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [chassisNumber, engineNumber, open, step, tenantId]);
 
   const canSaveDocument = Boolean(
     selectedUnit?.id
       && documentTitle.trim()
       && jawabPhoto,
   );
+  const canContinue = Boolean(selectedUnit?.id && documentTitle.trim());
 
   const save = async () => {
     if (!selectedUnit?.id) {
@@ -3147,7 +3199,7 @@ function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, onSaved 
         <SheetContent side="right" className="max-w-md" dir="rtl">
           <SheetDismissButton />
           <SheetHeader className="pl-16 text-right">
-            <SheetTitle>تسجيل جواب</SheetTitle>
+            <SheetTitle>استلام جواب جديد</SheetTitle>
             <div className="mt-2 flex items-center gap-2 text-[11px] font-black text-slate-500">
               <span className={`flex h-5 w-5 items-center justify-center rounded-full ${
                 step === 'unit' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'
@@ -3161,98 +3213,173 @@ function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, onSaved 
                 2
               </span>
               <span className="mr-1 text-slate-400">
-                {step === 'unit' ? 'تحديد القطعة' : 'بيانات الجواب'}
+                {step === 'unit' ? 'بيانات الورقة والقطعة' : 'الصورة والملاحظات'}
               </span>
             </div>
           </SheetHeader>
 
           <SheetBody className="space-y-4">
             {step === 'unit' ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-black text-slate-500">القطعة المرتبطة</span>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setQuickUnitOpen(true)}
-                    className="h-9 gap-2 rounded-full px-3 text-xs font-black"
-                  >
-                    <PackagePlus className="h-4 w-4" />
-                    تسجيل قطعة
-                  </Button>
-                </div>
-
-                <div className="relative">
-                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <div className="space-y-4">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-black text-slate-600">الورق باسم مين؟ <span className="text-red-500">*</span></span>
                   <Input
-                    value={unitSearch}
-                    onChange={(event) => setUnitSearch(event.target.value)}
-                    placeholder="ابحث برقم السيريال أو اسم المنتج"
-                    className="pr-9"
+                    value={documentTitle}
+                    onChange={(event) => {
+                      setDocumentTitle(event.target.value);
+                      setError('');
+                    }}
+                    placeholder="اكتب اسم صاحب الورق"
                   />
-                </div>
+                </label>
 
-                <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/60">
-                  {unitsStatus === 'loading' ? (
-                    <div className="px-4 py-5 text-sm font-black text-slate-500">جاري تحميل القطع المسجلة...</div>
-                  ) : unitsStatus === 'error' ? (
-                    <div className="px-4 py-5 text-sm font-black text-red-700">{error}</div>
-                  ) : filteredUnits.length ? (
-                    <div className="divide-y divide-slate-200">
-                      {filteredUnits.map((unit) => {
-                        const isSelected = selectedUnit?.id === unit.id;
-                        const productName = unit.product?.displayName || unit.product?.name || 'منتج غير محدد';
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-black text-slate-600">رقم الشاسيه <span className="text-red-500">*</span></span>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      value={chassisNumber}
+                      onChange={(event) => {
+                        setChassisNumber(event.target.value);
+                        setSelectedUnit(null);
+                        setError('');
+                      }}
+                      placeholder="أدخل رقم الشاسيه أو آخر 6 خانات"
+                      className="pr-9 font-mono"
+                      dir="ltr"
+                    />
+                  </div>
+                  {normalizeTrackingIdentifierValue(chassisNumber).length > 0
+                    && normalizeTrackingIdentifierValue(chassisNumber).length < 6 ? (
+                      <span className="block text-[11px] font-bold text-amber-600">أدخل 6 خانات على الأقل لبدء البحث.</span>
+                    ) : null}
+                </label>
 
-                        return (
-                          <button
-                            key={unit.id}
-                            type="button"
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-black text-slate-600">رقم الموتور</span>
+                  <Input
+                    value={engineNumber}
+                    onChange={(event) => {
+                      setEngineNumber(event.target.value);
+                      setSelectedUnit(null);
+                      setError('');
+                    }}
+                    placeholder="اختياري لتأكيد القطعة"
+                    className="font-mono"
+                    dir="ltr"
+                  />
+                </label>
+
+                {searchStatus === 'searching' ? (
+                  <div className="flex items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-5 text-sm font-black text-blue-700">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    جاري البحث عن القطعة...
+                  </div>
+                ) : null}
+
+                {searchStatus === 'conflict' ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                    <div className="flex items-center gap-2 text-sm font-black">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      رقم الموتور لا يطابق القطعة الموجودة بالشاسيه
+                    </div>
+                    <p className="mt-1 text-xs font-bold leading-5">
+                      المكتوب: <span className="font-mono" dir="ltr">{engineNumber || '—'}</span>
+                      {' · '}
+                      المسجل: <span className="font-mono" dir="ltr">{searchResults[0]?.engineNumber || 'غير مسجل'}</span>
+                    </p>
+                    <p className="mt-1 text-[11px] font-bold text-amber-700">صحح الرقم أو اختر القطعة يدويًا بعد مراجعتها.</p>
+                  </div>
+                ) : null}
+
+                {searchStatus === 'found' && searchSource === 'engine' ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">
+                    لم نجد الشاسيه، لكن وُجدت قطعة برقم الموتور. راجعها واخترها للتأكيد.
+                  </div>
+                ) : null}
+
+                {['found', 'multiple', 'conflict'].includes(searchStatus) && searchResults.length ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-black text-slate-500">
+                      {selectedUnit
+                        ? 'تم العثور على القطعة وتأكيدها'
+                        : searchResults.length > 1 ? 'وجدنا أكثر من قطعة، اختر القطعة الصحيحة' : 'راجع القطعة واضغط عليها للتأكيد'}
+                    </p>
+                    {searchResults.map((unit) => {
+                      const isSelected = selectedUnit?.id === unit.id;
+                      const productName = unit.product?.displayName || unit.product?.name || 'منتج غير محدد';
+
+                      return (
+                        <button
+                          key={unit.id}
+                          type="button"
                           onClick={() => {
                             setSelectedUnit(unit);
                             setError('');
-                            setStep('details');
                           }}
-                            className={`grid w-full grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 text-right transition ${
-                              isSelected ? 'bg-blue-50' : 'hover:bg-white'
-                            }`}
-                          >
+                          className={`w-full rounded-2xl border p-3 text-right transition ${
+                            isSelected
+                              ? 'border-emerald-300 bg-emerald-50 ring-4 ring-emerald-50'
+                              : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/40'
+                          }`}
+                        >
+                          <span className="flex items-start justify-between gap-3">
                             <span className="min-w-0">
                               <span className="block truncate text-sm font-black text-slate-950">{productName}</span>
-                              <span className="mt-0.5 block truncate font-mono text-xs font-bold text-slate-500" dir="ltr">
-                                {unit.trackingNumber || unit.id}
+                              <span className="mt-2 grid gap-1 text-[11px] font-bold text-slate-500">
+                                <span>الشاسيه: <b className="font-mono text-slate-800" dir="ltr">{unit.chassisNumber || 'غير مسجل'}</b></span>
+                                <span>الموتور: <b className="font-mono text-slate-800" dir="ltr">{unit.engineNumber || 'غير مسجل'}</b></span>
+                                <span>رقم التتبع: <b className="font-mono text-slate-800" dir="ltr">{unit.trackingNumber || unit.id}</b></span>
                               </span>
                             </span>
-                            <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${
-                              isSelected ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 ring-1 ring-slate-200'
+                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${
+                              isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
                             }`}>
-                              {isSelected ? 'مختارة' : unit.status || 'مسجلة'}
+                              {isSelected ? 'تم الاختيار' : unit.status || 'مسجلة'}
                             </span>
-                          </button>
-                        );
-                      })}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {searchStatus === 'not_found' ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                      <AlertTriangle className="h-5 w-5" />
                     </div>
-                  ) : (
-                    <div className="px-4 py-8 text-center text-sm font-black text-slate-400">
-                      لا توجد قطع مطابقة. سجل قطعة جديدة ثم اخترها للجواب.
-                    </div>
-                  )}
-                </div>
+                    <p className="mt-2 text-sm font-black text-amber-950">لم يتم العثور على قطعة مسجلة بهذه البيانات.</p>
+                    <p className="mt-1 text-xs font-bold leading-5 text-amber-700">
+                      المنتج غير محدد، وسيتم تحديده من جديد قبل تسجيل القطعة في المخزون.
+                    </p>
+                    <Button
+                      type="button"
+                      onClick={() => setQuickUnitOpen(true)}
+                      className="mt-3 gap-2 rounded-full px-4 text-xs font-black"
+                    >
+                      <PackagePlus className="h-4 w-4" />
+                      تحديد المنتج
+                    </Button>
+                  </div>
+                ) : null}
+
+                {searchStatus === 'error' && error ? (
+                  <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-black text-red-700">
+                    {error}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-slate-950">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+                  <p className="truncate text-sm font-black text-emerald-950">{documentTitle}</p>
+                  <p className="mt-1 truncate text-xs font-bold text-emerald-700">
                     {selectedUnit?.product?.displayName || selectedUnit?.product?.name || 'منتج غير محدد'}
-                  </p>
-                  <p className="mt-0.5 truncate font-mono text-xs font-bold text-slate-500" dir="ltr">
-                    {selectedUnit?.trackingNumber || selectedUnit?.id}
+                    {' · '}
+                    <span className="font-mono" dir="ltr">{selectedUnit?.chassisNumber || chassisNumber}</span>
                   </p>
                 </div>
-
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-black text-slate-500">الجواب باسم</span>
-                  <Input value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} placeholder="اكتب الجواب باسم مين" />
-                </label>
 
                 <label className="block space-y-1.5">
                   <span className="text-xs font-black text-slate-500">ملاحظات</span>
@@ -3275,7 +3402,7 @@ function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, onSaved 
               </>
             )}
 
-            {error && unitsStatus !== 'error' ? (
+            {error && searchStatus !== 'error' ? (
               <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-black text-red-700">
                 {error}
               </div>
@@ -3284,7 +3411,9 @@ function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, onSaved 
 
           <SheetFooter>
             {step === 'unit' ? (
-              <div className="w-full" />
+              <Button type="button" className="w-full" onClick={() => setStep('details')} disabled={!canContinue}>
+                متابعة وإرفاق صورة الجواب
+              </Button>
             ) : (
               <div className="grid w-full grid-cols-2 gap-2">
                 <Button type="button" variant="secondary" onClick={() => setStep('unit')} disabled={isSaving}>
@@ -3304,15 +3433,25 @@ function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, onSaved 
         onOpenChange={setQuickUnitOpen}
         tenantId={tenantId}
         userId={userId}
+        initialChassisNumber={chassisNumber}
+        initialEngineNumber={engineNumber}
         registrationMode="jawab"
+        side="bottom"
         onSaved={async (result) => {
           const createdUnit = result?.units?.[0] || null;
           if (createdUnit) {
-            setSelectedUnit(createdUnit);
-            setStep('details');
+            const nextUnit = {
+              ...createdUnit,
+              product: result?.selectedProduct || null,
+              chassisNumber,
+              engineNumber,
+            };
+            setSelectedUnit(nextUnit);
+            setSearchResults([nextUnit]);
+            setSearchSource('chassis');
+            setSearchStatus('found');
           }
           setQuickUnitOpen(false);
-          await loadUnits();
         }}
       />
     </>

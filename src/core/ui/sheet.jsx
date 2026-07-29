@@ -6,10 +6,15 @@ export const Sheet = DialogPrimitive.Root;
 export const SheetTrigger = DialogPrimitive.Trigger;
 export const SheetClose = DialogPrimitive.Close;
 
-export function SheetContent({ className, children, side = 'right', ...props }) {
+export function SheetContent({ className, overlayClassName, children, side = 'right', ...props }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="sheet-overlay fixed inset-0 z-40 bg-slate-950/25 backdrop-blur-sm" />
+      <DialogPrimitive.Overlay
+        className={cn(
+          'sheet-overlay fixed inset-0 z-40 bg-slate-950/25 backdrop-blur-sm',
+          overlayClassName,
+        )}
+      />
       <DialogPrimitive.Content
         className={cn(
           'sheet-content fixed z-50 flex max-h-screen flex-col overflow-hidden bg-white shadow-2xl outline-none will-change-transform',

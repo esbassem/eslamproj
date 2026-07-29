@@ -1971,6 +1971,48 @@ export const showroomService = {
     };
   },
 
+  async getSaleReceiptContext({ tenantId, saleId }) {
+    requireTenantId(tenantId);
+    if (!saleId) throw new Error('تعذر تحديد الفاتورة.');
+
+    const client = requireSupabase();
+    const { data: sale, error: saleError } = await client
+      .from('showroom_sales')
+      .select('id, customer_id, total_amount, account_move_id')
+      .eq('tenant_id', tenantId)
+      .eq('id', saleId)
+      .maybeSingle();
+
+    if (saleError) throw saleError;
+    if (!sale) throw new Error('الفاتورة غير موجودة.');
+
+    const [payments, customerResult] = await Promise.all([
+      loadReconciledSalePayments(client, tenantId, sale),
+      sale.customer_id
+        ? client
+          .from('partners')
+          .select('id, name')
+          .eq('tenant_id', tenantId)
+          .eq('id', sale.customer_id)
+          .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+
+    if (customerResult.error) throw customerResult.error;
+
+    const paidAmount = payments.reduce((sum, payment) => sum + toMoney(payment.amount), 0);
+    const totalAmount = toMoney(sale.total_amount);
+
+    return {
+      id: sale.id,
+      customerName: customerResult.data?.name || 'عميل غير محدد',
+      totalAmount,
+      paidAmount,
+      remainingAmount: Math.max(Math.round((totalAmount - paidAmount) * 100) / 100, 0),
+      payments,
+    };
+  },
+
   async deleteSale({ tenantId, saleId, showroomConfigId }) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);

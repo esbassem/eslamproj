@@ -400,6 +400,7 @@ export const accountantService = {
         label: line.label || move?.notes || 'عملية نقدية',
         note: move?.notes || '',
         reference: move?.ref || move?.name || '',
+        occurredAt: move?.date || move?.created_at || line.created_at || null,
         debit,
         credit,
         amount: debit > 0 ? debit : credit,
