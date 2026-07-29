@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Check, CheckCircle2, Loader2, PackagePlus, Search } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
@@ -83,7 +83,19 @@ function getProductAttributeFields(product) {
     .filter((field) => !field.value.trim());
 }
 
-export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, initialProductProductId, lockProductSelection = false, registrationMode = 'default', onSaved }) {
+export function QuickStockUnitSheet({
+  open,
+  onOpenChange,
+  tenantId,
+  userId,
+  initialProductProductId,
+  initialChassisNumber = '',
+  initialEngineNumber = '',
+  lockProductSelection = false,
+  registrationMode = 'default',
+  side = 'right',
+  onSaved,
+}) {
   const [products, setProducts] = useState([]);
   const [productsStatus, setProductsStatus] = useState('idle');
   const [productsError, setProductsError] = useState('');
@@ -104,7 +116,9 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
   const [notice, setNotice] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState('product');
+  const initialIdentifiersAppliedRef = useRef('');
   const isJawabRegistration = registrationMode === 'jawab';
+  const isBottomSheet = side === 'bottom';
 
   const loadProducts = useCallback(async () => {
     if (!tenantId) {
@@ -162,8 +176,37 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
       setNotice('');
       setIsSaving(false);
       setStep('product');
+      initialIdentifiersAppliedRef.current = '';
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !selectedProduct || definitionsStatus !== 'ready' || !identifierDefinitions.length) return;
+
+    const applicationKey = `${selectedProduct.id}:${initialChassisNumber}:${initialEngineNumber}`;
+    if (initialIdentifiersAppliedRef.current === applicationKey) return;
+    initialIdentifiersAppliedRef.current = applicationKey;
+
+    setIdentifierValues((current) => {
+      const next = { ...current };
+      identifierDefinitions.forEach((definition) => {
+        const identity = `${definition.code || ''} ${definition.name || ''}`;
+        if (/chassis|شاسيه/i.test(identity) && initialChassisNumber) {
+          next[definition.identifierTypeId] = initialChassisNumber;
+        } else if (/engine|motor|موتور|محرك/i.test(identity) && initialEngineNumber) {
+          next[definition.identifierTypeId] = initialEngineNumber;
+        }
+      });
+      return next;
+    });
+  }, [
+    definitionsStatus,
+    identifierDefinitions,
+    initialChassisNumber,
+    initialEngineNumber,
+    open,
+    selectedProduct,
+  ]);
 
   useEffect(() => {
     let mounted = true;
@@ -509,7 +552,7 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
       }
 
       const successNotice = isTrackedProduct(selectedProduct) ? 'تم تسجيل الوحدة وأصبحت جاهزة للبيع.' : 'تمت إضافة الكمية إلى المخزون.';
-      await onSaved?.(result);
+      await onSaved?.({ ...result, selectedProduct });
       setNotice(successNotice);
       setSelectedProduct(null);
       setQuantity('1');
@@ -531,9 +574,20 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full max-w-full border-l border-slate-200 bg-white sm:max-w-[560px]" dir="rtl">
+      <SheetContent
+        side={side}
+        overlayClassName={isBottomSheet
+          ? 'max-sm:!z-[60] max-sm:!bg-slate-950/55 max-sm:backdrop-blur-[2px]'
+          : undefined}
+        className={isBottomSheet
+          ? 'mx-auto h-[88dvh] w-full max-w-lg rounded-t-[24px] border border-b-0 border-slate-200 bg-white max-sm:!z-[70] max-sm:border-t-2 max-sm:border-slate-300 max-sm:shadow-[0_-24px_70px_rgba(2,6,23,0.45)]'
+          : 'w-full max-w-full border-l border-slate-200 bg-white sm:max-w-[560px]'}
+        dir="rtl"
+      >
         <SheetBody className="flex min-h-0 flex-col gap-5 bg-white px-6 py-6 text-slate-950">
-          <div className="-mx-6 -mt-6 border-b border-slate-200 bg-[#edf2f7] px-6 py-4 shadow-[0_10px_28px_-28px_rgba(15,23,42,0.5)]">
+          <div className={`-mx-6 -mt-6 border-b border-slate-200 px-6 py-4 shadow-[0_10px_28px_-28px_rgba(15,23,42,0.5)] ${
+            isBottomSheet ? 'bg-white' : 'bg-[#edf2f7]'
+          }`}>
             <p className="text-right text-sm font-black text-slate-950">تسجيل وحدة فعلية</p>
             {step === 'details' && selectedProduct ? (
               <div className="mt-4 flex items-start justify-between gap-3">
@@ -588,18 +642,26 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
           </div>
 
           {step === 'product' ? (
-            <div className="-mx-6 -mb-6 flex min-h-0 flex-1 flex-col gap-4 bg-[#edf2f7] px-6 pb-6">
+            <div className={`-mx-6 -mb-6 flex min-h-0 flex-1 flex-col gap-4 px-6 pb-6 ${
+              isBottomSheet ? 'bg-white' : 'bg-[#edf2f7]'
+            }`}>
               <div className="relative">
                 <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="ابحث عن منتج"
-                  className="h-11 border-slate-400/20 bg-[#edf2f7]/70 pr-9 font-bold text-slate-950 shadow-[0_14px_30px_-28px_rgba(15,23,42,0.65)] backdrop-blur placeholder:text-slate-500 focus:border-slate-400/35 focus:bg-[#edf2f7]/90"
+                  className={`h-11 pr-9 font-bold text-slate-950 shadow-[0_14px_30px_-28px_rgba(15,23,42,0.65)] placeholder:text-slate-500 ${
+                    isBottomSheet
+                      ? 'border-slate-200 bg-white focus:border-blue-300 focus:bg-white'
+                      : 'border-slate-400/20 bg-[#edf2f7]/70 backdrop-blur focus:border-slate-400/35 focus:bg-[#edf2f7]/90'
+                  }`}
                 />
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-400/15 bg-[#edf2f7]/55 shadow-[0_22px_48px_-42px_rgba(15,23,42,0.7)] backdrop-blur">
+              <div className={`min-h-0 flex-1 overflow-y-auto rounded-2xl border shadow-[0_22px_48px_-42px_rgba(15,23,42,0.7)] ${
+                isBottomSheet ? 'border-slate-200 bg-white' : 'border-slate-400/15 bg-[#edf2f7]/55 backdrop-blur'
+              }`}>
                 {productsStatus === 'loading' ? (
                   <div className="flex items-center gap-2 px-4 py-5 text-sm font-black text-slate-500">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -613,7 +675,11 @@ export function QuickStockUnitSheet({ open, onOpenChange, tenantId, userId, init
                       key={product.id}
                       type="button"
                       onClick={() => selectProduct(product)}
-                      className="grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-slate-400/15 bg-[#edf2f7]/35 px-4 py-3 text-right text-slate-700 transition last:border-b-0 hover:bg-[#edf2f7]/85 hover:text-slate-950"
+                      className={`grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b px-4 py-3 text-right text-slate-700 transition last:border-b-0 hover:text-slate-950 ${
+                        isBottomSheet
+                          ? 'border-slate-100 bg-white hover:bg-blue-50/50'
+                          : 'border-slate-400/15 bg-[#edf2f7]/35 hover:bg-[#edf2f7]/85'
+                      }`}
                     >
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-black">{getProductTitle(product)}</span>

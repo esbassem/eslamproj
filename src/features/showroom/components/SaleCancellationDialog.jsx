@@ -97,6 +97,7 @@ function DiagnosticCard({ record, number, total }) {
   const isLegacy212001 = isAllocation && details.legacy_kind === 'legacy_advance_212001';
   const isPaperwork = code === 'paperwork_beyond_preparation';
   const isInventory = code === 'inventory_not_interpretable';
+  const isCacheDrift = code === 'sale_payment_cache_drift';
   const isReversal = ['existing_reversal', 'original_move_already_reversed'].includes(code);
   const isOriginalMove = code?.startsWith('original_move_')
     || code?.startsWith('invoice_receivable_')
@@ -109,6 +110,7 @@ function DiagnosticCard({ record, number, total }) {
   if (isLegacy212001) title = 'توجد دفعة مقدمة بالنظام القديم تحتاج مراجعة';
   if (isPaperwork) title = 'طلب الأوراق يمنع إلغاء الفاتورة';
   if (isInventory) title = 'توجد مشكلة في حالة المخزون';
+  if (isCacheDrift) title = 'بيانات السداد تحتاج مراجعة';
   if (isReversal) title = 'تم عكس القيد المحاسبي لهذه الفاتورة بالفعل';
   if (isOriginalMove && !isReversal) {
     title = BLOCKER_MESSAGES[code] || 'توجد مشكلة في القيد المحاسبي الأصلي للفاتورة';
@@ -153,6 +155,16 @@ function DiagnosticCard({ record, number, total }) {
               <InfoRow label="الحالة الحالية" value={details.current_tracking_status} />
               <InfoRow label="الحالة المتوقعة قبل الإلغاء" value={details.expected_tracking_status} />
               <InfoRow label="السبب" value={details.reason} />
+            </div>
+          ) : null}
+
+          {isCacheDrift ? (
+            <div className="mt-3 rounded-xl bg-slate-50 px-3">
+              <InfoRow label="قيمة الفاتورة" value={money(details.invoice_total)} />
+              <InfoRow label="المدفوع المسجل" value={money(details.cached_paid_amount)} />
+              <InfoRow label="المدفوع محاسبيًا" value={money(details.accounting_paid_amount)} />
+              <InfoRow label="المتبقي المسجل" value={money(details.cached_remaining_amount)} />
+              <InfoRow label="المتبقي محاسبيًا" value={money(details.accounting_remaining_amount)} />
             </div>
           ) : null}
 

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, CircleCheck, FileText, PhoneCall, ShieldCheck } from 'lucide-react';
+import { Building2, CircleCheck, FileDown, FileText, PhoneCall, ShieldCheck } from 'lucide-react';
 import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
 import { PendingCustomerNotificationDrawer } from '@/features/moto-customer-care/components/PendingCustomerNotificationDrawer';
 import { CustomerNotificationDialog } from '@/features/moto-customer-care/components/CustomerNotificationDialog';
 import { VaultPaperworkDrawer } from '@/features/moto-customer-care/components/VaultPaperworkDrawer';
 import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
+import { PaperworkDocumentSheet } from '@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage';
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 
@@ -89,6 +90,7 @@ function CustomerCareIntroPanel({
   pendingProcessorCount = 0,
   vaultPaperworkCount = 0,
   pendingNotificationCount = 0,
+  onOpenPaperworkReceipt,
   onOpenPendingProcessorPaperwork,
   onOpenVaultPaperwork,
   onOpenPendingNotifications,
@@ -109,6 +111,22 @@ function CustomerCareIntroPanel({
           متابعة البيع، الأوراق، وحالة القطع بعد التسليم.
         </p>
         <div className="mt-6 flex flex-wrap justify-start gap-3">
+          <button
+            type="button"
+            onClick={onOpenPaperworkReceipt}
+            className="inline-flex min-h-12 items-center gap-3 rounded-xl border border-sky-300/60 bg-sky-400 px-4 py-2.5 text-right text-white shadow-[0_14px_30px_rgba(14,165,233,0.28)] transition hover:-translate-y-0.5 hover:bg-sky-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sky-200/40"
+            aria-label="تسجيل استلام جديد للأوراق من جهة"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 text-white shadow-sm">
+              <FileDown className="h-4.5 w-4.5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-xs font-black leading-4 text-white">استلام جديد</span>
+              <span className="mt-0.5 block text-[10px] font-bold leading-4 text-sky-950/70">
+                تسجيل أوراق واردة من جهة
+              </span>
+            </span>
+          </button>
           <button
             type="button"
             onClick={onOpenPendingProcessorPaperwork}
@@ -349,6 +367,7 @@ export function MotoCustomerCareHomePage() {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [notificationRequest, setNotificationRequest] = useState(null);
   const [pendingProcessorPaperworkOpen, setPendingProcessorPaperworkOpen] = useState(false);
+  const [paperworkDocumentSheetOpen, setPaperworkDocumentSheetOpen] = useState(false);
   const [vaultPaperworkOpen, setVaultPaperworkOpen] = useState(false);
   const [pendingNotificationsOpen, setPendingNotificationsOpen] = useState(false);
   const {
@@ -385,7 +404,7 @@ export function MotoCustomerCareHomePage() {
       return undefined;
     }
 
-    const hasOpenRequestDetails = Boolean(selectedRequest) || Boolean(notificationRequest) || pendingProcessorPaperworkOpen || vaultPaperworkOpen || pendingNotificationsOpen;
+    const hasOpenRequestDetails = Boolean(selectedRequest) || Boolean(notificationRequest) || pendingProcessorPaperworkOpen || paperworkDocumentSheetOpen || vaultPaperworkOpen || pendingNotificationsOpen;
     document.documentElement.classList.toggle('customer-care-section-open', hasOpenRequestDetails);
     document.body.classList.toggle('customer-care-section-open', hasOpenRequestDetails);
 
@@ -393,7 +412,7 @@ export function MotoCustomerCareHomePage() {
       document.documentElement.classList.remove('customer-care-section-open');
       document.body.classList.remove('customer-care-section-open');
     };
-  }, [notificationRequest, pendingNotificationsOpen, pendingProcessorPaperworkOpen, selectedRequest, vaultPaperworkOpen]);
+  }, [notificationRequest, pendingNotificationsOpen, pendingProcessorPaperworkOpen, paperworkDocumentSheetOpen, selectedRequest, vaultPaperworkOpen]);
 
   return (
     <section className="relative flex min-h-0 flex-1 flex-col items-stretch overflow-y-auto overflow-x-hidden text-white lg:overflow-hidden" dir="rtl">
@@ -418,6 +437,10 @@ export function MotoCustomerCareHomePage() {
           pendingProcessorCount={pendingProcessorRequestsCount}
           vaultPaperworkCount={paperworkReports.vault}
           pendingNotificationCount={pendingNotificationCount}
+          onOpenPaperworkReceipt={() => {
+            ensurePaperworkLoaded();
+            setPaperworkDocumentSheetOpen(true);
+          }}
           onOpenPendingProcessorPaperwork={() => setPendingProcessorPaperworkOpen(true)}
           onOpenVaultPaperwork={() => {
             setVaultPaperworkOpen(true);
@@ -540,6 +563,13 @@ export function MotoCustomerCareHomePage() {
           });
           refresh();
         }}
+      />
+      <PaperworkDocumentSheet
+        open={paperworkDocumentSheetOpen}
+        onOpenChange={setPaperworkDocumentSheetOpen}
+        tenantId={tenantId}
+        userId={tenantUser?.id}
+        onSaved={refresh}
       />
       <VaultPaperworkDrawer
         open={vaultPaperworkOpen}

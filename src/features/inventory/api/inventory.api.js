@@ -515,7 +515,153 @@ async function loadUsersById(client, tenantId, userIds) {
   return new Map((data ?? []).map((user) => [user.id, user.full_name || user.email || user.id]));
 }
 
+export function normalizeTrackingIdentifierValue(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9\u0621-\u064A]/g, '')
+    .toUpperCase();
+}
+
 export const inventoryService = {
+  async searchSerialUnitsByIdentifiers({
+    tenantId,
+    chassisNumber = '',
+    engineNumber = '',
+    limit = 10,
+  } = {}) {
+    const client = requireSupabase();
+    const normalizedChassis = normalizeTrackingIdentifierValue(chassisNumber);
+    const normalizedEngine = normalizeTrackingIdentifierValue(engineNumber);
+
+    if (!tenantId) throw new Error('لا توجد شركة نشطة.');
+    if (normalizedChassis.length < 6) return { matchSource: '', units: [] };
+
+    const { data: typeRows, error: typesError } = await client
+      .from('product_tracking_identifier_types')
+      .select('id, name, code')
+      .eq('tenant_id', tenantId);
+    if (typesError) throw new Error(typesError.message);
+
+    const isChassisType = (type) => /chassis|شاسيه/i.test(`${type.code || ''} ${type.name || ''}`);
+    const isEngineType = (type) => /engine|motor|موتور|محرك/i.test(`${type.code || ''} ${type.name || ''}`);
+    const chassisTypeIds = (typeRows || []).filter(isChassisType).map((type) => type.id);
+    const engineTypeIds = (typeRows || []).filter(isEngineType).map((type) => type.id);
+
+    if (!chassisTypeIds.length) throw new Error('تعريف رقم الشاسيه غير موجود في إعدادات الشركة.');
+
+    const findMatchingRows = async (typeIds, value) => {
+      if (!typeIds.length || value.length < 6) return [];
+      const queryByLoosePattern = async (searchValue) => {
+        const loosePattern = `%${Array.from(searchValue).join('%')}`;
+        const { data, error } = await client
+          .from('stock_tracking_unit_identifiers')
+          .select('tracking_unit_id, identifier_type_id, value')
+          .eq('tenant_id', tenantId)
+          .in('identifier_type_id', typeIds)
+          .ilike('value', loosePattern)
+          .order('created_at', { ascending: false })
+          .limit(Math.max(Number(limit) || 10, 1) * 5);
+        if (error) throw new Error(error.message);
+        return data || [];
+      };
+
+      const exactCandidates = await queryByLoosePattern(value);
+      const exactRows = exactCandidates.filter(
+        (row) => normalizeTrackingIdentifierValue(row.value) === value,
+      );
+      if (exactRows.length) return exactRows;
+
+      const suffix = value.slice(-6);
+      return (await queryByLoosePattern(suffix)).filter(
+        (row) => normalizeTrackingIdentifierValue(row.value).endsWith(suffix),
+      );
+    };
+
+    let matchSource = 'chassis';
+    let matchedRows = await findMatchingRows(chassisTypeIds, normalizedChassis);
+    if (!matchedRows.length && normalizedEngine.length >= 6) {
+      matchSource = 'engine';
+      matchedRows = await findMatchingRows(engineTypeIds, normalizedEngine);
+    }
+
+    const unitIds = [...new Set(matchedRows.map((row) => row.tracking_unit_id).filter(Boolean))];
+    if (!unitIds.length) return { matchSource, units: [] };
+
+    const [{ data: unitRows, error: unitsError }, { data: identifierRows, error: identifiersError }] = await Promise.all([
+      client.from('stock_tracking_units').select(SERIAL_COLUMNS).eq('tenant_id', tenantId).in('id', unitIds),
+      client
+        .from('stock_tracking_unit_identifiers')
+        .select('id, tracking_unit_id, identifier_type_id, value, is_not_available')
+        .eq('tenant_id', tenantId)
+        .in('tracking_unit_id', unitIds),
+    ]);
+    if (unitsError) throw new Error(unitsError.message);
+    if (identifiersError) throw new Error(identifiersError.message);
+
+    const productIds = [...new Set((unitRows || []).map((unit) => unit.product_product_id).filter(Boolean))];
+    const { data: productRows, error: productsError } = productIds.length
+      ? await client
+        .from('product_products')
+        .select(`
+          ${PRODUCT_VARIANT_COLUMNS},
+          product_template:product_template_id (
+            id, tenant_id, name, category_id, barcode, internal_reference,
+            product_type, tracking, is_active, attributes_jsonb
+          )
+        `)
+        .eq('tenant_id', tenantId)
+        .in('id', productIds)
+      : { data: [], error: null };
+    if (productsError) throw new Error(productsError.message);
+
+    const typesById = new Map((typeRows || []).map((type) => [type.id, type]));
+    const productsById = byId((productRows || []).map(normalizeInventoryVariant));
+    const identifiersByUnitId = (identifierRows || []).reduce((map, row) => {
+      const current = map.get(row.tracking_unit_id) || [];
+      const type = typesById.get(row.identifier_type_id);
+      current.push({
+        id: row.id,
+        identifierTypeId: row.identifier_type_id,
+        code: type?.code || '',
+        label: type?.name || 'رقم تتبع',
+        value: row.value || '',
+        isNotAvailable: row.is_not_available ?? false,
+      });
+      map.set(row.tracking_unit_id, current);
+      return map;
+    }, new Map());
+
+    return {
+      matchSource,
+      units: (unitRows || []).map((row) => {
+        const unit = normalizeSerial(row);
+        const identifiers = identifiersByUnitId.get(row.id) || [];
+        const chassis = identifiers.find((identifier) => isChassisType({ code: identifier.code, name: identifier.label }));
+        const engine = identifiers.find((identifier) => isEngineType({ code: identifier.code, name: identifier.label }));
+        const storedChassis = normalizeTrackingIdentifierValue(chassis?.value);
+        const storedEngine = normalizeTrackingIdentifierValue(engine?.value);
+
+        return {
+          ...unit,
+          product: productsById.get(unit.productProductId) || null,
+          trackingIdentifiers: identifiers,
+          chassisNumber: chassis?.value || '',
+          engineNumber: engine?.value || '',
+          chassisMatchType: storedChassis === normalizedChassis
+            ? 'exact'
+            : storedChassis.endsWith(normalizedChassis.slice(-6)) ? 'suffix' : '',
+        engineMatchType: normalizedEngine && storedEngine === normalizedEngine
+          ? 'exact'
+          : normalizedEngine.length >= 6 && storedEngine.endsWith(normalizedEngine.slice(-6)) ? 'suffix' : '',
+        };
+      }).sort((left, right) => {
+        const leftRank = left.chassisMatchType === 'exact' ? 0 : left.chassisMatchType === 'suffix' ? 1 : 2;
+        const rightRank = right.chassisMatchType === 'exact' ? 0 : right.chassisMatchType === 'suffix' ? 1 : 2;
+        return leftRank - rightRank || String(right.createdAt || '').localeCompare(String(left.createdAt || ''));
+      }).slice(0, Math.max(Number(limit) || 10, 1)),
+    };
+  },
+
   async listProducts(tenantId) {
     const client = requireSupabase();
     const productsMap = await loadProductsMap(client, tenantId);
