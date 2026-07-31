@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, CheckCircle2, MoreVertical, Pencil, PlusCircle, Power, Store, Trash2 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/core/ui/button';
@@ -41,10 +41,16 @@ function getMonthSalesRange(monthDate) {
   const date = monthDate instanceof Date && !Number.isNaN(monthDate.getTime()) ? monthDate : new Date();
   const start = new Date(date.getFullYear(), date.getMonth(), 1);
   const end = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  const toLocalISODate = (value) => {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
+    from: toLocalISODate(start),
+    to: toLocalISODate(end),
   };
 }
 
@@ -510,6 +516,7 @@ export function ShowroomSellPage() {
   const [configUsageById, setConfigUsageById] = useState({});
   const [configActionError, setConfigActionError] = useState('');
   const [invoiceReportMonth, setInvoiceReportMonth] = useState(() => new Date());
+  const salesLoadRequestIdRef = useRef(0);
   const isHomeRoute = location.pathname.replace(/\/+$/, '') === '/app/showroom_point';
 
   useEffect(() => {
@@ -550,6 +557,9 @@ export function ShowroomSellPage() {
   }, [configs, tenant?.id]);
 
   const loadSales = useCallback(async () => {
+    const requestId = salesLoadRequestIdRef.current + 1;
+    salesLoadRequestIdRef.current = requestId;
+
     if (!tenant?.id || !currentShowroomConfigId) {
       setSales([]);
       setIsSalesLoading(false);
@@ -561,18 +571,34 @@ export function ShowroomSellPage() {
 
     try {
       const { from, to } = getMonthSalesRange(invoiceReportMonth);
-      const nextSales = await showroomService.getSales({
+      const salesQuery = {
         tenantId: tenant.id,
         showroomConfigId: currentShowroomConfigId,
         saleDateFrom: from,
         saleDateTo: to,
         limit: null,
+      };
+      const nextSales = await showroomService.getSales({
+        ...salesQuery,
+        summaryOnly: true,
       });
+      if (salesLoadRequestIdRef.current !== requestId) return;
       setSales(nextSales);
+      setIsSalesLoading(false);
+
+      showroomService.getSales(salesQuery).then((enrichedSales) => {
+        if (salesLoadRequestIdRef.current !== requestId) return;
+        setSales(enrichedSales);
+      }).catch(() => {
+        // The summary is already visible. Optional accounting, paperwork, and
+        // product details can still be loaded when the user opens an invoice.
+      });
     } catch (error) {
+      if (salesLoadRequestIdRef.current !== requestId) return;
       setSales([]);
       setSalesError(error.message || 'تعذر تحميل عمليات البيع.');
     } finally {
+      if (salesLoadRequestIdRef.current !== requestId) return;
       setIsSalesLoading(false);
     }
   }, [currentShowroomConfigId, invoiceReportMonth, tenant?.id]);
@@ -645,6 +671,8 @@ export function ShowroomSellPage() {
         showroomConfigId: currentShowroomConfigId,
       });
 
+      salesLoadRequestIdRef.current += 1;
+      setIsSalesLoading(false);
       setSales((current) => [savedSale, ...current.filter((item) => item.id !== savedSale.id)]);
       setDismissedPaperworkPromptSaleId(null);
       if (getSalePendingPaperworkLines(savedSale).length) {

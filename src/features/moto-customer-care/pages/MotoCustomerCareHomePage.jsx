@@ -308,7 +308,7 @@ function PaperworkRequestCard({ request, onOpen }) {
   );
 }
 
-function PaperworkRequestsCard({ requests, isLoading, error, onOpen }) {
+function PaperworkRequestsCard({ requests, totalCount, isLoading, error, onOpen }) {
   return (
     <section className="customer-care-operations-window customer-care-fade-up min-h-0 px-4 pb-6 text-slate-950 sm:px-6 lg:relative lg:z-[80] lg:m-0 lg:flex lg:h-full lg:w-full lg:max-w-none lg:items-center lg:justify-center lg:justify-self-stretch lg:px-0 lg:pb-0 lg:py-10 lg:pl-20 lg:pr-28 xl:pl-28 xl:pr-36">
       <div className="relative z-10 flex h-auto min-h-0 w-full max-w-none flex-col overflow-visible rounded-none border-0 bg-transparent shadow-none lg:h-[calc(100%-0.5rem)] lg:max-w-[51rem] lg:translate-x-4 lg:translate-y-4 lg:overflow-hidden lg:rounded-t-[1.35rem] lg:rounded-b-lg lg:border lg:border-white/70 lg:bg-white lg:shadow-[0_22px_48px_rgba(3,7,18,0.22)] xl:translate-x-6">
@@ -320,7 +320,7 @@ function PaperworkRequestsCard({ requests, isLoading, error, onOpen }) {
             <div className="min-w-0 text-right">
               <h2 className="truncate text-2xl font-black leading-8 text-slate-950 sm:text-3xl sm:leading-10">طلبات الأوراق</h2>
               <p className="mt-1 text-sm font-black leading-5 text-slate-500">
-                أحدث الطلبات · {requests.length.toLocaleString('ar-EG')} طلب
+                إجمالي الطلبات · {Number(totalCount || 0).toLocaleString('ar-EG')} طلب
               </p>
             </div>
           </div>
@@ -381,14 +381,13 @@ export function MotoCustomerCareHomePage() {
     refresh,
     updatePaperworkRequestLocally,
     ensurePaperworkLoaded,
-  } = useMotoCustomerCareSales({ limit: 20, enabled: true, activeSection: 'requests' });
-  const recentRequests = useMemo(() => (
+  } = useMotoCustomerCareSales({ limit: 20, paperworkRequestsLimit: null, enabled: true, activeSection: 'requests' });
+  const displayedRequests = useMemo(() => (
     [...paperworkRequests]
       .sort((left, right) => (
         new Date(right.createdAt || right.created_at || 0)
         - new Date(left.createdAt || left.created_at || 0)
       ))
-      .slice(0, 20)
   ), [paperworkRequests]);
   const pendingProcessorRequestsCount = useMemo(() => (
     paperworkRequests.filter((request) => (
@@ -449,7 +448,8 @@ export function MotoCustomerCareHomePage() {
           onOpenPendingNotifications={() => setPendingNotificationsOpen(true)}
         />
         <PaperworkRequestsCard
-          requests={recentRequests}
+          requests={displayedRequests}
+          totalCount={paperworkReports.totalRequests}
           isLoading={isLoading}
           error={error}
           onOpen={(request) => {
@@ -576,6 +576,11 @@ export function MotoCustomerCareHomePage() {
         onOpenChange={setVaultPaperworkOpen}
         documents={paperworkDocuments}
         isLoading={sectionStatus.papers === 'loading'}
+        onOpenRequest={(requestId) => {
+          const request = paperworkRequests.find((item) => item.id === requestId);
+          if (!request) return;
+          setSelectedRequest(request);
+        }}
       />
       <PendingCustomerNotificationDrawer
         open={pendingNotificationsOpen}

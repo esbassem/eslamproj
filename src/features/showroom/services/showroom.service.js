@@ -258,12 +258,24 @@ async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId
   }
   const safeTrackingNumber = trackingNumber || `NA-${saleId}-${productProductId}-${String(item?.lineId || Date.now()).replace(/[^a-zA-Z0-9-]/g, '')}`;
 
+  const { data: conflictingUnit, error: conflictingError } = await client
+    .from('stock_tracking_units')
+    .select('id, data_status, product_product_id')
+    .eq('tenant_id', tenantId)
+    .eq('tracking_number', safeTrackingNumber)
+    .maybeSingle();
+  if (conflictingError) throw conflictingError;
+  if (conflictingUnit && (conflictingUnit.data_status !== 'complete' || !conflictingUnit.product_product_id)) {
+    throw new Error(`لا يمكن بيع الوحدة "${safeTrackingNumber}" قبل استكمال بيانات المنتج.`);
+  }
+
   const { data: existingUnits, error: existingError } = await client
     .from('stock_tracking_units')
-    .select('id, status, notes')
+    .select('id, status, notes, data_status')
     .eq('tenant_id', tenantId)
     .eq('product_product_id', productProductId)
     .eq('tracking_number', safeTrackingNumber)
+    .eq('data_status', 'complete')
     .limit(1);
 
   if (existingError) throw existingError;
@@ -283,6 +295,8 @@ async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId
       .from('stock_tracking_units')
       .update({
         status: targetStatus,
+        data_status: 'complete',
+        incomplete_reason: null,
         notes: `showroom_sale:${saleId}`,
       })
       .eq('tenant_id', tenantId)
@@ -576,7 +590,7 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
   });
 }
 
-async function attachLineDetails(client, tenantId, lines) {
+async function attachLineDetails(client, tenantId, lines, { includeTrackingDetails = true } = {}) {
   const saleLines = Array.isArray(lines) ? lines : [];
   const productIds = [...new Set(saleLines.map((line) => line.product_product_id).filter(Boolean))];
   const { data: products, error: productsError } = productIds.length
@@ -611,6 +625,10 @@ async function attachLineDetails(client, tenantId, lines) {
     };
   });
   const linesWithAttributes = await attachLineAttributes(client, tenantId, enrichedLines);
+  if (!includeTrackingDetails) {
+    return linesWithAttributes;
+  }
+
   return attachLineTrackingIdentifiers(client, tenantId, linesWithAttributes);
 }
 
@@ -813,7 +831,9 @@ async function attachSaleLines(client, tenantId, sales, showroomConfigId) {
 
   if (error) throw error;
 
-  const linesWithDetails = await attachLineDetails(client, tenantId, lines || []);
+  const linesWithDetails = await attachLineDetails(client, tenantId, lines || [], {
+    includeTrackingDetails: false,
+  });
   const linesWithPaperwork = await attachLinePaperworkRequests(client, tenantId, linesWithDetails);
   const linesBySaleId = new Map();
 
@@ -1276,7 +1296,15 @@ export const showroomService = {
     return showroomService.deleteConfig({ tenantId, id });
   },
 
-  async getSales({ tenantId, limit = 20, status, showroomConfigId, saleDateFrom, saleDateTo } = {}) {
+  async getSales({
+    tenantId,
+    limit = 20,
+    status,
+    showroomConfigId,
+    saleDateFrom,
+    saleDateTo,
+    summaryOnly = false,
+  } = {}) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
     const client = requireSupabase();
@@ -1327,6 +1355,10 @@ export const showroomService = {
 
     if (error) throw error;
     const salesWithCustomers = await attachCustomers(client, tenantId, data);
+    if (summaryOnly) {
+      return salesWithCustomers;
+    }
+
     const salesWithAccountingStatus = await attachSaleAccountingStatus(client, tenantId, salesWithCustomers);
     return attachSaleLines(client, tenantId, salesWithAccountingStatus, showroomConfigId);
   },

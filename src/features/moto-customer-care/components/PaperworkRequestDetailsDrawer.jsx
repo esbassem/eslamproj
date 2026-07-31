@@ -668,7 +668,7 @@ export function PaperworkRequestDetailsDrawer({
   };
 
   return createPortal(
-    <div className={`fixed inset-0 z-[70] ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} dir="rtl">
+    <div className={`fixed inset-0 z-[140] ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} dir="rtl">
       <button
         type="button"
         onClick={() => onOpenChange(false)}

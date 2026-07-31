@@ -116,6 +116,7 @@ export function QuickStockUnitSheet({
   const [notice, setNotice] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState('product');
+  const [registerWithoutProduct, setRegisterWithoutProduct] = useState(false);
   const initialIdentifiersAppliedRef = useRef('');
   const isJawabRegistration = registrationMode === 'jawab';
   const isBottomSheet = side === 'bottom';
@@ -176,9 +177,35 @@ export function QuickStockUnitSheet({
       setNotice('');
       setIsSaving(false);
       setStep('product');
+      setRegisterWithoutProduct(false);
       initialIdentifiersAppliedRef.current = '';
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !isJawabRegistration || !registerWithoutProduct) return undefined;
+    let mounted = true;
+    setDefinitionsStatus('loading');
+    inventoryService.listJawabIdentifierDefinitions({ tenantId })
+      .then((definitions) => {
+        if (!mounted) return;
+        setIdentifierDefinitions(definitions || []);
+        setIdentifierValues(Object.fromEntries((definitions || []).map((definition) => {
+          const identity = `${definition.code || ''} ${definition.name || ''}`;
+          const value = /chassis|شاسيه/i.test(identity)
+            ? initialChassisNumber
+            : /engine|motor|موتور|محرك/i.test(identity) ? initialEngineNumber : '';
+          return [definition.identifierTypeId, value || ''];
+        })));
+        setDefinitionsStatus('ready');
+      })
+      .catch((loadError) => {
+        if (!mounted) return;
+        setDefinitionsStatus('error');
+        setError(loadError.message || 'تعذر تحميل تعريفات الشاسيه والموتور.');
+      });
+    return () => { mounted = false; };
+  }, [initialChassisNumber, initialEngineNumber, isJawabRegistration, open, registerWithoutProduct, tenantId]);
 
   useEffect(() => {
     if (!open || !selectedProduct || definitionsStatus !== 'ready' || !identifierDefinitions.length) return;
@@ -334,23 +361,29 @@ export function QuickStockUnitSheet({
   );
 
   const trackingNumber = useMemo(() => {
+    if (registerWithoutProduct) {
+      const chassisDefinition = identifierDefinitions.find((definition) => /chassis|شاسيه/i.test(`${definition.code || ''} ${definition.name || ''}`));
+      return String(identifierValues[chassisDefinition?.identifierTypeId] || initialChassisNumber || '').trim();
+    }
     if (!isSerialProduct(selectedProduct)) return '';
     const values = identifierDefinitions
       .map((definition) => String(identifierValues[definition.identifierTypeId] || '').trim())
       .filter(Boolean);
     return values.length ? values.join(' - ') : serialNumber.trim();
-  }, [identifierDefinitions, identifierValues, selectedProduct, serialNumber]);
+  }, [identifierDefinitions, identifierValues, initialChassisNumber, registerWithoutProduct, selectedProduct, serialNumber]);
 
   const missingIdentifierDefinition = useMemo(() => {
     if (!identifierDefinitions.length) return null;
 
-    return identifierDefinitions.find((definition) => !String(identifierValues[definition.identifierTypeId] || '').trim()) || null;
+    return identifierDefinitions.find((definition) => definition.isRequired && !String(identifierValues[definition.identifierTypeId] || '').trim()) || null;
   }, [identifierDefinitions, identifierValues]);
 
   const canSave = useMemo(() => {
-    if (step !== 'details' || !tenantId || !selectedProduct || definitionsStatus === 'loading' || attributeFieldsStatus === 'loading' || isSaving) {
+    if (step !== 'details' || !tenantId || (!selectedProduct && !registerWithoutProduct) || definitionsStatus === 'loading' || attributeFieldsStatus === 'loading' || isSaving) {
       return false;
     }
+
+    if (registerWithoutProduct) return Boolean(trackingNumber && !missingIdentifierDefinition);
 
     if (!isTrackedProduct(selectedProduct)) {
       return false;
@@ -373,7 +406,7 @@ export function QuickStockUnitSheet({
       return false;
     }
 
-    if (selectedProduct.requiresLicense) {
+    if (selectedProduct?.requiresLicense) {
       if (!isTrackedProduct(selectedProduct) || !license.status) {
         return false;
       }
@@ -384,7 +417,7 @@ export function QuickStockUnitSheet({
     }
 
     return true;
-  }, [attributeFieldsStatus, attributeValues, definitionsStatus, isJawabRegistration, isSaving, license, missingIdentifierDefinition, selectedAttributeFields, selectedProduct, step, tenantId, trackingNumber]);
+  }, [attributeFieldsStatus, attributeValues, definitionsStatus, isJawabRegistration, isSaving, license, missingIdentifierDefinition, registerWithoutProduct, selectedAttributeFields, selectedProduct, step, tenantId, trackingNumber]);
 
   const selectProduct = (product) => {
     const attributes = Object.fromEntries(getProductAttributeFields(product).map((field) => [field.key, '']));
@@ -415,12 +448,12 @@ export function QuickStockUnitSheet({
       return;
     }
 
-    if (!selectedProduct) {
+    if (!selectedProduct && !registerWithoutProduct) {
       setError('اختر منتجًا أولاً.');
       return;
     }
 
-    if (isTrackedProduct(selectedProduct) && !trackingNumber) {
+    if ((registerWithoutProduct || isTrackedProduct(selectedProduct)) && !trackingNumber) {
       setError('أدخل بيانات السيريال/التتبع للوحدة.');
       return;
     }
@@ -438,7 +471,7 @@ export function QuickStockUnitSheet({
 
     const effectiveLicense = isJawabRegistration ? { ...license, status: 'jawab' } : license;
 
-    if (selectedProduct.requiresLicense) {
+    if (selectedProduct?.requiresLicense) {
       if (!isSerialProduct(selectedProduct)) {
         setError('هذا المنتج يحتاج ترخيص ويجب تسجيله كقطعة متتبعة.');
         return;
@@ -465,7 +498,7 @@ export function QuickStockUnitSheet({
     setNotice('');
 
     try {
-      const activeProductProductId = selectedProduct.productProductId || selectedProduct.id;
+      const activeProductProductId = selectedProduct?.productProductId || selectedProduct?.id || null;
       const productProductId = stockAttributeValueIds.length ? null : activeProductProductId;
       const textAttributeRows = selectedAttributeFields
         .map((field) => {
@@ -502,18 +535,22 @@ export function QuickStockUnitSheet({
 
       const result = await inventoryService.addStock({
         tenantId,
-        productId: activeProductProductId,
-        productProductId,
+        productId: registerWithoutProduct ? null : activeProductProductId,
+        productProductId: registerWithoutProduct ? null : productProductId,
         attributeValueIds: stockAttributeValueIds,
         textAttributeRows,
         quantity: Number(quantity) || 1,
-        serialNumbers: isTrackedProduct(selectedProduct) ? [trackingNumber] : [],
+        serialNumbers: registerWithoutProduct || isTrackedProduct(selectedProduct) ? [trackingNumber] : [],
         trackingIdentifierValuesBySerial: serialValues,
         trackingUnitAttributesBySerial,
         userId,
+        allowIncompleteUnit: registerWithoutProduct,
+        dataStatus: registerWithoutProduct ? 'incomplete' : 'complete',
+        incompleteReason: registerWithoutProduct ? 'missing_product' : null,
+        registrationSource: isJawabRegistration ? 'jawab' : null,
       });
 
-      if (selectedProduct.requiresLicense || isJawabRegistration) {
+      if (selectedProduct?.requiresLicense || isJawabRegistration) {
         const units = result.units || [];
         if (!units.length) {
           throw new Error('تعذر تحديد القطعة الجديدة لحفظ حالة الجواب.');
@@ -527,7 +564,7 @@ export function QuickStockUnitSheet({
         })));
       }
 
-      if (isTrackedProduct(selectedProduct) && (chassisPhotoFile || enginePhotoFile)) {
+      if ((registerWithoutProduct || isTrackedProduct(selectedProduct)) && (chassisPhotoFile || enginePhotoFile)) {
         const units = result.units || [];
         if (!units.length) {
           throw new Error('تعذر تحديد القطعة الجديدة لحفظ صور الشاسيه والموتور.');
@@ -551,8 +588,8 @@ export function QuickStockUnitSheet({
         ].filter(Boolean)));
       }
 
-      const successNotice = isTrackedProduct(selectedProduct) ? 'تم تسجيل الوحدة وأصبحت جاهزة للبيع.' : 'تمت إضافة الكمية إلى المخزون.';
-      await onSaved?.({ ...result, selectedProduct });
+      const successNotice = registerWithoutProduct ? 'تم تسجيل القطعة كبيانات غير مكتملة.' : isTrackedProduct(selectedProduct) ? 'تم تسجيل الوحدة وأصبحت جاهزة للبيع.' : 'تمت إضافة الكمية إلى المخزون.';
+      await onSaved?.({ ...result, selectedProduct: registerWithoutProduct ? null : selectedProduct });
       setNotice(successNotice);
       setSelectedProduct(null);
       setQuantity('1');
@@ -564,6 +601,7 @@ export function QuickStockUnitSheet({
       setChassisPhotoFile(null);
       setEnginePhotoFile(null);
       setStep('product');
+      setRegisterWithoutProduct(false);
       await loadProducts();
     } catch (saveError) {
       setError(saveError.message || 'تعذر تسجيل الوحدة.');
@@ -589,12 +627,12 @@ export function QuickStockUnitSheet({
             isBottomSheet ? 'bg-white' : 'bg-[#edf2f7]'
           }`}>
             <p className="text-right text-sm font-black text-slate-950">تسجيل وحدة فعلية</p>
-            {step === 'details' && selectedProduct ? (
+            {step === 'details' && (selectedProduct || registerWithoutProduct) ? (
               <div className="mt-4 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="truncate text-base font-black text-slate-950">{getProductTitle(selectedProduct)}</h3>
-                  <p className="mt-1 truncate text-xs font-bold text-slate-500">{getProductCode(selectedProduct) || 'بدون كود'}</p>
-                  {selectedProduct.requiresLicense && !isJawabRegistration ? (
+                  <h3 className="truncate text-base font-black text-slate-950">{registerWithoutProduct ? '⚠️ قطعة غير مكتملة' : getProductTitle(selectedProduct)}</h3>
+                  <p className="mt-1 truncate text-xs font-bold text-slate-500">{registerWithoutProduct ? 'سيتم استكمال المنتج لاحقًا' : getProductCode(selectedProduct) || 'بدون كود'}</p>
+                  {selectedProduct?.requiresLicense && !isJawabRegistration ? (
                     <span className="mt-2 inline-flex rounded-full border border-slate-300 bg-white/70 px-2.5 py-1 text-[10px] font-black text-slate-700">
                       يحتاج ترخيص
                     </span>
@@ -606,6 +644,7 @@ export function QuickStockUnitSheet({
                       type="button"
                       onClick={() => {
                         setSelectedProduct(null);
+                        setRegisterWithoutProduct(false);
                         setStep('product');
                         setAttributeValues({});
                         setLicense(isJawabRegistration ? { ...getInitialLicenseDraft(), status: 'jawab' } : getInitialLicenseDraft());
@@ -645,6 +684,24 @@ export function QuickStockUnitSheet({
             <div className={`-mx-6 -mb-6 flex min-h-0 flex-1 flex-col gap-4 px-6 pb-6 ${
               isBottomSheet ? 'bg-white' : 'bg-[#edf2f7]'
             }`}>
+              {isJawabRegistration ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRegisterWithoutProduct(true);
+                    setSelectedProduct(null);
+                    setAttributeValues({});
+                    setUnitAttributeFields([]);
+                    setStep('details');
+                    setError('');
+                  }}
+                  className="flex w-full items-center justify-between rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-right text-sm font-black text-amber-900 transition hover:bg-amber-100"
+                >
+                  <span>لا يمكن تحديد المنتج حاليًا</span>
+                  <span className="rounded-full bg-amber-200 px-2 py-1 text-[10px]">بيانات غير مكتملة</span>
+                </button>
+              ) : null}
+
               <div className="relative">
                 <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -697,9 +754,9 @@ export function QuickStockUnitSheet({
             </div>
           ) : null}
 
-          {step === 'details' && selectedProduct ? (
+          {step === 'details' && (selectedProduct || registerWithoutProduct) ? (
             <div className="space-y-5">
-              {selectedAttributeFields.length ? (
+              {!registerWithoutProduct && selectedAttributeFields.length ? (
                 <div className="space-y-3">
                   {attributeFieldsStatus === 'loading' ? (
                     <div className="flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-3 text-sm font-black text-blue-700">
@@ -773,7 +830,28 @@ export function QuickStockUnitSheet({
                 </div>
               ) : null}
 
-              {!isTrackedProduct(selectedProduct) ? (
+              {registerWithoutProduct ? (
+                <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <div>
+                    <p className="text-sm font-black text-amber-950">⚠️ قطعة غير مكتملة</p>
+                    <p className="mt-1 text-xs font-bold leading-5 text-amber-700">سيتم حفظ الشاسيه والموتور الآن، ولن تدخل القطعة في البيع أو رصيد أي منتج حتى استكمال بياناتها.</p>
+                  </div>
+                  {definitionsStatus === 'loading' ? <div className="text-xs font-black text-amber-700">جاري تحميل حقول التعريف...</div> : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {identifierDefinitions.map((definition) => (
+                      <label key={definition.identifierTypeId} className="block">
+                        <span className="mb-2 block text-xs font-black text-slate-700">{definition.name}{definition.isRequired ? <span className="text-red-500"> *</span> : null}</span>
+                        <Input
+                          value={identifierValues[definition.identifierTypeId] || ''}
+                          onChange={(event) => setIdentifierValues((current) => ({ ...current, [definition.identifierTypeId]: event.target.value }))}
+                          dir="ltr"
+                          className="bg-white font-mono"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : !isTrackedProduct(selectedProduct) ? (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-700">
                   هذا المنتج لا يحتاج تتبع فردي ولا يمكن تسجيل قطعة فريدة له.
                 </div>
@@ -832,7 +910,7 @@ export function QuickStockUnitSheet({
                     </div>
                   ) : null}
 
-                  {!isJawabRegistration ? (
+                  {(
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="block rounded-xl border border-slate-200 bg-white px-3 py-3">
                         <span className="mb-2 block text-xs font-black text-slate-600">
@@ -870,11 +948,11 @@ export function QuickStockUnitSheet({
                         </span>
                       </label>
                     </div>
-                  ) : null}
+                  )}
                 </div>
               )}
 
-              {selectedProduct.requiresLicense || isJawabRegistration ? (
+              {!registerWithoutProduct && (selectedProduct?.requiresLicense || isJawabRegistration) ? (
                 <div className="space-y-4 border-t border-slate-200 pt-4">
                   <div className="flex flex-wrap gap-3">
                     {(isJawabRegistration ? LICENSE_STATUS_OPTIONS.filter((option) => option.value === 'jawab') : LICENSE_STATUS_OPTIONS).map((option) => {

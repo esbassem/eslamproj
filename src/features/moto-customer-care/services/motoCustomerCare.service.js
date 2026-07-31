@@ -86,6 +86,7 @@ const PAPERWORK_DOCUMENT_COLUMNS = `
   branch_id,
   document_type,
   document_title,
+  document_owner_name,
   tracking_unit_id,
   paperwork_request_id,
   owner_partner_id,
@@ -127,7 +128,6 @@ const PAPERWORK_REQUEST_EVENT_COLUMNS = `
   created_at
 `;
 const TENANT_USER_COLUMNS = 'id, full_name, email';
-const PAPERWORK_OUT_SOURCE_TYPES = new Set(['to_customer', 'to_supplier', 'to_processor', 'to_employee', 'lost', 'cancelled', 'other']);
 const PAPERWORK_STAGE_LABELS = {
   preparation: 'تجهيز بيانات الورق',
   owner_confirmation: 'تحديد صاحب الورق',
@@ -153,6 +153,11 @@ function requireSaleId(saleId) {
   if (!saleId) {
     throw new Error('تعذر تحديد عملية البيع المطلوبة.');
   }
+}
+
+export function normalizeOptionalText(value) {
+  const normalized = String(value ?? '').trim();
+  return normalized || null;
 }
 
 function toNumber(value) {
@@ -666,7 +671,7 @@ async function loadTrackingDetailsMap(client, tenantId, lines, { includeAttachme
   ] = await Promise.all([
     client
       .from('stock_tracking_units')
-      .select('id, tracking_number, status, paperwork_processor_partner_id')
+      .select('id, tracking_number, status, data_status, incomplete_reason, paperwork_processor_partner_id')
       .eq('tenant_id', tenantId)
       .in('id', trackingUnitIds),
     client
@@ -721,6 +726,9 @@ async function loadTrackingDetailsMap(client, tenantId, lines, { includeAttachme
         id: unit.id,
         trackingNumber: unit.tracking_number || '',
         status: unit.status || '',
+        dataStatus: unit.data_status || 'complete',
+        incompleteReason: unit.incomplete_reason || null,
+        isIncomplete: ['incomplete', 'needs_review'].includes(unit.data_status),
         paperworkProcessorPartnerId: unit.paperwork_processor_partner_id || null,
       },
       trackingIdentifiers: [],
@@ -1004,7 +1012,7 @@ async function loadPaperworkTrackingUnitsMap(client, tenantId, requests) {
 
   const { data, error } = await client
     .from('stock_tracking_units')
-    .select('id, product_product_id, tracking_number, tracking_type, status')
+    .select('id, product_product_id, tracking_number, tracking_type, status, data_status, incomplete_reason')
     .eq('tenant_id', tenantId)
     .in('id', trackingUnitIds);
 
@@ -1239,6 +1247,8 @@ function normalizePaperworkDocumentMove(record, maps = {}) {
     createdBy: record.created_by,
     createdAt: record.created_at,
     documentTitle: document?.documentTitle || document?.displayTitle || 'مستند غير محدد',
+    documentOwnerName: document?.documentOwnerName ?? document?.owner?.name ?? 'غير مسجل',
+    ownerName: document?.documentOwnerName ?? document?.owner?.name ?? 'غير مسجل',
     documentType: document?.documentType || '',
     fromLabel: getMovePartyLabel({
       userId: record.from_user_id,
@@ -1265,6 +1275,8 @@ function normalizePaperworkDocument(record, maps = {}) {
   const moves = maps.movesMap?.get(record.id) || [];
   const jawabPhoto = maps.attachmentsMap?.get(record.id) || null;
   const latestMove = moves[0] || null;
+  const owner = maps.partnersMap?.get(record.owner_partner_id) || null;
+  const documentOwnerName = record.document_owner_name ?? owner?.name ?? 'غير مسجل';
   const title = record.document_title || record.manual_item_description || product?.displayName || trackingUnit?.tracking_number || 'ورقة بدون عنوان';
   const itemDescription = trackingUnit
     ? [product?.displayName, trackingUnit.tracking_number].filter(Boolean).join(' - ')
@@ -1276,6 +1288,9 @@ function normalizePaperworkDocument(record, maps = {}) {
     branchId: record.branch_id,
     documentType: record.document_type || 'document',
     documentTitle: record.document_title || '',
+    documentOwnerName,
+    ownerName: documentOwnerName,
+    document_owner_name: documentOwnerName,
     displayTitle: title,
     trackingUnitId: record.tracking_unit_id,
     paperworkRequestId: record.paperwork_request_id,
@@ -1287,12 +1302,15 @@ function normalizePaperworkDocument(record, maps = {}) {
     createdBy: record.created_by,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
-    owner: maps.partnersMap?.get(record.owner_partner_id) || null,
+    owner,
     trackingUnit: trackingUnit ? {
       id: trackingUnit.id,
       trackingNumber: trackingUnit.tracking_number || '',
       status: trackingUnit.status || '',
       productProductId: trackingUnit.product_product_id || null,
+      dataStatus: trackingUnit.data_status || 'complete',
+      incompleteReason: trackingUnit.incomplete_reason || null,
+      isIncomplete: ['incomplete', 'needs_review'].includes(trackingUnit.data_status),
     } : null,
     productName: product?.displayName || product?.sku || '',
     itemDescription,
@@ -1394,6 +1412,7 @@ export const motoCustomerCareService = {
     const [
       saleLinesResult,
       requestsResult,
+      requestsCountResult,
       vaultDocumentsResult,
     ] = await Promise.all([
       client
@@ -1405,6 +1424,10 @@ export const motoCustomerCareService = {
         .select('id, sale_line_id, status, current_stage, notes')
         .eq('tenant_id', tenantId)
         .not('sale_line_id', 'is', null),
+      client
+        .from('paperwork_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId),
       client
         .from('paperwork_documents')
         .select('id', { count: 'exact', head: true })
@@ -1418,6 +1441,10 @@ export const motoCustomerCareService = {
 
     if (requestsResult.error) {
       throw requestsResult.error;
+    }
+
+    if (requestsCountResult.error) {
+      throw requestsCountResult.error;
     }
 
     if (vaultDocumentsResult.error) {
@@ -1444,6 +1471,7 @@ export const motoCustomerCareService = {
 
     return {
       missing: Math.max((saleLinesResult.count || 0) - requestedSaleLineIds.size, 0),
+      totalRequests: requestsCountResult.count || 0,
       vault: vaultDocumentsResult.count || 0,
       sentPendingReceipt: sentPendingReceiptSaleLineIds.size,
     };
@@ -1484,19 +1512,38 @@ export const motoCustomerCareService = {
   async listPaperworkRequests({ tenantId, limit = 150 } = {}) {
     requireTenantId(tenantId);
     const client = requireSupabase();
+    let requests = [];
 
-    const { data, error } = await client
-      .from('paperwork_requests')
-      .select(PAPERWORK_REQUEST_COLUMNS)
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    if (limit == null) {
+      const pageSize = 500;
+      let pageStart = 0;
 
-    if (error) {
-      throw error;
+      while (true) {
+        const { data, error } = await client
+          .from('paperwork_requests')
+          .select(PAPERWORK_REQUEST_COLUMNS)
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: false })
+          .range(pageStart, pageStart + pageSize - 1);
+
+        if (error) throw error;
+
+        const page = data || [];
+        requests.push(...page);
+        if (page.length < pageSize) break;
+        pageStart += pageSize;
+      }
+    } else {
+      const { data, error } = await client
+        .from('paperwork_requests')
+        .select(PAPERWORK_REQUEST_COLUMNS)
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      requests = data || [];
     }
-
-    const requests = data || [];
     const [partnersMap, saleLinesMap, trackingUnitsMap, eventsMap, ownerAttachmentsMap, usersMap] = await Promise.all([
       loadPaperworkPartnersMap(client, tenantId, requests),
       loadPaperworkSaleLinesMap(client, tenantId, requests),
@@ -1537,6 +1584,106 @@ export const motoCustomerCareService = {
       eventsMap,
       ownerAttachmentsMap,
       usersMap,
+    }));
+  },
+
+  async findOpenPaperworkRequestsForTrackingUnit({ tenantId, trackingUnitId } = {}) {
+    requireTenantId(tenantId);
+    if (!trackingUnitId) return [];
+
+    const client = requireSupabase();
+    const { data, error } = await client
+      .from('paperwork_requests')
+      .select(`
+        id,
+        branch_id,
+        request_source,
+        request_type,
+        sale_id,
+        tracking_unit_id,
+        customer_id,
+        document_owner_partner_id,
+        document_owner_name,
+        processor_partner_id,
+        assigned_to,
+        current_stage,
+        status,
+        created_at
+      `)
+      .eq('tenant_id', tenantId)
+      .eq('tracking_unit_id', trackingUnitId)
+      .eq('status', 'open')
+      .in('current_stage', [
+        'preparation',
+        'owner_confirmation',
+        'sent_to_processor',
+        'processor_ready',
+        'received_from_processor',
+        'client_notified',
+      ])
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      throw error;
+    }
+
+    const requests = data || [];
+    const partnerIds = requests.flatMap((request) => [
+      request.customer_id,
+      request.document_owner_partner_id,
+      request.processor_partner_id,
+    ]).filter(Boolean);
+    const saleIds = Array.from(new Set(requests.map((request) => request.sale_id).filter(Boolean)));
+    const branchIds = Array.from(new Set(requests.map((request) => request.branch_id).filter(Boolean)));
+    const assignedUserIds = requests.map((request) => request.assigned_to).filter(Boolean);
+
+    const [partnersMap, usersMap, salesResult, branchesResult] = await Promise.all([
+      loadPartnersByIdsMap(client, tenantId, partnerIds),
+      loadTenantUsersByIdsMap(client, tenantId, assignedUserIds),
+      saleIds.length
+        ? client
+          .from('showroom_sales')
+          .select('id, sale_number')
+          .eq('tenant_id', tenantId)
+          .in('id', saleIds)
+        : Promise.resolve({ data: [], error: null }),
+      branchIds.length
+        ? client
+          .from('branches')
+          .select('id, name')
+          .eq('tenant_id', tenantId)
+          .in('id', branchIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (salesResult.error) throw salesResult.error;
+    if (branchesResult.error) throw branchesResult.error;
+
+    const salesMap = new Map((salesResult.data || []).map((sale) => [sale.id, sale]));
+    const branchesMap = new Map((branchesResult.data || []).map((branch) => [branch.id, branch]));
+
+    return requests.map((request) => ({
+      id: request.id,
+      shortNumber: request.id.slice(0, 8).toUpperCase(),
+      requestSource: request.request_source || 'manual',
+      requestType: request.request_type || 'new_document',
+      saleId: request.sale_id || null,
+      saleNumber: salesMap.get(request.sale_id)?.sale_number || '',
+      trackingUnitId: request.tracking_unit_id,
+      currentStage: request.current_stage,
+      stageName: getPaperworkStageLabel(request.current_stage),
+      status: request.status,
+      customerName: partnersMap.get(request.customer_id)?.name || '',
+      ownerName: request.document_owner_name
+        || partnersMap.get(request.document_owner_partner_id)?.name
+        || '',
+      documentOwnerName: request.document_owner_name || '',
+      documentOwnerPartnerId: request.document_owner_partner_id || null,
+      processorName: partnersMap.get(request.processor_partner_id)?.name || '',
+      assignedToName: usersMap.get(request.assigned_to)?.name || '',
+      branchName: branchesMap.get(request.branch_id)?.name || '',
+      createdAt: request.created_at,
     }));
   },
 
@@ -1675,123 +1822,6 @@ export const motoCustomerCareService = {
     };
   },
 
-  async createPaperworkDocumentOutMove({
-    tenantId,
-    documentId,
-    sourceType = 'to_customer',
-    targetPartnerId = null,
-    targetUserId = null,
-    targetLocation = '',
-    notes = '',
-  } = {}) {
-    requireTenantId(tenantId);
-
-    if (!documentId) {
-      throw new Error('تعذر تحديد الورقة المطلوب صرفها.');
-    }
-
-    if (!PAPERWORK_OUT_SOURCE_TYPES.has(sourceType)) {
-      throw new Error('نوع الصرف غير مدعوم.');
-    }
-
-    const needsPartner = ['to_customer', 'to_supplier', 'to_processor'].includes(sourceType);
-    const needsUser = sourceType === 'to_employee';
-    const needsLocation = sourceType === 'other';
-    const safeLocation = String(targetLocation || '').trim();
-    const safeNotes = String(notes || '').trim();
-
-    if (needsPartner && !targetPartnerId) {
-      throw new Error('اختر الجهة التي سيتم الصرف لها.');
-    }
-
-    if (needsUser && !targetUserId) {
-      throw new Error('اختر الموظف الذي سيتم الصرف له.');
-    }
-
-    if (needsLocation && !safeLocation) {
-      throw new Error('اكتب وجهة الصرف.');
-    }
-
-    const client = requireSupabase();
-    const { data: document, error: documentError } = await client
-      .from('paperwork_documents')
-      .select('id, status')
-      .eq('tenant_id', tenantId)
-      .eq('id', documentId)
-      .maybeSingle();
-
-    if (documentError) {
-      throw documentError;
-    }
-
-    if (!document) {
-      throw new Error('الورقة غير موجودة.');
-    }
-
-    if (document.status !== 'in_custody') {
-      throw new Error('لا يمكن صرف ورقة ليست في العهدة.');
-    }
-
-    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
-    const statusBySourceType = {
-      to_customer: 'delivered',
-      lost: 'lost',
-      cancelled: 'cancelled',
-    };
-    const nextStatus = statusBySourceType[sourceType] || 'transferred';
-    const destinationLocation = needsPartner || needsUser
-      ? null
-      : safeLocation || (sourceType === 'lost' ? 'مفقود' : sourceType === 'cancelled' ? 'ملغي' : null);
-
-    const { data: move, error: moveError } = await client
-      .from('paperwork_document_moves')
-      .insert({
-        tenant_id: tenantId,
-        document_id: documentId,
-        move_direction: 'out',
-        source_type: sourceType,
-        from_user_id: currentTenantUserId,
-        to_partner_id: needsPartner ? targetPartnerId : null,
-        to_user_id: needsUser ? targetUserId : null,
-        to_location: destinationLocation,
-        moved_at: new Date().toISOString(),
-        notes: safeNotes || null,
-        created_by: currentTenantUserId,
-      })
-      .select('id')
-      .single();
-
-    if (moveError) {
-      throw moveError;
-    }
-
-    const updatePayload = {
-      status: nextStatus,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (safeNotes) {
-      updatePayload.notes = safeNotes;
-    }
-
-    const { error: updateError } = await client
-      .from('paperwork_documents')
-      .update(updatePayload)
-      .eq('tenant_id', tenantId)
-      .eq('id', documentId);
-
-    if (updateError) {
-      await client
-        .from('paperwork_document_moves')
-        .delete()
-        .eq('tenant_id', tenantId)
-        .eq('id', move.id);
-      throw updateError;
-    }
-
-    return move.id;
-  },
-
   async listTrackingUnitIdentifiers({ tenantId, trackingUnitId } = {}) {
     requireTenantId(tenantId);
 
@@ -1844,6 +1874,7 @@ export const motoCustomerCareService = {
     tenantId,
     documentType = 'jawab',
     documentTitle,
+    documentOwnerName,
     sourceType = 'manual',
     ownerPartnerId = null,
     trackingUnitId = null,
@@ -1873,7 +1904,14 @@ export const motoCustomerCareService = {
       throw new Error('القطعة المسجلة غير موجودة.');
     }
 
-    const safeTitle = String(documentTitle || '').trim() || 'جواب';
+    const safeTitle = normalizeOptionalText(documentTitle);
+    const safeOwnerName = normalizeOptionalText(documentOwnerName);
+    if (!safeTitle) {
+      throw new Error('عنوان المستند مطلوب.');
+    }
+    if (documentType === 'jawab' && !safeOwnerName) {
+      throw new Error('اسم صاحب الجواب مطلوب.');
+    }
     const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
     const status = 'in_custody';
 
@@ -1883,6 +1921,7 @@ export const motoCustomerCareService = {
         tenant_id: tenantId,
         document_type: 'jawab',
         document_title: safeTitle,
+        document_owner_name: safeOwnerName,
         tracking_unit_id: trackingUnitId || null,
         paperwork_request_id: paperworkRequestId || null,
         owner_partner_id: ownerPartnerId || null,
@@ -1922,6 +1961,48 @@ export const motoCustomerCareService = {
     }
 
     return document.id;
+  },
+
+  async createManualPaperworkReceipt({
+    tenantId,
+    trackingUnitId,
+    paperworkRequestId = null,
+    documentTitle,
+    documentOwnerName,
+    ownerPartnerId = null,
+    initialLocation = '',
+    notes = '',
+  } = {}) {
+    requireTenantId(tenantId);
+    if (!trackingUnitId) {
+      throw new Error('اختر القطعة المسجلة المرتبطة بالجواب.');
+    }
+    const safeTitle = normalizeOptionalText(documentTitle);
+    const safeOwnerName = normalizeOptionalText(documentOwnerName);
+    if (!safeTitle) {
+      throw new Error('عنوان المستند مطلوب.');
+    }
+    if (!safeOwnerName) {
+      throw new Error('اسم صاحب الجواب مطلوب.');
+    }
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('create_manual_paperwork_receipt', {
+      p_tenant_id: tenantId,
+      p_tracking_unit_id: trackingUnitId,
+      p_paperwork_request_id: paperworkRequestId || null,
+      p_document_title: safeTitle,
+      p_document_owner_name: safeOwnerName,
+      p_owner_partner_id: ownerPartnerId || null,
+      p_initial_location: String(initialLocation || '').trim() || null,
+      p_notes: String(notes || '').trim() || null,
+    });
+
+    if (error) {
+      throw new Error(error.message || 'تعذر تسجيل الجواب.');
+    }
+
+    return data?.document_id || null;
   },
 
   async deletePaperworkDocumentRollback({ tenantId, documentId } = {}) {
@@ -2341,7 +2422,7 @@ export const motoCustomerCareService = {
     const client = requireSupabase();
     const { data: unit, error: unitError } = await client
       .from('stock_tracking_units')
-      .select('id, product_product_id, status')
+      .select('id, product_product_id, status, data_status')
       .eq('tenant_id', tenantId)
       .eq('id', trackingUnitId)
       .maybeSingle();
@@ -2352,6 +2433,10 @@ export const motoCustomerCareService = {
 
     if (!unit) {
       throw new Error('القطعة المسجلة غير موجودة.');
+    }
+
+    if (unit.data_status !== 'complete' || !unit.product_product_id) {
+      throw new Error('لا يمكن بيع القطعة قبل استكمال بيانات المنتج.');
     }
 
     if (unit.product_product_id !== productProductId) {

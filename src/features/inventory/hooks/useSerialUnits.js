@@ -19,7 +19,7 @@ export function useSerialUnits(tenantId, filters = {}) {
 
     try {
       const [nextUnits, nextProducts] = await Promise.all([
-        inventoryService.getSerialUnits({ tenantId, productId: filters.productId, status: filters.status }),
+        inventoryService.getSerialUnits({ tenantId, productId: filters.productId, status: filters.status, dataStatus: filters.dataStatus }),
         inventoryService.listProducts(tenantId),
       ]);
       setSerialUnits(nextUnits);
@@ -29,7 +29,7 @@ export function useSerialUnits(tenantId, filters = {}) {
     } finally {
       setIsLoading(false);
     }
-  }, [filters.productId, filters.status, tenantId]);
+  }, [filters.dataStatus, filters.productId, filters.status, tenantId]);
 
   useEffect(() => {
     reload();
