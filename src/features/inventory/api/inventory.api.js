@@ -7,7 +7,7 @@ const PRODUCT_COLUMNS =
 const PRODUCT_VARIANT_COLUMNS =
   'id, tenant_id, product_template_id, display_name, sku, barcode, tracking, sale_price, cost_price, is_active, created_at, updated_at';
 const QUANT_COLUMNS = 'id, tenant_id, product_product_id, quantity_on_hand, reserved_quantity, created_at, updated_at';
-const SERIAL_COLUMNS = 'id, tenant_id, product_product_id, tracking_number, tracking_type, status, notes, created_at, updated_at';
+const SERIAL_COLUMNS = 'id, tenant_id, product_product_id, tracking_number, tracking_type, status, data_status, incomplete_reason, notes, created_at, updated_at';
 const MOVE_COLUMNS = 'id, tenant_id, product_product_id, move_type, quantity, created_by, notes, created_at';
 const TENANT_USER_COLUMNS = 'id, full_name, email';
 const MOVE_TYPES = new Set(['in', 'out', 'inventory', 'return', 'reserve', 'release']);
@@ -109,6 +109,10 @@ function normalizeSerial(record) {
     trackingNumber: record.tracking_number ?? '',
     trackingType: record.tracking_type ?? 'serial',
     status: record.status ?? 'in_stock',
+    dataStatus: record.data_status ?? 'complete',
+    incompleteReason: record.incomplete_reason ?? null,
+    isIncomplete: ['incomplete', 'needs_review'].includes(record.data_status),
+    hasDataConsistencyWarning: (record.data_status ?? 'complete') === 'complete' && !record.product_product_id,
     notes: record.notes ?? '',
     createdAt: record.created_at ?? null,
     updatedAt: record.updated_at ?? null,
@@ -681,8 +685,63 @@ export const inventoryService = {
     trackingIdentifierValuesBySerial,
     trackingUnitAttributesBySerial,
     userId,
+    allowIncompleteUnit = false,
+    dataStatus = 'complete',
+    incompleteReason = null,
+    registrationSource = null,
   }) {
     const client = requireSupabase();
+    if (allowIncompleteUnit) {
+      if (registrationSource !== 'jawab') {
+        throw new Error('لا يمكن تسجيل قطعة غير مكتملة خارج مسار استلام الجواب.');
+      }
+      if (productId || productProductId) {
+        throw new Error('القطعة غير المكتملة يجب ألا ترتبط بمنتج مؤقت.');
+      }
+      if (dataStatus !== 'incomplete' || incompleteReason !== 'missing_product') {
+        throw new Error('حالة القطعة غير المكتملة غير صحيحة.');
+      }
+
+      const rawUnitKeys = (serialNumbers ?? []).map((item) => String(item || '').trim()).filter(Boolean);
+      const unitKeys = [...new Set(rawUnitKeys)];
+      if (!unitKeys.length) throw new Error('أدخل رقم الشاسيه قبل تسجيل القطعة.');
+      if (rawUnitKeys.length !== unitKeys.length) throw new Error('يوجد رقم تتبع مكرر داخل الإدخال الحالي.');
+
+      const rows = unitKeys.map((unitKey) => ({
+        tenant_id: tenantId,
+        product_product_id: null,
+        tracking_number: unitKey,
+        tracking_type: 'serial',
+        status: 'in_stock',
+        data_status: 'incomplete',
+        incomplete_reason: 'missing_product',
+      }));
+      const { data: insertedUnits, error: serialError } = await client
+        .from('stock_tracking_units')
+        .insert(rows)
+        .select(SERIAL_COLUMNS);
+      if (serialError) {
+        if (serialError.code === '23505') throw new Error('رقم الشاسيه أو التتبع مسجل مسبقًا داخل الشركة.');
+        throw new Error(serialError.message);
+      }
+      try {
+        await saveTrackingUnitIdentifiers(client, {
+          tenantId,
+          units: (insertedUnits ?? []).map(normalizeSerial),
+          valuesBySerial: trackingIdentifierValuesBySerial,
+          userId,
+        });
+      } catch (identifierError) {
+        const insertedIds = (insertedUnits || []).map((unit) => unit.id).filter(Boolean);
+        if (insertedIds.length) {
+          await client.from('stock_tracking_units').delete().eq('tenant_id', tenantId).in('id', insertedIds);
+        }
+        throw identifierError;
+      }
+      return { quantity: unitKeys.length, units: (insertedUnits ?? []).map(normalizeSerial) };
+    }
+
+    if (!productId) throw new Error('اختر منتجًا أولاً.');
     const product = await getProduct(client, { tenantId, productId });
     assertStockProduct(product);
     const productTemplateId = product.productTemplateId;
@@ -731,6 +790,8 @@ export const inventoryService = {
         tracking_number: unitKey || null,
         tracking_type: product.tracking,
         status: 'in_stock',
+        data_status: 'complete',
+        incomplete_reason: null,
       }));
 
       const { data: insertedUnits, error: serialError } = await client.from('stock_tracking_units').insert(rows).select(SERIAL_COLUMNS);
@@ -872,7 +933,7 @@ export const inventoryService = {
     const [productsMap, quantsResult, serialResult] = await Promise.all([
       loadProductsMap(client, tenantId),
       client.from('stock_quants').select(QUANT_COLUMNS).eq('tenant_id', tenantId),
-      client.from('stock_tracking_units').select(SERIAL_COLUMNS).eq('tenant_id', tenantId).eq('status', 'in_stock'),
+      client.from('stock_tracking_units').select(SERIAL_COLUMNS).eq('tenant_id', tenantId).eq('status', 'in_stock').eq('data_status', 'complete').not('product_product_id', 'is', null),
     ]);
 
     if (quantsResult.error) throw new Error(quantsResult.error.message);
@@ -894,7 +955,7 @@ export const inventoryService = {
       .filter((item) => (item.product.tracking === 'serial' ? item.availableSerials > 0 : item.quantity > 0));
   },
 
-  async getSerialUnits({ tenantId, productId, productProductId, status }) {
+  async getSerialUnits({ tenantId, productId, productProductId, status, dataStatus = 'all', includeIncomplete = true }) {
     const client = requireSupabase();
     if (productId && productId !== 'all') {
       const product = await getProduct(client, { tenantId, productId });
@@ -906,6 +967,10 @@ export const inventoryService = {
     if (productId && productId !== 'all') query = query.eq('product_product_id', productId);
     if (productProductId && productProductId !== 'all') query = query.eq('product_product_id', productProductId);
     if (status && status !== 'all') query = query.eq('status', status);
+    if (dataStatus && dataStatus !== 'all') query = query.eq('data_status', dataStatus);
+    if (!includeIncomplete || (productId && productId !== 'all') || (productProductId && productProductId !== 'all')) {
+      query = query.eq('data_status', 'complete').not('product_product_id', 'is', null);
+    }
 
     const [{ data, error }, productsMap] = await Promise.all([query.order('created_at', { ascending: false }), loadProductsMap(client, tenantId)]);
     if (error) throw new Error(error.message);
@@ -914,6 +979,68 @@ export const inventoryService = {
       ...unit,
       product: productsMap.get(unit.productProductId) ?? null,
     }));
+  },
+
+  async listJawabIdentifierDefinitions({ tenantId } = {}) {
+    const client = requireSupabase();
+    if (!tenantId) return [];
+    const { data, error } = await client
+      .from('product_tracking_identifier_types')
+      .select('id, code, name, data_type, input_schema, is_active')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true);
+    if (error) throw new Error(error.message);
+    return (data || [])
+      .filter((item) => /chassis|شاسيه|engine|motor|موتور|محرك/i.test(`${item.code || ''} ${item.name || ''}`))
+      .map((item) => ({
+        identifierTypeId: item.id,
+        code: item.code || '',
+        name: item.name || 'رقم تعريف',
+        dataType: item.data_type || 'text',
+        inputSchema: item.input_schema || {},
+        isRequired: /chassis|شاسيه/i.test(`${item.code || ''} ${item.name || ''}`),
+        allowNotAvailable: false,
+      }));
+  },
+
+  async canCompleteTrackingUnit({ tenantId } = {}) {
+    const client = requireSupabase();
+    if (!tenantId) return false;
+    const { data, error } = await client.rpc('can_complete_tracking_unit', { p_tenant_id: tenantId });
+    if (error) throw new Error(error.message);
+    return Boolean(data);
+  },
+
+  async getTrackingUnitCompletionContext({ tenantId, trackingUnitId } = {}) {
+    const client = requireSupabase();
+    if (!tenantId || !trackingUnitId) throw new Error('تعذر تحديد القطعة.');
+    const [{ data: unit, error: unitError }, { data: identifiers, error: identifiersError }, { data: attributes, error: attributesError }] = await Promise.all([
+      client.from('stock_tracking_units').select(SERIAL_COLUMNS).eq('tenant_id', tenantId).eq('id', trackingUnitId).single(),
+      client.from('stock_tracking_unit_identifiers').select('identifier_type_id, value, is_not_available').eq('tenant_id', tenantId).eq('tracking_unit_id', trackingUnitId),
+      client.from('stock_tracking_unit_attributes').select('attribute_id, attribute_value_id, value_text').eq('tenant_id', tenantId).eq('tracking_unit_id', trackingUnitId),
+    ]);
+    if (unitError) throw new Error(unitError.message);
+    if (identifiersError) throw new Error(identifiersError.message);
+    if (attributesError) throw new Error(attributesError.message);
+    return {
+      unit: normalizeSerial(unit),
+      identifiers: identifiers || [],
+      attributes: attributes || [],
+    };
+  },
+
+  async completeIncompleteTrackingUnit({ tenantId, trackingUnitId, productProductId, identifierValues = [], attributeValues = [] } = {}) {
+    const client = requireSupabase();
+    if (!tenantId || !trackingUnitId || !productProductId) throw new Error('بيانات استكمال القطعة غير مكتملة.');
+    const { data, error } = await client.rpc('complete_incomplete_tracking_unit', {
+      p_tenant_id: tenantId,
+      p_tracking_unit_id: trackingUnitId,
+      p_product_product_id: productProductId,
+      p_identifier_values: identifierValues,
+      p_attribute_values: attributeValues,
+    });
+    if (error) throw new Error(error.message || 'تعذر استكمال بيانات القطعة.');
+    return data;
   },
 
   async getStockMoves({ tenantId }) {
@@ -955,6 +1082,7 @@ export const inventoryService = {
       .eq('tenant_id', tenantId)
       .eq('id', serialUnitId)
       .eq('product_product_id', activeVariantId)
+      .eq('data_status', 'complete')
       .eq('status', 'in_stock')
       .maybeSingle();
 

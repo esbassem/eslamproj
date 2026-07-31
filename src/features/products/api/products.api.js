@@ -12,7 +12,7 @@ const CATEGORY_ATTRIBUTE_COLUMNS = 'id, tenant_id, category_id, attribute_id, is
 const TRACKING_IDENTIFIER_TYPE_COLUMNS = 'id, tenant_id, code, name, data_type, is_active, input_schema, created_at';
 const CATEGORY_TRACKING_IDENTIFIER_COLUMNS = 'id, tenant_id, category_id, identifier_type_id, is_required, allow_not_available, sequence, created_at';
 const TRACKING_UNIT_COLUMNS =
-  'id, tenant_id, product_product_id, tracking_number, tracking_type, status, notes, created_at, updated_at';
+  'id, tenant_id, product_product_id, tracking_number, tracking_type, status, data_status, incomplete_reason, notes, created_at, updated_at';
 
 function money(value) {
   const numberValue = Number(value);
@@ -171,6 +171,9 @@ function normalizeTrackingUnit(record) {
     trackingNumber: record.tracking_number ?? '',
     trackingType: record.tracking_type ?? '',
     status: record.status ?? '',
+    dataStatus: record.data_status ?? 'complete',
+    incompleteReason: record.incomplete_reason ?? null,
+    isIncomplete: ['incomplete', 'needs_review'].includes(record.data_status),
     notes: record.notes ?? '',
     createdAt: record.created_at ?? null,
     updatedAt: record.updated_at ?? null,

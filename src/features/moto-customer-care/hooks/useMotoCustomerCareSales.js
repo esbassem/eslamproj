@@ -25,13 +25,13 @@ function matchesSearch(sale, query) {
   return haystack.includes(query);
 }
 
-export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 150, enabled = true, activeSection = 'sales' } = {}) {
+export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 150, paperworkRequestsLimit = limit, enabled = true, activeSection = 'sales' } = {}) {
   const { tenant } = useWorkspace();
   const [sales, setSales] = useState([]);
   const [paperworkRequests, setPaperworkRequests] = useState([]);
   const [paperworkDocuments, setPaperworkDocuments] = useState([]);
   const [paperworkDocumentMoves, setPaperworkDocumentMoves] = useState([]);
-  const [paperworkReports, setPaperworkReports] = useState({ missing: 0, vault: 0, sentPendingReceipt: 0 });
+  const [paperworkReports, setPaperworkReports] = useState({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
   const [reportsStatus, setReportsStatus] = useState('idle');
   const [reportsError, setReportsError] = useState('');
   const [sectionStatus, setSectionStatus] = useState({ sales: 'idle', papers: 'idle' });
@@ -50,7 +50,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     setPaperworkRequests([]);
     setPaperworkDocuments([]);
     setPaperworkDocumentMoves([]);
-    setPaperworkReports({ missing: 0, vault: 0, sentPendingReceipt: 0 });
+    setPaperworkReports({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
     setReportsStatus('idle');
     setReportsError('');
     setSectionStatus({ sales: 'idle', papers: 'idle' });
@@ -61,7 +61,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     let active = true;
 
     if (!tenant?.id) {
-      setPaperworkReports({ missing: 0, vault: 0, sentPendingReceipt: 0 });
+      setPaperworkReports({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
       setReportsStatus('idle');
       setReportsError('');
       return () => {};
@@ -76,7 +76,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
           return;
         }
 
-        setPaperworkReports(reports || { missing: 0, vault: 0, sentPendingReceipt: 0 });
+        setPaperworkReports(reports || { missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
         setReportsStatus('ready');
       })
       .catch((nextError) => {
@@ -84,7 +84,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
           return;
         }
 
-        setPaperworkReports({ missing: 0, vault: 0, sentPendingReceipt: 0 });
+        setPaperworkReports({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
         setReportsStatus('error');
         setReportsError(nextError?.message || 'تعذر تحميل تقارير الأوراق.');
       });
@@ -113,7 +113,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
 
     Promise.all([
       motoCustomerCareService.listSales({ tenantId: tenant.id, status, limit, includeAttachments: false }),
-      motoCustomerCareService.listPaperworkRequests({ tenantId: tenant.id, limit }),
+      motoCustomerCareService.listPaperworkRequests({ tenantId: tenant.id, limit: paperworkRequestsLimit }),
     ])
       .then(([rows, requests]) => {
         if (!active) {
@@ -138,7 +138,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     return () => {
       active = false;
     };
-  }, [enabled, limit, resetData, setLoadError, setLoadStatus, status, tenant?.id]);
+  }, [enabled, limit, paperworkRequestsLimit, resetData, setLoadError, setLoadStatus, status, tenant?.id]);
 
   const loadPaperwork = useCallback(() => {
     let active = true;

@@ -43,7 +43,7 @@ export function SerialPickerDialog({ open, onOpenChange, tenantId, product, onSe
     setError('');
 
     inventoryService
-      .getSerialUnits({ tenantId, productId: product.id, status: 'in_stock' })
+      .getSerialUnits({ tenantId, productId: product.id, status: 'in_stock', dataStatus: 'complete', includeIncomplete: false })
       .then((units) => {
         if (!mounted) return;
         setSerialUnits(units);

@@ -2,15 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, ShieldCheck, X } from 'lucide-react';
 
-function formatDate(value) {
-  if (!value) return 'غير محدد';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'غير محدد';
-  return new Intl.DateTimeFormat('ar-EG', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
-  }).format(date);
-}
-
 function getTrackingText(document) {
   return (document.trackingIdentifiers || [])
     .map((identifier) => {
@@ -21,7 +12,7 @@ function getTrackingText(document) {
     .join(' · ');
 }
 
-export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoading = false }) {
+export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoading = false, onOpenRequest }) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
   const timerRef = useRef(null);
@@ -92,7 +83,7 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
           {isLoading ? (
             <div className="flex min-h-full items-center justify-center text-sm font-black text-slate-400">جاري تحميل الأوراق...</div>
           ) : vaultDocuments.length ? (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-400">
               {vaultDocuments.map((document) => {
                 const trackingText = getTrackingText(document);
                 return (
@@ -101,20 +92,40 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
                       <FileText className="h-4 w-4" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="truncate text-sm font-black text-slate-950">{document.productName || document.itemDescription || document.displayTitle}</h3>
-                          <p className="mt-0.5 truncate text-[10px] font-bold text-slate-500">{document.documentTitle || document.displayTitle || 'جواب'}</p>
-                        </div>
-                        {document.jawabPhoto?.signedUrl ? (
-                          <a href={document.jawabPhoto.signedUrl} target="_blank" rel="noreferrer" className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-200">
-                            <img src={document.jawabPhoto.signedUrl} alt="صورة الجواب" className="h-full w-full object-cover" />
-                          </a>
-                        ) : null}
+                      <div className="min-w-0">
+                        <h3 className="min-w-0 truncate text-sm font-black text-slate-950">
+                          {document.productName || document.itemDescription || document.displayTitle}
+                        </h3>
+                        <p className="mt-0.5 max-w-full truncate text-[10px] font-bold text-slate-400">
+                          باسم: <span className="font-black text-slate-600">{document.documentOwnerName ?? document.owner?.name ?? 'غير مسجل'}</span>
+                        </p>
                       </div>
-                      {document.owner?.name ? <p className="mt-2 text-[10px] font-black text-slate-600">باسم: {document.owner.name}</p> : null}
                       {trackingText ? <p className="mt-1 truncate text-[10px] font-bold text-slate-400">{trackingText}</p> : null}
-                      <p className="mt-2 text-[9px] font-bold text-emerald-600">في الخزنة منذ: {formatDate(document.latestMove?.movedAt || document.updatedAt)}</p>
+                      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+                        {document.owner?.name ? (
+                          <p className="inline-flex min-w-0 max-w-full rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
+                            <span className="truncate">Partner: <span className="font-black">{document.owner.name}</span></span>
+                          </p>
+                        ) : (
+                          <p className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 ring-1 ring-amber-200/80">
+                            لا يوجد Partner مرتبط
+                          </p>
+                        )}
+                        {document.paperworkRequestId ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenRequest?.(document.paperworkRequestId)}
+                            className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80 transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            aria-label="فتح طلب الأوراق المرتبط"
+                          >
+                            عن طريق طلب أوراق
+                          </button>
+                        ) : (
+                          <p className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80">
+                            تسجيل يدوي
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </article>
                 );
