@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, ShieldCheck, X } from 'lucide-react';
+import { PaperworkDocumentDetailsDialog } from '@/features/moto-customer-care/components/paperwork/PaperworkDocumentDetailsDialog';
 
 function getTrackingText(document) {
   return (document.trackingIdentifiers || [])
@@ -12,9 +13,11 @@ function getTrackingText(document) {
     .join(' · ');
 }
 
-export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoading = false, onOpenRequest }) {
+export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoading = false, onOpenRequest, tenantId }) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState(null);
+  const [isDocumentDetailsOpen, setIsDocumentDetailsOpen] = useState(false);
   const timerRef = useRef(null);
   const frameRef = useRef(null);
   const vaultDocuments = useMemo(
@@ -47,11 +50,16 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
   useEffect(() => {
     if (!mounted) return undefined;
     const closeOnEscape = (event) => {
-      if (event.key === 'Escape') onOpenChange(false);
+      if (event.key === 'Escape' && !isDocumentDetailsOpen) onOpenChange(false);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [mounted, onOpenChange]);
+  }, [isDocumentDetailsOpen, mounted, onOpenChange]);
+
+  const openDocumentDetails = (document) => {
+    setSelectedDocument(document);
+    setIsDocumentDetailsOpen(true);
+  };
 
   if (!mounted) return null;
 
@@ -87,7 +95,21 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
               {vaultDocuments.map((document) => {
                 const trackingText = getTrackingText(document);
                 return (
-                  <article key={document.id} className="flex items-start gap-3 px-4 py-4 hover:bg-emerald-50/30">
+                  <article
+                    key={document.id}
+                    role="button"
+                    tabIndex={0}
+                    onMouseDown={(event) => event.currentTarget.focus()}
+                    onClick={() => openDocumentDetails(document)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openDocumentDetails(document);
+                      }
+                    }}
+                    className="flex cursor-pointer items-start gap-3 px-4 py-4 outline-none transition hover:bg-emerald-50/30 focus-visible:bg-emerald-50/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500"
+                    aria-label={`فتح تفاصيل ${document.documentTitle || document.displayTitle || 'المستند'}`}
+                  >
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400">
                       <FileText className="h-4 w-4" />
                     </span>
@@ -114,7 +136,11 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
                         {document.paperworkRequestId ? (
                           <button
                             type="button"
-                            onClick={() => onOpenRequest?.(document.paperworkRequestId)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onOpenRequest?.(document.paperworkRequestId);
+                            }}
+                            onKeyDown={(event) => event.stopPropagation()}
                             className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80 transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
                             aria-label="فتح طلب الأوراق المرتبط"
                           >
@@ -136,6 +162,13 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
           )}
         </div>
       </aside>
+      <PaperworkDocumentDetailsDialog
+        open={isDocumentDetailsOpen}
+        onOpenChange={setIsDocumentDetailsOpen}
+        document={selectedDocument}
+        tenantId={tenantId}
+        onOpenRequest={onOpenRequest}
+      />
     </div>,
     document.body,
   );

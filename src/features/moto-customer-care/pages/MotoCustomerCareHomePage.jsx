@@ -574,6 +574,7 @@ export function MotoCustomerCareHomePage() {
       <VaultPaperworkDrawer
         open={vaultPaperworkOpen}
         onOpenChange={setVaultPaperworkOpen}
+        tenantId={tenantId}
         documents={paperworkDocuments}
         isLoading={sectionStatus.papers === 'loading'}
         onOpenRequest={(requestId) => {

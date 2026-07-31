@@ -139,6 +139,37 @@ const PAPERWORK_STAGE_LABELS = {
   cancelled: 'ملغي',
 };
 
+const PAPERWORK_DOCUMENT_MOVE_DIRECTION_LABELS = {
+  in: 'استلام',
+  out: 'خروج',
+};
+
+const PAPERWORK_DOCUMENT_SOURCE_LABELS = {
+  manual: 'استلام يدوي',
+  from_processor: 'استلام من الجهة',
+  to_customer: 'تسليم للعميل',
+  request: 'طلب أوراق',
+};
+
+const PAPERWORK_DOCUMENT_STATUS_LABELS = {
+  in_custody: 'موجود في الخزنة',
+  available: 'متاح',
+  delivered: 'تم التسليم',
+  out: 'خارج الخزنة',
+};
+
+export function getPaperworkDocumentMoveDirectionLabel(value) {
+  return PAPERWORK_DOCUMENT_MOVE_DIRECTION_LABELS[value] || value || 'حركة';
+}
+
+export function getPaperworkDocumentSourceLabel(value) {
+  return PAPERWORK_DOCUMENT_SOURCE_LABELS[value] || value || 'غير محدد';
+}
+
+export function getPaperworkDocumentStatusLabel(value) {
+  return PAPERWORK_DOCUMENT_STATUS_LABELS[value] || value || 'غير محدد';
+}
+
 function getPaperworkStageLabel(stageCode) {
   return PAPERWORK_STAGE_LABELS[stageCode] || stageCode || 'مرحلة غير محددة';
 }
@@ -1276,7 +1307,7 @@ function normalizePaperworkDocument(record, maps = {}) {
   const jawabPhoto = maps.attachmentsMap?.get(record.id) || null;
   const latestMove = moves[0] || null;
   const owner = maps.partnersMap?.get(record.owner_partner_id) || null;
-  const documentOwnerName = record.document_owner_name ?? owner?.name ?? 'غير مسجل';
+  const documentOwnerName = record.document_owner_name ?? 'غير مسجل';
   const title = record.document_title || record.manual_item_description || product?.displayName || trackingUnit?.tracking_number || 'ورقة بدون عنوان';
   const itemDescription = trackingUnit
     ? [product?.displayName, trackingUnit.tracking_number].filter(Boolean).join(' - ')
@@ -1782,6 +1813,126 @@ export const motoCustomerCareService = {
         attachmentsMap,
       })),
       moves: normalizedMoves,
+    };
+  },
+
+  async getPaperworkDocumentDetails({ tenantId, documentId } = {}) {
+    requireTenantId(tenantId);
+    if (!documentId) throw new Error('تعذر تحديد المستند.');
+
+    const client = requireSupabase();
+    const [documentResult, movesResult, attachmentsResult] = await Promise.all([
+      client
+        .from('paperwork_documents')
+        .select(PAPERWORK_DOCUMENT_COLUMNS)
+        .eq('tenant_id', tenantId)
+        .eq('id', documentId)
+        .single(),
+      client
+        .from('paperwork_document_moves')
+        .select(PAPERWORK_DOCUMENT_MOVE_COLUMNS)
+        .eq('tenant_id', tenantId)
+        .eq('document_id', documentId)
+        .order('moved_at', { ascending: false })
+        .order('created_at', { ascending: false }),
+      client
+        .from('ir_attachments')
+        .select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, created_at')
+        .eq('tenant_id', tenantId)
+        .eq('related_model', 'paperwork_documents')
+        .eq('related_id', documentId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false }),
+    ]);
+
+    if (documentResult.error) throw documentResult.error;
+    if (movesResult.error) throw movesResult.error;
+    if (attachmentsResult.error) throw attachmentsResult.error;
+
+    const record = documentResult.data;
+    const moveRows = movesResult.data || [];
+    const partnerIds = [
+      record.owner_partner_id,
+      ...moveRows.flatMap((move) => [move.from_partner_id, move.to_partner_id]),
+    ].filter(Boolean);
+    const userIds = [
+      record.created_by,
+      ...moveRows.flatMap((move) => [move.from_user_id, move.to_user_id, move.created_by]),
+    ].filter(Boolean);
+
+    const [trackingUnitsMap, partnersMap, usersMap, branchResult, requestResult, attachments] = await Promise.all([
+      record.tracking_unit_id
+        ? loadPaperworkTrackingUnitsMap(client, tenantId, [record])
+        : Promise.resolve(new Map()),
+      loadPartnersByIdsMap(client, tenantId, partnerIds),
+      loadTenantUsersByIdsMap(client, tenantId, userIds),
+      record.branch_id
+        ? client.from('branches').select('id, name').eq('tenant_id', tenantId).eq('id', record.branch_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      record.paperwork_request_id
+        ? client.from('paperwork_requests').select('id, status, current_stage').eq('tenant_id', tenantId).eq('id', record.paperwork_request_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      Promise.all((attachmentsResult.data || []).map(async (attachment) => {
+        const bucket = attachment.bucket_name || TENANT_FILES_BUCKET;
+        const { data: signedData } = await client.storage
+          .from(bucket)
+          .createSignedUrl(attachment.file_path, SIGNED_URL_EXPIRES_IN);
+        return {
+          id: attachment.id,
+          documentId: attachment.related_id,
+          documentType: attachment.document_type || '',
+          bucket,
+          path: attachment.file_path || '',
+          name: attachment.original_file_name || '',
+          mimeType: attachment.mime_type || '',
+          createdAt: attachment.created_at || null,
+          signedUrl: signedData?.signedUrl || '',
+        };
+      })),
+    ]);
+
+    if (branchResult.error) throw branchResult.error;
+    if (requestResult.error) throw requestResult.error;
+
+    const trackingUnit = trackingUnitsMap.get(record.tracking_unit_id) || null;
+    const contextLines = [{
+      id: record.id,
+      product_product_id: trackingUnit?.product_product_id || null,
+      tracking_unit_id: record.tracking_unit_id,
+    }];
+    const [productMap, trackingDetailsMap] = await Promise.all([
+      loadProductsMap(client, tenantId, contextLines),
+      loadTrackingDetailsMap(client, tenantId, contextLines),
+    ]);
+    const baseDocument = normalizePaperworkDocument(record, {
+      trackingUnitsMap,
+      partnersMap,
+      productMap,
+      trackingDetailsMap,
+    });
+    const documentsMap = new Map([[record.id, baseDocument]]);
+    const moves = moveRows.map((move) => normalizePaperworkDocumentMove(move, {
+      documentsMap,
+      partnersMap,
+      usersMap,
+    }));
+    const latestMove = moves[0] || null;
+
+    return {
+      ...baseDocument,
+      branchName: branchResult.data?.name || '',
+      paperworkRequest: requestResult.data ? {
+        id: requestResult.data.id,
+        status: requestResult.data.status || '',
+        currentStage: requestResult.data.current_stage || '',
+      } : null,
+      createdByName: usersMap.get(record.created_by)?.name || '',
+      attachments,
+      jawabPhoto: attachments.find((attachment) => attachment.documentType === 'jawab_photo') || attachments[0] || null,
+      moves,
+      latestMove,
+      currentLocation: latestMove?.toLocation || latestMove?.toLabel || '',
+      currentCustodianName: latestMove?.toUserId ? latestMove.toLabel : '',
     };
   },
 
