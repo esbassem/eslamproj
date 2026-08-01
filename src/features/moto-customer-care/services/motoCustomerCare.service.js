@@ -93,6 +93,10 @@ const PAPERWORK_DOCUMENT_COLUMNS = `
   manual_item_description,
   source_type,
   status,
+  cancelled_at,
+  cancelled_by,
+  cancellation_reason,
+  cancellation_notes,
   notes,
   created_by,
   created_at,
@@ -155,7 +159,9 @@ const PAPERWORK_DOCUMENT_STATUS_LABELS = {
   in_custody: 'موجود في الخزنة',
   available: 'متاح',
   delivered: 'تم التسليم',
+  delivered_to_customer: 'تم التسليم للعميل',
   out: 'خارج الخزنة',
+  cancelled: 'ملغى',
 };
 
 export function getPaperworkDocumentMoveDirectionLabel(value) {
@@ -1329,6 +1335,11 @@ function normalizePaperworkDocument(record, maps = {}) {
     manualItemDescription: record.manual_item_description || '',
     sourceType: record.source_type || 'manual',
     status: record.status || 'available',
+    cancelledAt: record.cancelled_at || null,
+    cancelledBy: record.cancelled_by || null,
+    cancelledByName: maps.usersMap?.get(record.cancelled_by)?.name || '',
+    cancellationReason: record.cancellation_reason || '',
+    cancellationNotes: record.cancellation_notes || '',
     notes: record.notes || '',
     createdBy: record.created_by,
     createdAt: record.created_at,
@@ -1718,23 +1729,46 @@ export const motoCustomerCareService = {
     }));
   },
 
-  async listPaperworkDocuments({ tenantId, limit = 250 } = {}) {
+  async listPaperworkDocuments({ tenantId, limit = 250, status = null } = {}) {
     requireTenantId(tenantId);
     const client = requireSupabase();
+    let documents = [];
 
-    const { data, error } = await client
-      .from('paperwork_documents')
-      .select(PAPERWORK_DOCUMENT_COLUMNS)
-      .eq('tenant_id', tenantId)
-      .order('updated_at', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    if (limit == null) {
+      const pageSize = 500;
+      let pageStart = 0;
 
-    if (error) {
-      throw error;
+      while (true) {
+        let query = client
+          .from('paperwork_documents')
+          .select(PAPERWORK_DOCUMENT_COLUMNS)
+          .eq('tenant_id', tenantId)
+          .order('updated_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .range(pageStart, pageStart + pageSize - 1);
+        if (status) query = query.eq('status', status);
+
+        const { data, error } = await query;
+        if (error) throw error;
+        const page = data || [];
+        documents.push(...page);
+        if (page.length < pageSize) break;
+        pageStart += pageSize;
+      }
+    } else {
+      let query = client
+        .from('paperwork_documents')
+        .select(PAPERWORK_DOCUMENT_COLUMNS)
+        .eq('tenant_id', tenantId)
+        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (status) query = query.eq('status', status);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      documents = data || [];
     }
-
-    const documents = data || [];
     const trackingUnitIds = Array.from(new Set(documents.map((document) => document.tracking_unit_id).filter(Boolean)));
     const ownerPartnerIds = documents.map((document) => document.owner_partner_id).filter(Boolean);
 
@@ -1856,22 +1890,16 @@ export const motoCustomerCareService = {
       ...moveRows.flatMap((move) => [move.from_partner_id, move.to_partner_id]),
     ].filter(Boolean);
     const userIds = [
-      record.created_by,
+      record.cancelled_by,
       ...moveRows.flatMap((move) => [move.from_user_id, move.to_user_id, move.created_by]),
     ].filter(Boolean);
 
-    const [trackingUnitsMap, partnersMap, usersMap, branchResult, requestResult, attachments] = await Promise.all([
+    const [trackingUnitsMap, partnersMap, usersMap, attachments] = await Promise.all([
       record.tracking_unit_id
         ? loadPaperworkTrackingUnitsMap(client, tenantId, [record])
         : Promise.resolve(new Map()),
       loadPartnersByIdsMap(client, tenantId, partnerIds),
       loadTenantUsersByIdsMap(client, tenantId, userIds),
-      record.branch_id
-        ? client.from('branches').select('id, name').eq('tenant_id', tenantId).eq('id', record.branch_id).maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
-      record.paperwork_request_id
-        ? client.from('paperwork_requests').select('id, status, current_stage').eq('tenant_id', tenantId).eq('id', record.paperwork_request_id).maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
       Promise.all((attachmentsResult.data || []).map(async (attachment) => {
         const bucket = attachment.bucket_name || TENANT_FILES_BUCKET;
         const { data: signedData } = await client.storage
@@ -1891,9 +1919,6 @@ export const motoCustomerCareService = {
       })),
     ]);
 
-    if (branchResult.error) throw branchResult.error;
-    if (requestResult.error) throw requestResult.error;
-
     const trackingUnit = trackingUnitsMap.get(record.tracking_unit_id) || null;
     const contextLines = [{
       id: record.id,
@@ -1907,6 +1932,7 @@ export const motoCustomerCareService = {
     const baseDocument = normalizePaperworkDocument(record, {
       trackingUnitsMap,
       partnersMap,
+      usersMap,
       productMap,
       trackingDetailsMap,
     });
@@ -1920,13 +1946,6 @@ export const motoCustomerCareService = {
 
     return {
       ...baseDocument,
-      branchName: branchResult.data?.name || '',
-      paperworkRequest: requestResult.data ? {
-        id: requestResult.data.id,
-        status: requestResult.data.status || '',
-        currentStage: requestResult.data.current_stage || '',
-      } : null,
-      createdByName: usersMap.get(record.created_by)?.name || '',
       attachments,
       jawabPhoto: attachments.find((attachment) => attachment.documentType === 'jawab_photo') || attachments[0] || null,
       moves,
@@ -1934,6 +1953,22 @@ export const motoCustomerCareService = {
       currentLocation: latestMove?.toLocation || latestMove?.toLabel || '',
       currentCustodianName: latestMove?.toUserId ? latestMove.toLabel : '',
     };
+  },
+
+  async cancelPaperworkDocument({ tenantId, documentId, reason, notes = null } = {}) {
+    requireTenantId(tenantId);
+    if (!documentId) throw new Error('تعذر تحديد المستند.');
+
+    const client = requireSupabase();
+    const { error } = await client.rpc('cancel_paperwork_document', {
+      p_tenant_id: tenantId,
+      p_document_id: documentId,
+      p_reason: reason,
+      p_notes: notes || null,
+    });
+
+    if (error) throw error;
+    return this.getPaperworkDocumentDetails({ tenantId, documentId });
   },
 
   async listPaperworkMoveTargets({ tenantId } = {}) {

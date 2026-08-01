@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, ShieldCheck, X } from 'lucide-react';
+
 import { PaperworkDocumentDetailsDialog } from '@/features/moto-customer-care/components/paperwork/PaperworkDocumentDetailsDialog';
+import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
 
 function getTrackingText(document) {
   return (document.trackingIdentifiers || [])
@@ -13,9 +15,12 @@ function getTrackingText(document) {
     .join(' · ');
 }
 
-export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoading = false, onOpenRequest, tenantId }) {
+export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenantId, isOwner = false }) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [isDocumentDetailsOpen, setIsDocumentDetailsOpen] = useState(false);
   const timerRef = useRef(null);
@@ -24,6 +29,29 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
     () => documents.filter((document) => document.status === 'in_custody'),
     [documents],
   );
+
+  const loadVaultDocuments = async () => {
+    if (!tenantId) return;
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      const result = await motoCustomerCareService.listPaperworkDocuments({
+        tenantId,
+        limit: null,
+        status: 'in_custody',
+      });
+      setDocuments(result.documents || []);
+    } catch (error) {
+      setLoadError(error.message || 'تعذر تحميل أوراق الخزنة.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open || !tenantId) return;
+    loadVaultDocuments();
+  }, [open, tenantId]);
 
   useEffect(() => {
     window.clearTimeout(timerRef.current);
@@ -90,6 +118,11 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex min-h-full items-center justify-center text-sm font-black text-slate-400">جاري تحميل الأوراق...</div>
+          ) : loadError ? (
+            <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
+              <p className="text-sm font-black text-red-600">{loadError}</p>
+              <button type="button" onClick={loadVaultDocuments} className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">إعادة المحاولة</button>
+            </div>
           ) : vaultDocuments.length ? (
             <div className="divide-y divide-slate-400">
               {vaultDocuments.map((document) => {
@@ -116,10 +149,10 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
                     <div className="min-w-0 flex-1">
                       <div className="min-w-0">
                         <h3 className="min-w-0 truncate text-sm font-black text-slate-950">
-                          {document.productName || document.itemDescription || document.displayTitle}
+                          {document.productName || 'منتج مجهول'}
                         </h3>
                         <p className="mt-0.5 max-w-full truncate text-[10px] font-bold text-slate-400">
-                          باسم: <span className="font-black text-slate-600">{document.documentOwnerName ?? document.owner?.name ?? 'غير مسجل'}</span>
+                          باسم: <span className="font-black text-slate-600">{document.documentOwnerName ?? document.ownerName ?? 'غير مسجل'}</span>
                         </p>
                       </div>
                       {trackingText ? <p className="mt-1 truncate text-[10px] font-bold text-slate-400">{trackingText}</p> : null}
@@ -167,6 +200,10 @@ export function VaultPaperworkDrawer({ open, onOpenChange, documents = [], isLoa
         onOpenChange={setIsDocumentDetailsOpen}
         document={selectedDocument}
         tenantId={tenantId}
+        isOwner={isOwner}
+        onCancelled={(cancelledDocument) => {
+          setDocuments((current) => current.filter((document) => document.id !== cancelledDocument.id));
+        }}
         onOpenRequest={onOpenRequest}
       />
     </div>,

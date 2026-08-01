@@ -575,8 +575,7 @@ export function MotoCustomerCareHomePage() {
         open={vaultPaperworkOpen}
         onOpenChange={setVaultPaperworkOpen}
         tenantId={tenantId}
-        documents={paperworkDocuments}
-        isLoading={sectionStatus.papers === 'loading'}
+        isOwner={tenantUser?.role === 'owner'}
         onOpenRequest={(requestId) => {
           const request = paperworkRequests.find((item) => item.id === requestId);
           if (!request) return;
