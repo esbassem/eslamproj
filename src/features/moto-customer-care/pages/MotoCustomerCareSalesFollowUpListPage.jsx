@@ -390,6 +390,21 @@ function getPaperworkRequestForItem(item, paperworkRequests) {
   }) || null;
 }
 
+const INACTIVE_PAPERWORK_DOCUMENT_STATUSES = new Set([
+  'delivered',
+  'delivered_to_customer',
+  'returned_to_owner',
+  'lost',
+  'archived',
+  'cancelled',
+  'closed',
+  'done',
+]);
+
+function isCurrentPaperworkDocument(document) {
+  return !INACTIVE_PAPERWORK_DOCUMENT_STATUSES.has(document?.status);
+}
+
 function getCurrentPaperworkDocumentForItem(item, paperworkDocuments) {
   if (!item?.trackingUnitId) {
     return null;
