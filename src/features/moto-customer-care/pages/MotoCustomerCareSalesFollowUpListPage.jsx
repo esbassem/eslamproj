@@ -289,7 +289,7 @@ function FollowUpSectionsPanel({
 
   return (
     <aside className={`${isMobileContentOpen ? 'hidden lg:flex' : 'flex'} mt-1 min-h-0 flex-col gap-0 overflow-y-auto px-0 py-1`}>
-      <div className="flex flex-wrap gap-2.5 px-4 sm:px-10 lg:px-0">
+      <div className="flex flex-wrap gap-2 px-4 sm:px-10 lg:px-0">
         {reportItems.map((report) => {
           const isActiveReport = activeReportFilter === report.id;
 
@@ -298,25 +298,25 @@ function FollowUpSectionsPanel({
               type="button"
               key={report.id}
               onClick={() => onReportFilterChange?.(isActiveReport ? null : report.id)}
-              className={`group inline-flex h-12 w-auto flex-none items-center gap-2.5 rounded-2xl border px-3.5 text-right shadow-[0_3px_10px_rgba(15,23,42,0.05)] transition hover:border-blue-200 hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 ${
+              className={`group inline-flex h-9 w-auto flex-none items-center gap-2 rounded-xl border px-2.5 text-right shadow-[0_2px_7px_rgba(15,23,42,0.05)] backdrop-blur-md transition duration-200 hover:-translate-y-px hover:border-blue-200 hover:shadow-[0_4px_10px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 active:translate-y-0 ${
                 isActiveReport
-                  ? 'border-blue-300 bg-blue-50 text-blue-950 ring-1 ring-blue-100'
-                  : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-white'
+                  ? 'border-blue-300/70 bg-blue-50/55 text-blue-950 shadow-[0_3px_10px_rgba(37,99,235,0.10)] ring-1 ring-blue-100/70'
+                  : 'border-white/80 bg-white/55 text-slate-800 hover:border-blue-200/80 hover:bg-white/75'
               }`}
               aria-label={`${report.label}: ${report.value}`}
               aria-pressed={isActiveReport}
             >
               <span
-                className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-xl px-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
+                className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-lg px-1 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_3px_rgba(15,23,42,0.12)]"
                 style={{ backgroundColor: report.color }}
               >
                 {isReportsLoading ? (
-                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/45 border-t-white" aria-hidden="true" />
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/45 border-t-white" aria-hidden="true" />
                 ) : (
-                  <span className="font-mono text-xs font-black leading-none" dir="ltr">{report.value}</span>
+                  <span className="font-mono text-[10px] font-black leading-none" dir="ltr">{report.value}</span>
                 )}
               </span>
-              <span className="whitespace-nowrap text-[11px] font-black leading-4 text-slate-950">
+              <span className="whitespace-nowrap text-[10px] font-extrabold leading-4 text-slate-800">
                 {report.label}
               </span>
             </button>
