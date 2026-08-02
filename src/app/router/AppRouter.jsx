@@ -13,7 +13,6 @@ import {
   ForgotPasswordPage,
   LandingPage,
   MotoCustomerCareSaleFollowUpDetailsPage,
-  MotoCustomerCareHomePage,
   MotoCustomerCareSalesFollowUpListPage,
   MotoCustomerCareWorkspaceLayout,
   NotFoundPage,
@@ -84,10 +83,6 @@ export function AppRouter() {
                 <Route index element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
               <Route path="/app/moto-customer-care/sales" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
-                <Route index element={<MotoCustomerCareHomePage />} />
-                <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
-              </Route>
-              <Route path="/app/moto-customer-care/legacy" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
                 <Route index element={<MotoCustomerCareSalesFollowUpListPage />} />
                 <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
@@ -96,7 +91,7 @@ export function AppRouter() {
                 <Route path="*" element={<DynamicAppPage />} />
               </Route>
               <Route path="/apps/moto-customer-care/sales" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
-                <Route index element={<MotoCustomerCareHomePage />} />
+                <Route index element={<MotoCustomerCareSalesFollowUpListPage />} />
                 <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
               <Route path="/app/receivables" element={<AppAccessRoute appCode="receivables"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
