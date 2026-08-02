@@ -124,7 +124,7 @@ function ImagesPreview({ request, onClose }) {
   ];
 
   return createPortal(
-    <div className="fixed inset-0 z-[120] flex flex-col bg-slate-950" dir="rtl">
+    <div className="fixed inset-0 z-[160] flex flex-col bg-slate-950" dir="rtl">
       <div className="flex min-h-14 items-center justify-between gap-3 border-b border-white/10 px-4">
         <p className="truncate text-sm font-black text-white">{request?.productName || 'صور طلب الأوراق'}</p>
         <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white" aria-label="إغلاق">

@@ -134,9 +134,9 @@ const PAPERWORK_NEW_CUSTOMER_INITIAL_VALUES = {
 };
 
 const followUpSections = [
-  { id: 'requests', label: 'طلبات الأوراق', description: 'متابعة طلبات تنفيذ الأوراق ومراحلها.' },
-  { id: 'sales', label: 'المبيعات', description: 'متابعة عمليات البيع بعد التسليم.' },
-  { id: 'papers', label: 'الأوراق', description: 'إدارة الجوابات والحركات والتسليم.' },
+  { id: 'requests', label: 'طلبات الأوراق', description: 'متابعة الطلبات ومراحل التنفيذ', icon: FileText },
+  { id: 'sales', label: 'المبيعات', description: 'متابعة عمليات البيع والتسليم', icon: CircleCheck },
+  { id: 'papers', label: 'الأوراق', description: 'إدارة الجوابات والحركات', icon: FolderOpen },
 ];
 
 function buildPaperworkSidebarReports(sales = [], paperworkRequests = []) {
@@ -213,25 +213,25 @@ function LatestMobilePaperworkRequestsList({
 
   return (
     <div className="mt-8 lg:hidden">
-      <div className="mb-2 flex items-center justify-between gap-3 px-4 text-white sm:px-10">
+      <div className="mb-2 flex items-center justify-between gap-3 px-4 text-slate-950 sm:px-10">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-black leading-5">آخر طلبات الأوراق</h2>
           <span className="flex items-center gap-1" aria-hidden="true">
-            <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
-            <span className="h-1.5 w-1.5 rounded-full bg-sky-200/70" />
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+            <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
           </span>
         </div>
         <button
           type="button"
           onClick={onViewAll}
-          className="rounded-full border border-white/18 bg-white/[0.10] px-3 py-1 text-[11px] font-black text-white/92 shadow-[0_8px_18px_rgba(15,23,42,0.08)] backdrop-blur-md transition hover:bg-white/[0.16] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25"
+          className="rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-black text-blue-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
         >
           عرض الكل
         </button>
       </div>
       <div className="relative grid gap-0 pt-2 before:absolute before:inset-x-0 before:top-0 before:h-2 before:rounded-t-[1.35rem] before:bg-white before:shadow-[0_-10px_24px_rgba(255,255,255,0.10)]">
         {isLoading || isFiltering ? (
-          <div className="mx-4 rounded-2xl border border-white/12 bg-white/[0.08] px-3.5 py-3 text-xs font-black text-blue-50/80 backdrop-blur-md sm:mx-10 lg:mx-0">
+          <div className="mx-4 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs font-black text-slate-500 sm:mx-10 lg:mx-0">
             جاري تجهيز طلبات الأوراق...
           </div>
         ) : latestRequests.length ? (
@@ -245,7 +245,7 @@ function LatestMobilePaperworkRequestsList({
             </div>
           ))
         ) : (
-          <div className="mx-4 rounded-2xl border border-white/12 bg-white/[0.08] px-3.5 py-3 text-xs font-black text-blue-50/80 backdrop-blur-md sm:mx-10 lg:mx-0">
+          <div className="mx-4 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs font-black text-slate-500 sm:mx-10 lg:mx-0">
             لا توجد طلبات أوراق حديثة.
           </div>
         )}
@@ -288,8 +288,8 @@ function FollowUpSectionsPanel({
   ];
 
   return (
-    <aside className={`${isMobileContentOpen ? 'hidden lg:flex' : 'flex'} mt-5 min-h-0 flex-col gap-0 overflow-y-auto px-0 py-1 sm:mt-6`}>
-      <div className="grid grid-cols-[max-content_max-content] gap-1.5 px-4 pr-7 sm:px-10 sm:pr-14 lg:px-0 lg:pr-3 xl:pr-4">
+    <aside className={`${isMobileContentOpen ? 'hidden lg:flex' : 'flex'} mt-1 min-h-0 flex-col gap-0 overflow-y-auto px-0 py-1`}>
+      <div className="flex flex-wrap gap-2.5 px-4 sm:px-10 lg:px-0">
         {reportItems.map((report) => {
           const isActiveReport = activeReportFilter === report.id;
 
@@ -298,25 +298,25 @@ function FollowUpSectionsPanel({
               type="button"
               key={report.id}
               onClick={() => onReportFilterChange?.(isActiveReport ? null : report.id)}
-              className={`group inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-2 py-1 text-right text-white backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/34 hover:bg-white/[0.18] hover:shadow-[0_12px_24px_rgba(15,23,42,0.11)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/30 ${
+              className={`group inline-flex h-12 w-auto flex-none items-center gap-2.5 rounded-2xl border px-3.5 text-right shadow-[0_3px_10px_rgba(15,23,42,0.05)] transition hover:border-blue-200 hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 ${
                 isActiveReport
-                  ? 'border-white/45 bg-white/[0.22] shadow-[0_12px_26px_rgba(15,23,42,0.16),inset_0_1px_0_rgba(255,255,255,0.20)]'
-                  : 'border-white/20 bg-white/[0.12] shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+                  ? 'border-blue-300 bg-blue-50 text-blue-950 ring-1 ring-blue-100'
+                  : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-white'
               }`}
               aria-label={`${report.label}: ${report.value}`}
               aria-pressed={isActiveReport}
             >
               <span
-                className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md px-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
+                className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-xl px-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
                 style={{ backgroundColor: report.color }}
               >
                 {isReportsLoading ? (
-                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/45 border-t-white" aria-hidden="true" />
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/45 border-t-white" aria-hidden="true" />
                 ) : (
-                  <span className="font-mono text-[9px] font-black leading-none" dir="ltr">{report.value}</span>
+                  <span className="font-mono text-xs font-black leading-none" dir="ltr">{report.value}</span>
                 )}
               </span>
-              <span className="min-w-0 text-[10px] font-black leading-3 text-white sm:text-[11px]">
+              <span className="whitespace-nowrap text-[11px] font-black leading-4 text-slate-950">
                 {report.label}
               </span>
             </button>
@@ -339,30 +339,34 @@ function FollowUpSectionsPanel({
         }}
       />
 
-      <div className="mt-8 hidden lg:block">
-        <div className="mb-3 inline-flex rounded-xl border border-white/16 bg-white/[0.10] px-4 py-2 text-xs font-black text-white shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-md">
-          أقسام المتابعة
+      <div className="mt-7 hidden border-t border-slate-200 pt-5 lg:block">
+        <div className="mb-2 flex items-center gap-2 px-2 text-[10px] font-black tracking-wide text-slate-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-600" aria-hidden="true" />
+          التنقل الرئيسي
         </div>
-        <div className="grid gap-2.5">
+        <div className="grid gap-1">
         {followUpSections.map((section) => {
           const isActive = activeSection === section.id;
+          const SectionIcon = section.icon;
 
           return (
             <button
               key={section.id}
               type="button"
               onClick={() => onSectionChange(section.id)}
-              className={`group relative flex w-full items-center justify-between gap-3 rounded-2xl border px-3.5 py-3 text-right shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur-md transition hover:-translate-y-0.5 active:scale-[0.99] ${
+              className={`group relative flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-right transition active:scale-[0.99] ${
                 isActive
-                  ? 'border-white/40 bg-white/[0.20] text-white'
-                  : 'border-white/12 bg-white/[0.08] text-blue-50 hover:border-white/25 hover:bg-white/[0.14]'
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-[0_6px_16px_rgba(37,99,235,0.20)]'
+                  : 'border-slate-200 bg-white/80 text-slate-800 hover:border-blue-200 hover:bg-white'
               }`}
             >
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span className={`h-2 w-2 flex-shrink-0 rounded-full ${isActive ? 'bg-white' : 'bg-blue-100/55'}`} aria-hidden="true" />
-                <span className="truncate text-sm font-black">{section.label}</span>
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isActive ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-700'}`}>
+                <SectionIcon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-black">{section.label}</span>
+                <span className={`mt-0.5 block truncate text-[10px] font-bold ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>{section.description}</span>
               </div>
-              <span className={`h-px w-8 flex-shrink-0 ${isActive ? 'bg-white/80' : 'bg-white/20'}`} aria-hidden="true" />
             </button>
           );
         })}
@@ -3328,6 +3332,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   );
 
   const activeSectionLabel = followUpSections.find((section) => section.id === activeSection)?.label || 'المبيعات';
+  const activeSectionDescription = followUpSections.find((section) => section.id === activeSection)?.description || '';
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 1023px)');
     const syncViewport = () => setIsMobileViewport(mediaQuery.matches);
@@ -3448,7 +3453,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     await refresh();
   };
   return (
-    <section className="relative flex min-h-0 flex-1 flex-col items-stretch overflow-hidden text-white" dir="rtl">
+    <section className="relative flex min-h-0 flex-1 flex-col items-stretch overflow-hidden bg-[#f8fafc] text-slate-950" dir="rtl">
       <style>{`
         @keyframes customerCareMobilePageIn {
           from { opacity: 0; transform: translateY(10px) scale(0.985); }
@@ -3497,20 +3502,14 @@ export function MotoCustomerCareSalesFollowUpListPage() {
           line-height: 1.7rem;
         }
       `}</style>
-      <div className="relative z-10 grid min-h-0 w-full max-w-none flex-1 gap-0 overflow-hidden lg:grid-cols-[minmax(18rem,0.72fr)_minmax(34rem,1.28fr)] lg:items-stretch lg:bg-[radial-gradient(circle_at_28%_18%,rgba(56,189,248,0.30)_0%,rgba(37,99,235,0.16)_32%,transparent_58%),linear-gradient(145deg,#164f86_0%,#123f72_52%,#0c2f59_100%)]">
-        <div className="customer-care-fade-up relative z-[45] h-full min-h-0 overflow-x-hidden overflow-y-auto border-l border-white/12 bg-[radial-gradient(circle_at_45%_22%,rgba(56,189,248,0.30)_0%,rgba(37,99,235,0.18)_34%,transparent_58%),linear-gradient(145deg,#164f86_0%,#123f72_52%,#0c2f59_100%)] px-0 pb-8 pt-16 text-right text-white shadow-[-18px_0_44px_rgba(15,23,42,0.16)] [-webkit-overflow-scrolling:touch] sm:px-0 sm:pt-20 lg:overflow-hidden lg:border-l-0 lg:bg-none lg:px-8 lg:pb-0 lg:pt-14 lg:shadow-none xl:px-10" style={{ animationDelay: '0s' }}>
-          <div className="pointer-events-none absolute inset-0 hidden sm:block">
-            <span className="absolute left-[10%] top-[11%] h-7 w-7 rounded-md bg-white/12 shadow-[92px_98px_0_rgba(255,255,255,0.08),148px_32px_0_rgba(125,211,252,0.12)]" />
-            <span className="absolute right-[13%] top-[34%] h-12 w-12 rounded-lg bg-white/10 shadow-[-38px_142px_0_rgba(125,211,252,0.10),92px_238px_0_rgba(255,255,255,0.08)]" />
-            <span className="absolute left-[27%] top-[22%] h-px w-36 rotate-12 bg-gradient-to-r from-transparent via-sky-200/30 to-transparent" />
-          </div>
-          <div className="pointer-events-none absolute inset-y-10 left-0 w-px bg-white/20" />
-          <div className="relative mt-4 px-4 sm:px-10 lg:mt-5 lg:px-0">
-            <p className="mb-2 text-xs font-semibold text-blue-100/80 sm:mb-3 sm:text-sm">Customer Care</p>
-            <h1 className="max-w-sm text-3xl font-bold leading-tight text-white sm:text-5xl">
+      <div className="relative z-10 grid min-h-0 w-full max-w-none flex-1 gap-0 overflow-hidden bg-white lg:grid-cols-[28rem_minmax(0,1fr)] lg:items-stretch xl:grid-cols-[30rem_minmax(0,1fr)]">
+        <div className="customer-care-fade-up relative z-[90] h-full min-h-0 overflow-x-hidden overflow-y-auto border-l border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 px-0 pb-8 pt-16 text-right text-slate-950 shadow-[-12px_0_30px_rgba(15,23,42,0.12)] after:pointer-events-none after:absolute after:inset-y-8 after:left-[-1px] after:w-px after:bg-gradient-to-b after:from-transparent after:via-blue-400/70 after:to-transparent [-webkit-overflow-scrolling:touch] sm:px-0 sm:pt-20 lg:overflow-hidden lg:px-7 lg:pb-0 lg:pt-14 xl:px-8" style={{ animationDelay: '0s' }}>
+          <div className="relative mx-4 mt-4 sm:mx-10 lg:mx-0 lg:mt-4">
+            <p className="mb-2 text-[11px] font-black text-blue-700">لوحة المتابعة</p>
+            <h1 className="max-w-md text-2xl font-black leading-tight text-slate-950 sm:text-3xl">
               خدمة عملاء الموتوسيكلات
             </h1>
-            <p className="mt-3 max-w-md text-sm font-semibold leading-6 text-blue-50/74 sm:text-base sm:leading-7">
+            <p className="mt-2 max-w-md text-xs font-semibold leading-5 text-slate-600 sm:text-sm sm:leading-6">
               متابعة البيع، الأوراق، وحالة القطع بعد التسليم.
             </p>
           </div>
@@ -3535,8 +3534,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
           </div>
         </div>
 
-          <section className={`${isMobileContentOpen || isMobileContentClosing ? `fixed inset-0 z-[120] flex h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none ${isMobileContentClosing ? 'customer-care-mobile-page-out' : 'customer-care-mobile-page-in'}` : 'hidden'} customer-care-operations-window customer-care-fade-up min-h-0 flex-col overflow-hidden bg-white lg:relative lg:z-[80] lg:m-0 lg:flex lg:h-full lg:w-full lg:max-w-none lg:justify-self-stretch lg:rounded-none lg:border-0 lg:border-r lg:border-white/70 lg:bg-white lg:shadow-[16px_0_34px_rgba(8,47,73,0.16),0_0_0_1px_rgba(255,255,255,0.36)] lg:before:pointer-events-none lg:before:absolute lg:before:inset-y-0 lg:before:right-0 lg:before:z-20 lg:before:w-px lg:before:bg-white/85 lg:animate-none`} style={{ animationDelay: '0.06s' }}>
-            <div className="relative z-10 flex min-h-[3.35rem] items-center justify-between gap-3 border-b border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-[-1px] after:h-px after:bg-white/80 sm:px-4 sm:py-3 lg:bg-gradient-to-b lg:from-slate-50 lg:to-slate-100">
+          <section className={`${isMobileContentOpen || isMobileContentClosing ? `fixed inset-0 z-[120] flex h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none ${isMobileContentClosing ? 'customer-care-mobile-page-out' : 'customer-care-mobile-page-in'}` : 'hidden'} customer-care-operations-window customer-care-fade-up min-h-0 flex-col overflow-hidden bg-slate-100 lg:relative lg:z-[80] lg:m-0 lg:flex lg:h-full lg:w-full lg:max-w-none lg:justify-self-stretch lg:rounded-none lg:border-0 lg:bg-slate-100 lg:animate-none`} style={{ animationDelay: '0.06s' }}>
+            <div className="relative z-10 flex min-h-[4.25rem] items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] text-slate-950 sm:px-6 sm:py-3.5">
               <div className="flex min-w-0 items-center gap-4">
                 <button
                   type="button"
@@ -3551,6 +3550,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-lg font-black leading-7 text-slate-950 sm:text-xl sm:leading-7">{activeSectionLabel}</h3>
+                  <p className="hidden text-[11px] font-semibold text-slate-500 sm:block">{activeSectionDescription}</p>
                 </div>
               </div>
               {activeSection === 'papers' ? (
@@ -3562,7 +3562,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
               ) : null}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100">
               {isLoading || (['sales', 'requests'].includes(activeSection) && isReportFilterLoading) ? (
                 <LoadingSpinner title="جاري تحميل العمليات" description="يتم تجهيز بيانات القسم الحالي." />
               ) : error ? (
