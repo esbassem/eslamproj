@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Building2, Check, ImagePlus, MessageSquareText, Phone, Search, Send, UserRound, X } from 'lucide-react';
+import { AlertCircle, Ban, Building2, Check, FileCheck2, FileDown, ImagePlus, ListRestart, MessageSquareText, MoreHorizontal, PauseCircle, Pencil, Phone, PlayCircle, RotateCcw, Search, Send, SendHorizontal, UserRound, X } from 'lucide-react';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
@@ -14,6 +14,17 @@ const EVENT_LABELS = {
   note: 'ملاحظة',
   sent_to_supplier: 'تم إرسال الأوراق للجهة',
 };
+
+const EXCEPTIONAL_ACTIONS = [
+  { id: 'previous_customer_delivery', label: 'تسجيل أن العميل استلم الأوراق سابقًا', icon: FileCheck2, disabled: false },
+  { id: 'direct_processor_receipt', label: 'تسجيل استلام الأوراق من جهة الإصدار مباشرة', icon: FileDown, disabled: false },
+  { id: 'previous_processor_send', label: 'تسجيل أن الطلب أُرسل إلى جهة الإصدار سابقًا', icon: SendHorizontal, disabled: false },
+  { id: 'move_stage', label: 'الانتقال إلى مرحلة أخرى...', icon: ListRestart, disabled: false, dividerAfter: true },
+  { id: 'cancel', label: 'إلغاء الطلب', icon: Ban, disabled: false, tone: 'danger', dividerAfter: true },
+  { id: 'reopen', label: 'إعادة فتح الطلب', icon: RotateCcw, disabled: false },
+  { id: 'pause', label: 'إيقاف الطلب مؤقتًا', icon: PauseCircle, disabled: false },
+  { id: 'resume', label: 'استئناف الطلب', icon: PlayCircle, disabled: false },
+];
 
 function formatDate(value) {
   if (!value) return '--';
@@ -318,6 +329,8 @@ export function PaperworkRequestDetailsDrawer({
   const [visible, setVisible] = useState(false);
   const [contentReady, setContentReady] = useState(false);
   const [processorOpen, setProcessorOpen] = useState(false);
+  const [processorDetailsOpen, setProcessorDetailsOpen] = useState(false);
+  const [exceptionalActionsOpen, setExceptionalActionsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [customerConfirmationOpen, setCustomerConfirmationOpen] = useState(false);
   const [isConfirmingCustomer, setIsConfirmingCustomer] = useState(false);
@@ -337,7 +350,6 @@ export function PaperworkRequestDetailsDrawer({
   const [deliveryRemainingAmount, setDeliveryRemainingAmount] = useState(0);
   const [deliveryBalanceError, setDeliveryBalanceError] = useState('');
   const [processorOverride, setProcessorOverride] = useState(null);
-  const [processorPermissionNotice, setProcessorPermissionNotice] = useState('');
   const closeTimerRef = useRef(null);
   const openFrameRef = useRef(null);
   const contentTimerRef = useRef(null);
@@ -373,6 +385,8 @@ export function PaperworkRequestDetailsDrawer({
       setVisible(false);
       setContentReady(false);
       setProcessorOpen(false);
+      setProcessorDetailsOpen(false);
+      setExceptionalActionsOpen(false);
       setPreviewOpen(false);
       setCustomerConfirmationOpen(false);
       setCustomerConfirmationError('');
@@ -390,7 +404,6 @@ export function PaperworkRequestDetailsDrawer({
       setDeliveryBalanceError('');
       setSendToProcessorError('');
       setSendToProcessorNote('');
-      setProcessorPermissionNotice('');
       closeTimerRef.current = window.setTimeout(() => setMounted(false), 240);
     }
 
@@ -405,7 +418,6 @@ export function PaperworkRequestDetailsDrawer({
 
   useEffect(() => {
     setProcessorOverride(null);
-    setProcessorPermissionNotice('');
   }, [snapshot?.id]);
 
   useEffect(() => {
@@ -455,6 +467,8 @@ export function PaperworkRequestDetailsDrawer({
       if (event.key !== 'Escape') return;
       if (previewOpen) setPreviewOpen(false);
       else if (processorOpen) setProcessorOpen(false);
+      else if (processorDetailsOpen) setProcessorDetailsOpen(false);
+      else if (exceptionalActionsOpen) setExceptionalActionsOpen(false);
       else if (customerNotificationOpen) {
         setCustomerNotificationOpen(false);
       }
@@ -465,7 +479,7 @@ export function PaperworkRequestDetailsDrawer({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [customerConfirmationOpen, customerNotificationOpen, deliveryOpen, isDelivering, mounted, onOpenChange, previewOpen, processorOpen, sendConfirmationOpen]);
+  }, [customerConfirmationOpen, customerNotificationOpen, deliveryOpen, exceptionalActionsOpen, isDelivering, mounted, onOpenChange, previewOpen, processorDetailsOpen, processorOpen, sendConfirmationOpen]);
 
   if (!mounted || !snapshot) return null;
 
@@ -684,12 +698,24 @@ export function PaperworkRequestDetailsDrawer({
         <header className="relative z-20 shrink-0 bg-blue-700 px-4 pb-4 pt-3 text-white shadow-[0_8px_18px_-14px_rgba(15,23,42,0.48)]">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-base font-black">تفاصيل طلب الأوراق</h2>
-            <button type="button" onClick={() => onOpenChange(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15" aria-label="إغلاق">
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setExceptionalActionsOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-2.5 text-[10px] font-black text-white transition hover:bg-white/20 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                aria-haspopup="menu"
+                aria-expanded={exceptionalActionsOpen}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+                <span>إجراءات استثنائية</span>
+              </button>
+              <button type="button" onClick={() => onOpenChange(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25" aria-label="إغلاق">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-4 border-t border-white/20 pt-3">
+          <div className="mt-3 grid grid-cols-2 gap-4 pt-3">
             <div className="min-w-0">
               <p className="text-[10px] font-bold text-blue-100">صاحب الفاتورة</p>
               <p className="mt-0.5 truncate text-sm font-black">{customerName}</p>
@@ -713,20 +739,13 @@ export function PaperworkRequestDetailsDrawer({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  if (!canManageProcessor) {
-                    setProcessorPermissionNotice('المالك فقط يقدر يحدد جهة إصدار الأوراق.');
-                    return;
-                  }
-                  setProcessorPermissionNotice('');
-                  setProcessorOpen(true);
-                }}
+                onClick={() => setProcessorDetailsOpen(true)}
                 className={`mt-2 flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-right transition-colors ${
                   displayedProcessor
                     ? 'bg-white/12 text-white hover:bg-white/20'
                     : 'bg-amber-300/20 text-amber-100 hover:bg-amber-300/30'
                 }`}
-                aria-label={displayedProcessor ? 'تغيير جهة إصدار الأوراق' : 'اختيار جهة إصدار الأوراق'}
+                aria-label="عرض بيانات جهة إصدار الأوراق"
               >
                 {displayedProcessor ? (
                   <Building2 className="h-3 w-3 shrink-0" />
@@ -737,11 +756,6 @@ export function PaperworkRequestDetailsDrawer({
                   {displayedProcessor ? `جهة الإصدار: ${processorName}` : 'جهة الإصدار غير محددة'}
                 </span>
               </button>
-              {processorPermissionNotice ? (
-                <p className="mt-1 rounded-md bg-red-500/18 px-2 py-1 text-[10px] font-black leading-4 text-red-50">
-                  {processorPermissionNotice}
-                </p>
-              ) : null}
             </div>
           </div>
         </header>
@@ -1234,6 +1248,140 @@ export function PaperworkRequestDetailsDrawer({
                 >
                   {isSendingToProcessor ? 'جاري الإرسال...' : 'إرسال للجهة'}
                 </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {exceptionalActionsOpen ? (
+          <div className="absolute inset-0 z-40 flex items-end bg-slate-950/30 sm:block sm:bg-slate-950/10" dir="rtl">
+            <button
+              type="button"
+              className="absolute inset-0 cursor-default"
+              onClick={() => setExceptionalActionsOpen(false)}
+              aria-label="إغلاق قائمة الإجراءات الاستثنائية"
+            />
+            <section
+              className="relative max-h-[82dvh] w-full overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:absolute sm:left-4 sm:top-14 sm:w-[21rem] sm:rounded-2xl"
+              role="menu"
+              aria-label="الإجراءات الاستثنائية"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                <div>
+                  <h3 className="text-sm font-black text-slate-950 dark:text-white">إجراءات استثنائية</h3>
+                  <p className="mt-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500">واجهة تجريبية — لا يتم تنفيذ أي تغيير</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExceptionalActionsOpen(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 active:scale-95 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  aria-label="إغلاق"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="max-h-[calc(82dvh-4rem)] overflow-y-auto p-2 sm:max-h-[calc(100dvh-8rem)]">
+                {EXCEPTIONAL_ACTIONS.map((action) => {
+                  const Icon = action.icon;
+                  const isDanger = action.tone === 'danger';
+
+                  return (
+                    <div key={action.id} className={action.dividerAfter ? 'border-b border-slate-100 pb-2 mb-2 dark:border-slate-800' : ''}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={action.disabled}
+                        onClick={() => setExceptionalActionsOpen(false)}
+                        className={`group flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-40 ${
+                          isDanger
+                            ? 'text-red-700 hover:bg-red-50 active:bg-red-100 focus-visible:ring-red-200 dark:text-red-400 dark:hover:bg-red-950/40 dark:active:bg-red-950/60'
+                            : 'text-slate-700 hover:bg-blue-50 hover:text-blue-800 active:bg-blue-100 focus-visible:ring-blue-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-blue-300 dark:active:bg-slate-700'
+                        }`}
+                      >
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${
+                          isDanger
+                            ? 'bg-red-50 text-red-600 group-hover:bg-red-100 dark:bg-red-950/50 dark:text-red-400'
+                            : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:text-blue-300'
+                        }`}>
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1 text-xs font-black leading-5">{action.label}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {processorDetailsOpen ? (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/30 p-4" dir="rtl">
+            <button
+              type="button"
+              className="absolute inset-0"
+              onClick={() => setProcessorDetailsOpen(false)}
+              aria-label="إغلاق بيانات جهة الإصدار"
+            />
+            <section className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 text-right shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                    <Building2 className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black text-slate-400">جهة إصدار الأوراق</p>
+                    <h3 className="mt-0.5 truncate text-base font-black text-slate-950">
+                      {displayedProcessor?.name || 'لم يتم تحديد جهة الإصدار'}
+                    </h3>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {canManageProcessor ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProcessorDetailsOpen(false);
+                        setProcessorOpen(true);
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-700 transition hover:bg-blue-100"
+                      aria-label="تعديل جهة إصدار الأوراق"
+                      title="تعديل جهة الإصدار"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setProcessorDetailsOpen(false)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200"
+                    aria-label="إغلاق"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200 bg-slate-50/60 px-3">
+                <div className="flex items-center justify-between gap-3 py-3">
+                  <span className="text-xs font-bold text-slate-500">رقم الهاتف</span>
+                  <span className="truncate font-mono text-xs font-black text-slate-900" dir="ltr">
+                    {displayedProcessor?.phone || displayedProcessor?.phone1 || displayedProcessor?.phone2 || '--'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 py-3">
+                  <span className="text-xs font-bold text-slate-500">الصفة</span>
+                  <span className="truncate text-xs font-black text-slate-900">
+                    {displayedProcessor?.subtitle || displayedProcessor?.functionTitle || 'جهة إصدار'}
+                  </span>
+                </div>
+                {displayedProcessor?.parentName ? (
+                  <div className="flex items-center justify-between gap-3 py-3">
+                    <span className="text-xs font-bold text-slate-500">تابع لـ</span>
+                    <span className="truncate text-xs font-black text-slate-900">{displayedProcessor.parentName}</span>
+                  </div>
+                ) : null}
               </div>
             </section>
           </div>

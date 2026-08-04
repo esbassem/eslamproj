@@ -43,7 +43,10 @@ export function ShowroomInvoicesCard({
   const reportMonth = controlledReportMonth || localReportMonth;
 
   const filteredInvoices = useMemo(
-    () => invoices.filter((invoice) => isInvoiceInMonth(invoice, reportMonth)),
+    () => invoices.filter((invoice) => (
+      invoice?.status !== 'cancelled'
+      && isInvoiceInMonth(invoice, reportMonth)
+    )),
     [invoices, reportMonth],
   );
 

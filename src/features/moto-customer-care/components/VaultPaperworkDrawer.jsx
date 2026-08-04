@@ -157,6 +157,11 @@ export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenant
                       </div>
                       {trackingText ? <p className="mt-1 truncate text-[10px] font-bold text-slate-400">{trackingText}</p> : null}
                       <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+                        {document.hasActiveReleaseAuthorization ? (
+                          <p className="inline-flex min-w-0 max-w-full rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80">
+                            <span className="truncate">متاح للصرف: {document.releaseAuthorizedToName}</span>
+                          </p>
+                        ) : null}
                         {document.owner?.name ? (
                           <p className="inline-flex min-w-0 max-w-full rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
                             <span className="truncate">Partner: <span className="font-black">{document.owner.name}</span></span>
@@ -203,6 +208,14 @@ export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenant
         isOwner={isOwner}
         onCancelled={(cancelledDocument) => {
           setDocuments((current) => current.filter((document) => document.id !== cancelledDocument.id));
+        }}
+        onPreviousDeliveryRecorded={(deliveredDocument) => {
+          setDocuments((current) => current.filter((document) => document.id !== deliveredDocument.id));
+        }}
+        onReleaseAuthorized={(authorizedDocument) => {
+          setDocuments((current) => current.map((document) => (
+            document.id === authorizedDocument.id ? { ...document, ...authorizedDocument } : document
+          )));
         }}
         onOpenRequest={onOpenRequest}
       />

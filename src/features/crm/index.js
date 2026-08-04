@@ -1,0 +1,9 @@
+export { CrmWorkspaceLayout } from '@/features/crm/layouts/CrmWorkspaceLayout';
+export { CrmHomePage } from '@/features/crm/pages/CrmHomePage';
+export { CrmPlaceholderPage } from '@/features/crm/pages/CrmPlaceholderPage';
+export { CrmLeadsPage } from '@/features/crm/pages/CrmLeadsPage';
+export { CrmLeadDetailsPage } from '@/features/crm/pages/CrmLeadDetailsPage';
+export { CrmSettingsPage } from '@/features/crm/pages/CrmSettingsPage';
+export { CrmFollowupsPage } from '@/features/crm/pages/CrmFollowupsPage';
+export { CrmInstallmentsPage } from '@/features/crm/pages/CrmInstallmentsPage';
+export { CrmInstallmentDetailsPage } from '@/features/crm/pages/CrmInstallmentDetailsPage';

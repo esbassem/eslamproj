@@ -1,30 +1,61 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, CheckCircle2, MoreVertical, Pencil, PlusCircle, Power, Store, Trash2 } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { Button } from '@/core/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/core/ui/dropdown-menu';
-import { Input } from '@/core/ui/input';
-import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetFooter, SheetHeader, SheetTitle } from '@/core/ui/sheet';
-import { ShowroomSalesCard } from '@/features/showroom/components/ShowroomSalesCard';
-import { ShowroomInvoicesCard } from '@/features/showroom/components/ShowroomInvoicesCard';
-import { ShowroomSaleViewSheet } from '@/features/showroom/components/ShowroomSaleViewSheet';
-import { useShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
-import { showroomService } from '@/features/showroom/services/showroom.service';
-import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  MoreVertical,
+  Pencil,
+  PlusCircle,
+  Power,
+  Store,
+  Trash2,
+} from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Button } from "@/core/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/core/ui/dropdown-menu";
+import { Input } from "@/core/ui/input";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDismissButton,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/core/ui/sheet";
+import { ShowroomSalesCard } from "@/features/showroom/components/ShowroomSalesCard";
+import { ShowroomInvoicesCard } from "@/features/showroom/components/ShowroomInvoicesCard";
+import { ShowroomSaleViewSheet } from "@/features/showroom/components/ShowroomSaleViewSheet";
+import { useShowroomConfig } from "@/features/showroom/context/ShowroomConfigContext";
+import { showroomService } from "@/features/showroom/services/showroom.service";
+import { crmService } from "@/features/crm/services/crm.service";
+import { useWorkspace } from "@/features/workspace/hooks/useWorkspace";
 
-const loadPaperworkRequestPromptSheet = () => (
-  import('@/features/showroom/components/PaperworkRequestPromptSheet')
-    .then((module) => ({ default: module.PaperworkRequestPromptSheet }))
-);
+const loadPaperworkRequestPromptSheet = () =>
+  import("@/features/showroom/components/PaperworkRequestPromptSheet").then(
+    (module) => ({ default: module.PaperworkRequestPromptSheet }),
+  );
 
 const PaperworkRequestPromptSheet = lazy(loadPaperworkRequestPromptSheet);
 
 const EMPTY_CONFIG_DRAFT = {
   id: null,
-  name: '',
-  code: '',
-  branchId: '',
-  journalId: '',
+  name: "",
+  code: "",
+  branchId: "",
+  journalId: "",
   isActive: true,
 };
 
@@ -38,13 +69,16 @@ function getSalePendingPaperworkLines(sale) {
 }
 
 function getMonthSalesRange(monthDate) {
-  const date = monthDate instanceof Date && !Number.isNaN(monthDate.getTime()) ? monthDate : new Date();
+  const date =
+    monthDate instanceof Date && !Number.isNaN(monthDate.getTime())
+      ? monthDate
+      : new Date();
   const start = new Date(date.getFullYear(), date.getMonth(), 1);
   const end = new Date(date.getFullYear(), date.getMonth() + 1, 1);
   const toLocalISODate = (value) => {
     const year = value.getFullYear();
-    const month = String(value.getMonth() + 1).padStart(2, '0');
-    const day = String(value.getDate()).padStart(2, '0');
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
 
@@ -54,9 +88,10 @@ function getMonthSalesRange(monthDate) {
   };
 }
 
-
 function normalizeConfigCode(value) {
-  return String(value ?? '').trim().toUpperCase();
+  return String(value ?? "")
+    .trim()
+    .toUpperCase();
 }
 
 function ShowroomShell({ children }) {
@@ -83,9 +118,12 @@ function ShowroomEmptyState({ onCreate }) {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
             <Store className="h-7 w-7" />
           </div>
-          <h1 className="mt-5 text-2xl font-black text-slate-900">أنشئ أول نقطة معرض</h1>
+          <h1 className="mt-5 text-2xl font-black text-slate-900">
+            أنشئ أول نقطة معرض
+          </h1>
           <p className="mt-2 text-sm font-bold leading-7 text-slate-500">
-            لا توجد نقطة معرض نشطة بعد. أنشئ نقطة مثل إعدادات Odoo POS Configurations ثم ابدأ البيع عليها.
+            لا توجد نقطة معرض نشطة بعد. أنشئ نقطة مثل إعدادات Odoo POS
+            Configurations ثم ابدأ البيع عليها.
           </p>
           <button
             type="button"
@@ -108,18 +146,22 @@ function ShowroomConfigSheet({ open, onOpenChange, configs, config, onSaved }) {
   const [journals, setJournals] = useState([]);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const reset = useCallback(() => {
-    setDraft(config ? {
-      id: config.id,
-      name: config.name ?? '',
-      code: config.code ?? '',
-      branchId: config.branch_id ?? '',
-      journalId: config.journal_id ?? '',
-      isActive: config.is_active !== false,
-    } : EMPTY_CONFIG_DRAFT);
-    setError('');
+    setDraft(
+      config
+        ? {
+            id: config.id,
+            name: config.name ?? "",
+            code: config.code ?? "",
+            branchId: config.branch_id ?? "",
+            journalId: config.journal_id ?? "",
+            isActive: config.is_active !== false,
+          }
+        : EMPTY_CONFIG_DRAFT,
+    );
+    setError("");
   }, [config]);
 
   useEffect(() => {
@@ -130,14 +172,18 @@ function ShowroomConfigSheet({ open, onOpenChange, configs, config, onSaved }) {
 
     Promise.all([
       showroomService.listBranches({ tenantId: tenant.id }).catch(() => []),
-      showroomService.listPaymentJournals({ tenantId: tenant.id }).catch(() => []),
-    ]).then(([nextBranches, nextJournals]) => {
-      if (!mounted) return;
-      setBranches(nextBranches);
-      setJournals(nextJournals);
-    }).finally(() => {
-      if (mounted) setIsLoadingLookups(false);
-    });
+      showroomService
+        .listPaymentJournals({ tenantId: tenant.id })
+        .catch(() => []),
+    ])
+      .then(([nextBranches, nextJournals]) => {
+        if (!mounted) return;
+        setBranches(nextBranches);
+        setJournals(nextJournals);
+      })
+      .finally(() => {
+        if (mounted) setIsLoadingLookups(false);
+      });
 
     return () => {
       mounted = false;
@@ -154,25 +200,27 @@ function ShowroomConfigSheet({ open, onOpenChange, configs, config, onSaved }) {
     if (!tenant?.id || isSaving) return;
 
     const code = normalizeConfigCode(draft.code);
-    const duplicate = configs.some((item) => normalizeConfigCode(item.code) === code && item.id !== draft.id);
+    const duplicate = configs.some(
+      (item) => normalizeConfigCode(item.code) === code && item.id !== draft.id,
+    );
 
     if (!draft.name.trim()) {
-      setError('اكتب اسم نقطة المعرض.');
+      setError("اكتب اسم نقطة المعرض.");
       return;
     }
 
     if (!code) {
-      setError('اكتب كود نقطة المعرض.');
+      setError("اكتب كود نقطة المعرض.");
       return;
     }
 
     if (duplicate) {
-      setError('كود نقطة المعرض مستخدم بالفعل داخل نفس الشركة.');
+      setError("كود نقطة المعرض مستخدم بالفعل داخل نفس الشركة.");
       return;
     }
 
     setIsSaving(true);
-    setError('');
+    setError("");
 
     try {
       const payload = {
@@ -191,7 +239,7 @@ function ShowroomConfigSheet({ open, onOpenChange, configs, config, onSaved }) {
       await onSaved?.(savedConfig);
       onOpenChange(false);
     } catch (err) {
-      setError(err.message || 'تعذر حفظ نقطة المعرض.');
+      setError(err.message || "تعذر حفظ نقطة المعرض.");
     } finally {
       setIsSaving(false);
     }
@@ -202,8 +250,12 @@ function ShowroomConfigSheet({ open, onOpenChange, configs, config, onSaved }) {
       <SheetContent side="right" className="max-w-md" dir="rtl">
         <SheetDismissButton />
         <SheetHeader className="pr-6 text-right">
-          <SheetTitle className="text-[#173653]">{draft.id ? 'تعديل نقطة معرض' : 'إضافة نقطة معرض'}</SheetTitle>
-          <p className="text-sm font-bold text-[#668097]">أدخل بيانات النقطة وسيتم تحديث الكروت مباشرة.</p>
+          <SheetTitle className="text-[#173653]">
+            {draft.id ? "تعديل نقطة معرض" : "إضافة نقطة معرض"}
+          </SheetTitle>
+          <p className="text-sm font-bold text-[#668097]">
+            أدخل بيانات النقطة وسيتم تحديث الكروت مباشرة.
+          </p>
         </SheetHeader>
         <form onSubmit={saveConfig} className="flex min-h-0 flex-1 flex-col">
           <SheetBody className="space-y-4">
@@ -214,46 +266,82 @@ function ShowroomConfigSheet({ open, onOpenChange, configs, config, onSaved }) {
             ) : null}
 
             <div>
-              <label className="mb-2 block text-xs font-black text-[#668097]">الاسم</label>
+              <label className="mb-2 block text-xs font-black text-[#668097]">
+                الاسم
+              </label>
               <Input
                 value={draft.name}
-                onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
                 className="border-[#c5ddef] font-bold"
               />
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-black text-[#668097]">الكود</label>
+              <label className="mb-2 block text-xs font-black text-[#668097]">
+                الكود
+              </label>
               <Input
                 value={draft.code}
-                onChange={(event) => setDraft((current) => ({ ...current, code: normalizeConfigCode(event.target.value) }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    code: normalizeConfigCode(event.target.value),
+                  }))
+                }
                 className="border-[#c5ddef] font-bold uppercase"
               />
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-black text-[#668097]">الفرع</label>
+              <label className="mb-2 block text-xs font-black text-[#668097]">
+                الفرع
+              </label>
               <select
                 value={draft.branchId}
-                onChange={(event) => setDraft((current) => ({ ...current, branchId: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    branchId: event.target.value,
+                  }))
+                }
                 disabled={isLoadingLookups}
                 className="h-11 w-full rounded-xl border border-[#e6c8cf] bg-white px-3 text-sm font-bold text-[#4d1f28] outline-none focus:ring-4 focus:ring-[#f1d7dc]"
               >
                 <option value="">بدون فرع</option>
-                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-black text-[#668097]">جورنال التحصيل</label>
+              <label className="mb-2 block text-xs font-black text-[#668097]">
+                جورنال التحصيل
+              </label>
               <select
                 value={draft.journalId}
-                onChange={(event) => setDraft((current) => ({ ...current, journalId: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    journalId: event.target.value,
+                  }))
+                }
                 disabled={isLoadingLookups}
                 className="h-11 w-full rounded-xl border border-[#e6c8cf] bg-white px-3 text-sm font-bold text-[#4d1f28] outline-none focus:ring-4 focus:ring-[#f1d7dc]"
               >
                 <option value="">بدون جورنال</option>
-                {journals.map((journal) => <option key={journal.id} value={journal.id}>{journal.name} ({journal.code})</option>)}
+                {journals.map((journal) => (
+                  <option key={journal.id} value={journal.id}>
+                    {journal.name} ({journal.code})
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -262,17 +350,35 @@ function ShowroomConfigSheet({ open, onOpenChange, configs, config, onSaved }) {
               <input
                 type="checkbox"
                 checked={draft.isActive}
-                onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.checked }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    isActive: event.target.checked,
+                  }))
+                }
                 className="h-4 w-4"
               />
             </label>
           </SheetBody>
           <SheetFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={isSaving}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => onOpenChange(false)}
+              disabled={isSaving}
+            >
               إلغاء
             </Button>
-            <Button type="submit" disabled={isSaving} className="bg-[#9b3645] font-black text-white hover:bg-[#862f3d]">
-              {isSaving ? 'جار الحفظ...' : draft.id ? 'حفظ التعديل' : 'إضافة نقطة'}
+            <Button
+              type="submit"
+              disabled={isSaving}
+              className="bg-[#9b3645] font-black text-white hover:bg-[#862f3d]"
+            >
+              {isSaving
+                ? "جار الحفظ..."
+                : draft.id
+                  ? "حفظ التعديل"
+                  : "إضافة نقطة"}
             </Button>
           </SheetFooter>
         </form>
@@ -287,8 +393,12 @@ function ShowroomConfigChooser({ configs, onSelect }) {
       <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-4xl flex-col justify-center py-8">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-white">
           <div>
-            <h1 className="text-2xl font-black sm:text-3xl">اختر نقطة المعرض</h1>
-            <p className="mt-1 text-sm font-bold text-white/78">سيتم تشغيل البيع والفواتير على النقطة المختارة فقط.</p>
+            <h1 className="text-2xl font-black sm:text-3xl">
+              اختر نقطة المعرض
+            </h1>
+            <p className="mt-1 text-sm font-bold text-white/78">
+              سيتم تشغيل البيع والفواتير على النقطة المختارة فقط.
+            </p>
           </div>
         </div>
 
@@ -304,15 +414,26 @@ function ShowroomConfigChooser({ configs, onSelect }) {
                 <div className="min-w-0">
                   <h2
                     className="text-lg font-black leading-6 text-[#173653]"
-                    style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
                   >
                     {config.name}
                   </h2>
-                  <p className="mt-1 text-xs font-black text-[#668097]">{config.code}</p>
+                  <p className="mt-1 text-xs font-black text-[#668097]">
+                    {config.code}
+                  </p>
                 </div>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700">نشطة</span>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700">
+                  نشطة
+                </span>
               </div>
-              <p className="mt-5 text-sm font-black text-[#9b3645]">دخول نقطة البيع</p>
+              <p className="mt-5 text-sm font-black text-[#9b3645]">
+                دخول نقطة البيع
+              </p>
             </button>
           ))}
         </div>
@@ -352,9 +473,15 @@ function ShowroomConfigsHome({
                 <ArrowRight className="h-5 w-5" />
               </button>
               <div>
-                <p className="text-xs font-black uppercase text-white/75">Showroom Point</p>
-                <h1 className="mt-1 text-2xl font-black sm:text-3xl">نقاط المعرض</h1>
-                <p className="mt-1 text-sm font-bold text-white/80">واجهة أسهل لإدارة النقاط والدخول السريع للبيع.</p>
+                <p className="text-xs font-black uppercase text-white/75">
+                  Showroom Point
+                </p>
+                <h1 className="mt-1 text-2xl font-black sm:text-3xl">
+                  نقاط المعرض
+                </h1>
+                <p className="mt-1 text-sm font-bold text-white/80">
+                  واجهة أسهل لإدارة النقاط والدخول السريع للبيع.
+                </p>
               </div>
             </div>
             <button
@@ -394,27 +521,36 @@ function ShowroomConfigsHome({
                   onClick={() => isActive && onOpenConfig(config)}
                   onKeyDown={(event) => {
                     if (!isActive) return;
-                    if (event.key === 'Enter' || event.key === ' ') {
+                    if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       onOpenConfig(config);
                     }
                   }}
-                  className={`min-h-[170px] rounded-[22px] border border-[#d8e8f5] bg-[linear-gradient(180deg,#ffffff_0%,#f8fcff_100%)] p-5 text-right shadow-[0_26px_50px_-40px_rgba(20,82,138,0.58)] transition hover:-translate-y-0.5 hover:border-[#b6d7ee] ${isActive ? '' : 'opacity-70 hover:translate-y-0'}`}
+                  className={`min-h-[170px] rounded-[22px] border border-[#d8e8f5] bg-[linear-gradient(180deg,#ffffff_0%,#f8fcff_100%)] p-5 text-right shadow-[0_26px_50px_-40px_rgba(20,82,138,0.58)] transition hover:-translate-y-0.5 hover:border-[#b6d7ee] ${isActive ? "" : "opacity-70 hover:translate-y-0"}`}
                 >
                   <div className="flex h-full flex-col justify-between gap-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <h2
                           className="text-lg font-black tracking-tight leading-6 text-[#16314d]"
-                          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                          style={{
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
                         >
-                          {config.name || 'نقطة معرض'}
+                          {config.name || "نقطة معرض"}
                         </h2>
-                        <p className="mt-1 text-xs font-black text-[#5c7992]">{config.code || 'بدون كود'}</p>
+                        <p className="mt-1 text-xs font-black text-[#5c7992]">
+                          {config.code || "بدون كود"}
+                        </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {isActive ? 'نشطة' : 'معطلة'}
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-black ${isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
+                        >
+                          {isActive ? "نشطة" : "معطلة"}
                         </span>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -428,13 +564,25 @@ function ShowroomConfigsHome({
                               <MoreVertical className="h-4 w-4" />
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="min-w-44 rounded-xl" onClick={(event) => event.stopPropagation()}>
-                            <DropdownMenuItem onSelect={() => onEditConfig(config)} className="gap-2 font-bold">
+                          <DropdownMenuContent
+                            align="end"
+                            className="min-w-44 rounded-xl"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <DropdownMenuItem
+                              onSelect={() => onEditConfig(config)}
+                              className="gap-2 font-bold"
+                            >
                               <span>تعديل</span>
                               <Pencil className="h-4 w-4 text-[#668097]" />
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => onToggleConfig(config)} className="gap-2 font-bold">
-                              <span>{isActive ? 'تعطيل النقطة' : 'تفعيل النقطة'}</span>
+                            <DropdownMenuItem
+                              onSelect={() => onToggleConfig(config)}
+                              className="gap-2 font-bold"
+                            >
+                              <span>
+                                {isActive ? "تعطيل النقطة" : "تفعيل النقطة"}
+                              </span>
                               {isActive ? (
                                 <Power className="h-4 w-4 text-[#668097]" />
                               ) : (
@@ -442,12 +590,18 @@ function ShowroomConfigsHome({
                               )}
                             </DropdownMenuItem>
                             {canDelete ? (
-                              <DropdownMenuItem onSelect={() => onDeleteConfig(config)} className="gap-2 font-bold text-red-600 focus:bg-red-50 focus:text-red-700">
+                              <DropdownMenuItem
+                                onSelect={() => onDeleteConfig(config)}
+                                className="gap-2 font-bold text-red-600 focus:bg-red-50 focus:text-red-700"
+                              >
                                 <span>حذف</span>
                                 <Trash2 className="h-4 w-4 text-red-500" />
                               </DropdownMenuItem>
                             ) : (
-                              <DropdownMenuItem disabled className="gap-2 font-bold text-slate-400">
+                              <DropdownMenuItem
+                                disabled
+                                className="gap-2 font-bold text-slate-400"
+                              >
                                 <span>الحذف متاح قبل أول عملية فقط</span>
                                 <Trash2 className="h-4 w-4" />
                               </DropdownMenuItem>
@@ -458,10 +612,14 @@ function ShowroomConfigsHome({
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-black text-[#2a78b8] transition hover:text-[#173653] disabled:cursor-not-allowed disabled:text-[#8aa0b3]">
-                        {isActive ? 'دخول نقطة البيع' : 'فعّل النقطة من الإعدادات'}
+                        {isActive
+                          ? "دخول نقطة البيع"
+                          : "فعّل النقطة من الإعدادات"}
                       </span>
                       {isCurrent ? (
-                        <span className="rounded-full bg-[#fbf1f3] px-2.5 py-1 text-[11px] font-black text-[#9b3645]">محددة</span>
+                        <span className="rounded-full bg-[#fbf1f3] px-2.5 py-1 text-[11px] font-black text-[#9b3645]">
+                          محددة
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -472,8 +630,12 @@ function ShowroomConfigsHome({
         ) : (
           <div className="rounded-[22px] border border-white/55 bg-white/95 p-8 text-center shadow-[0_32px_70px_-38px_rgba(15,52,93,0.95)]">
             <Store className="mx-auto h-12 w-12 text-[#9b3645]" />
-            <h2 className="mt-4 text-xl font-black text-[#173653]">لا توجد نقاط معرض بعد</h2>
-            <p className="mt-2 text-sm font-bold text-[#668097]">ابدأ بإضافة أول نقطة معرض.</p>
+            <h2 className="mt-4 text-xl font-black text-[#173653]">
+              لا توجد نقاط معرض بعد
+            </h2>
+            <p className="mt-2 text-sm font-bold text-[#668097]">
+              ابدأ بإضافة أول نقطة معرض.
+            </p>
             <button
               type="button"
               onClick={onCreateConfig}
@@ -488,7 +650,6 @@ function ShowroomConfigsHome({
     </ShowroomShell>
   );
 }
-
 
 export function ShowroomSellPage() {
   const navigate = useNavigate();
@@ -506,18 +667,71 @@ export function ShowroomSellPage() {
   } = useShowroomConfig();
   const [sales, setSales] = useState([]);
   const [isSalesLoading, setIsSalesLoading] = useState(false);
-  const [salesError, setSalesError] = useState('');
+  const [salesError, setSalesError] = useState("");
   const [selectedSale, setSelectedSale] = useState(null);
   const [saleToResume, setSaleToResume] = useState(null);
   const [paperworkPromptSale, setPaperworkPromptSale] = useState(null);
-  const [dismissedPaperworkPromptSaleId, setDismissedPaperworkPromptSaleId] = useState(null);
+  const [dismissedPaperworkPromptSaleId, setDismissedPaperworkPromptSaleId] =
+    useState(null);
   const [isCreateConfigOpen, setIsCreateConfigOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState(null);
   const [configUsageById, setConfigUsageById] = useState({});
-  const [configActionError, setConfigActionError] = useState('');
-  const [invoiceReportMonth, setInvoiceReportMonth] = useState(() => new Date());
+  const [configActionError, setConfigActionError] = useState("");
+  const [invoiceReportMonth, setInvoiceReportMonth] = useState(
+    () => new Date(),
+  );
+  const [crmContext, setCrmContext] = useState(null);
+  const [crmContextError, setCrmContextError] = useState("");
   const salesLoadRequestIdRef = useRef(0);
-  const isHomeRoute = location.pathname.replace(/\/+$/, '') === '/app/showroom_point';
+  const isHomeRoute =
+    location.pathname.replace(/\/+$/, "") === "/app/showroom_point";
+  const crmLeadId = useMemo(
+    () => new URLSearchParams(location.search).get("leadId") || "",
+    [location.search],
+  );
+  const requestedSaleType = useMemo(
+    () => new URLSearchParams(location.search).get("saleType") || "",
+    [location.search],
+  );
+  const requestedSaleId = useMemo(
+    () => new URLSearchParams(location.search).get("saleId") || "",
+    [location.search],
+  );
+
+  useEffect(() => {
+    if (!tenant?.id || !crmLeadId) {
+      setCrmContext(null);
+      setCrmContextError("");
+      return;
+    }
+    crmService
+      .getLeadSaleContext({ tenantId: tenant.id, leadId: crmLeadId })
+      .then((context) => {
+        setCrmContext({ ...context, requested_sale_type: requestedSaleType });
+        setCrmContextError("");
+      })
+      .catch(() => {
+        setCrmContext(null);
+        setCrmContextError("تعذر تحميل بيانات العميل من CRM.");
+      });
+  }, [tenant?.id, crmLeadId, requestedSaleType]);
+
+  useEffect(() => {
+    if (!tenant?.id || !currentShowroomConfigId || !requestedSaleId) return;
+    const existing = sales.find((sale) => sale.id === requestedSaleId);
+    if (existing) {
+      setSelectedSale(existing);
+      return;
+    }
+    showroomService
+      .getSaleDetails({
+        tenantId: tenant.id,
+        saleId: requestedSaleId,
+        showroomConfigId: currentShowroomConfigId,
+      })
+      .then(setSelectedSale)
+      .catch(() => {});
+  }, [tenant?.id, currentShowroomConfigId, requestedSaleId, sales]);
 
   useEffect(() => {
     if (!isHomeRoute || isLoadingConfigs || activeConfigs.length !== 1) {
@@ -530,7 +744,7 @@ export function ShowroomSellPage() {
     }
 
     selectConfig(onlyConfig);
-    navigate('/app/showroom_point/new', { replace: true });
+    navigate("/app/showroom_point/new", { replace: true });
   }, [activeConfigs, isHomeRoute, isLoadingConfigs, navigate, selectConfig]);
 
   useEffect(() => {
@@ -540,16 +754,19 @@ export function ShowroomSellPage() {
     }
 
     let mounted = true;
-    showroomService.listConfigActivity({
-      tenantId: tenant.id,
-      configIds: configs.map((config) => config.id),
-    }).then((activityMap) => {
-      if (!mounted) return;
-      setConfigUsageById(activityMap || {});
-    }).catch(() => {
-      if (!mounted) return;
-      setConfigUsageById({});
-    });
+    showroomService
+      .listConfigActivity({
+        tenantId: tenant.id,
+        configIds: configs.map((config) => config.id),
+      })
+      .then((activityMap) => {
+        if (!mounted) return;
+        setConfigUsageById(activityMap || {});
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setConfigUsageById({});
+      });
 
     return () => {
       mounted = false;
@@ -567,13 +784,18 @@ export function ShowroomSellPage() {
     }
 
     setIsSalesLoading(true);
-    setSalesError('');
+    setSalesError("");
 
     try {
       const { from, to } = getMonthSalesRange(invoiceReportMonth);
       const salesQuery = {
         tenantId: tenant.id,
         showroomConfigId: currentShowroomConfigId,
+        crmLeadId: crmContext?.lead?.id || null,
+        crmInstallmentApplicationId:
+          sale.paymentType === "financing"
+            ? crmContext?.selected_approval?.id || null
+            : null,
         saleDateFrom: from,
         saleDateTo: to,
         limit: null,
@@ -586,17 +808,20 @@ export function ShowroomSellPage() {
       setSales(nextSales);
       setIsSalesLoading(false);
 
-      showroomService.getSales(salesQuery).then((enrichedSales) => {
-        if (salesLoadRequestIdRef.current !== requestId) return;
-        setSales(enrichedSales);
-      }).catch(() => {
-        // The summary is already visible. Optional accounting, paperwork, and
-        // product details can still be loaded when the user opens an invoice.
-      });
+      showroomService
+        .getSales(salesQuery)
+        .then((enrichedSales) => {
+          if (salesLoadRequestIdRef.current !== requestId) return;
+          setSales(enrichedSales);
+        })
+        .catch(() => {
+          // The summary is already visible. Optional accounting, paperwork, and
+          // product details can still be loaded when the user opens an invoice.
+        });
     } catch (error) {
       if (salesLoadRequestIdRef.current !== requestId) return;
       setSales([]);
-      setSalesError(error.message || 'تعذر تحميل عمليات البيع.');
+      setSalesError(error.message || "تعذر تحميل عمليات البيع.");
     } finally {
       if (salesLoadRequestIdRef.current !== requestId) return;
       setIsSalesLoading(false);
@@ -608,7 +833,7 @@ export function ShowroomSellPage() {
   }, [loadSales]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+    if (typeof window === "undefined") return undefined;
 
     let timeoutId = null;
     let idleId = null;
@@ -616,7 +841,7 @@ export function ShowroomSellPage() {
       loadPaperworkRequestPromptSheet().catch(() => {});
     };
 
-    if ('requestIdleCallback' in window) {
+    if ("requestIdleCallback" in window) {
       idleId = window.requestIdleCallback(preload, { timeout: 1600 });
     } else {
       timeoutId = window.setTimeout(preload, 700);
@@ -635,17 +860,25 @@ export function ShowroomSellPage() {
 
     const latestSale = sales[0] || null;
     if (
-      latestSale
-      && latestSale.status === 'confirmed'
-      && latestSale.id !== dismissedPaperworkPromptSaleId
-      && getSalePendingPaperworkLines(latestSale).length
+      latestSale &&
+      latestSale.status === "confirmed" &&
+      latestSale.id !== dismissedPaperworkPromptSaleId &&
+      getSalePendingPaperworkLines(latestSale).length
     ) {
       setPaperworkPromptSale(latestSale);
     }
-  }, [dismissedPaperworkPromptSaleId, isSalesLoading, paperworkPromptSale, sales]);
+  }, [
+    dismissedPaperworkPromptSaleId,
+    isSalesLoading,
+    paperworkPromptSale,
+    sales,
+  ]);
 
   const salesStats = useMemo(() => {
-    const total = sales.reduce((sum, sale) => sum + Number(sale.total_amount || sale.totalAmount || 0), 0);
+    const total = sales.reduce(
+      (sum, sale) => sum + Number(sale.total_amount || sale.totalAmount || 0),
+      0,
+    );
     return {
       count: sales.length,
       total,
@@ -654,14 +887,24 @@ export function ShowroomSellPage() {
 
   const handleSaleCreated = async (sale) => {
     if (!tenant?.id) {
-      return { ok: false, error: 'لا توجد شركة نشطة.' };
+      return { ok: false, error: "لا توجد شركة نشطة." };
     }
 
     if (!currentShowroomConfigId) {
-      return { ok: false, error: 'اختر نقطة معرض أولاً.' };
+      return { ok: false, error: "اختر نقطة معرض أولاً." };
     }
 
     try {
+      if (
+        crmContext?.lead &&
+        sale.paymentType === "financing" &&
+        !crmContext.selected_approval
+      ) {
+        return {
+          ok: false,
+          error: "اختر موافقة التقسيط من CRM قبل إتمام بيع التقسيط.",
+        };
+      }
       const savedSale = await showroomService.completePendingSale({
         tenantId: tenant.id,
         saleId: sale.pendingSaleId || null,
@@ -669,24 +912,36 @@ export function ShowroomSellPage() {
         cashNote: sale.cashNote,
         openCreditAllocations: sale.openCreditAllocations,
         showroomConfigId: currentShowroomConfigId,
+        crmLeadId: crmContext?.lead?.id || null,
+        crmInstallmentApplicationId:
+          sale.paymentType === "financing"
+            ? crmContext?.selected_approval?.id || null
+            : null,
       });
 
       salesLoadRequestIdRef.current += 1;
       setIsSalesLoading(false);
-      setSales((current) => [savedSale, ...current.filter((item) => item.id !== savedSale.id)]);
+      setSales((current) => [
+        savedSale,
+        ...current.filter((item) => item.id !== savedSale.id),
+      ]);
       setDismissedPaperworkPromptSaleId(null);
       if (getSalePendingPaperworkLines(savedSale).length) {
         setPaperworkPromptSale(savedSale);
       }
+      if (crmContext?.lead?.id) {
+        navigate(`/apps/crm/leads/${crmContext.lead.id}`);
+      }
       return { ok: true, sale: savedSale };
     } catch (error) {
-      return { ok: false, error: error.message || 'تعذر حفظ عملية البيع.' };
+      return { ok: false, error: error.message || "تعذر حفظ عملية البيع." };
     }
   };
 
   const handleSalePending = async (sale) => {
-    if (!tenant?.id) return { ok: false, error: 'لا توجد شركة نشطة.' };
-    if (!currentShowroomConfigId) return { ok: false, error: 'اختر نقطة معرض أولاً.' };
+    if (!tenant?.id) return { ok: false, error: "لا توجد شركة نشطة." };
+    if (!currentShowroomConfigId)
+      return { ok: false, error: "اختر نقطة معرض أولاً." };
     try {
       const pendingSale = await showroomService.savePendingSale({
         tenantId: tenant.id,
@@ -695,11 +950,22 @@ export function ShowroomSellPage() {
         items: sale.items,
         totalAmount: sale.totalAmount,
         showroomConfigId: currentShowroomConfigId,
+        crmLeadId: crmContext?.lead?.id || null,
+        crmInstallmentApplicationId:
+          sale.paymentType === "financing"
+            ? crmContext?.selected_approval?.id || null
+            : null,
       });
-      setSales((current) => [pendingSale, ...current.filter((item) => item.id !== pendingSale.id)]);
+      setSales((current) => [
+        pendingSale,
+        ...current.filter((item) => item.id !== pendingSale.id),
+      ]);
       return { ok: true, sale: pendingSale };
     } catch (error) {
-      return { ok: false, error: error.message || 'تعذر إنشاء الفاتورة المعلقة.' };
+      return {
+        ok: false,
+        error: error.message || "تعذر إنشاء الفاتورة المعلقة.",
+      };
     }
   };
 
@@ -708,28 +974,30 @@ export function ShowroomSellPage() {
     setSelectedSale(null);
   };
 
-  const handleSaleCancelled = useCallback(async (result) => {
-    const saleId = result?.sale_id;
-    if (!saleId) return;
+  const handleSaleCancelled = useCallback(
+    async (result) => {
+      const saleId = result?.sale_id;
+      if (!saleId) return;
 
-    const markCancelled = (targetSale) => (
-      targetSale?.id === saleId
-        ? {
-            ...targetSale,
-            status: 'cancelled',
-            accounting_paid_amount: 0,
-            accounting_remaining_amount: 0,
-          }
-        : targetSale
-    );
+      const markCancelled = (targetSale) =>
+        targetSale?.id === saleId
+          ? {
+              ...targetSale,
+              status: "cancelled",
+              accounting_paid_amount: 0,
+              accounting_remaining_amount: 0,
+            }
+          : targetSale;
 
-    setSales((current) => current.map(markCancelled));
-    setSelectedSale((current) => markCancelled(current));
-    await loadSales();
-  }, [loadSales]);
+      setSales((current) => current.map(markCancelled));
+      setSelectedSale((current) => markCancelled(current));
+      await loadSales();
+    },
+    [loadSales],
+  );
 
   const handlePendingSaleDelete = async (saleId) => {
-    if (!tenant?.id) return { ok: false, error: 'لا توجد شركة نشطة.' };
+    if (!tenant?.id) return { ok: false, error: "لا توجد شركة نشطة." };
     try {
       await showroomService.deletePendingSale({ tenantId: tenant.id, saleId });
       setSales((current) => current.filter((sale) => sale.id !== saleId));
@@ -737,12 +1005,15 @@ export function ShowroomSellPage() {
       setSelectedSale(null);
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error.message || 'تعذر حذف الفاتورة المعلقة.' };
+      return {
+        ok: false,
+        error: error.message || "تعذر حذف الفاتورة المعلقة.",
+      };
     }
   };
 
   const handleInvoiceSelect = useCallback((sale) => {
-    if (sale?.status === 'pending_payment') {
+    if (sale?.status === "pending_payment") {
       setSelectedSale(null);
       setSaleToResume(sale);
       return;
@@ -755,35 +1026,40 @@ export function ShowroomSellPage() {
     setSaleToResume(null);
   }, []);
 
-  const handlePaperworkPromptSaved = useCallback(({ saleId, saleLineId, paperworkRequest }) => {
-    if (!saleId || !saleLineId || !paperworkRequest?.id) return;
+  const handlePaperworkPromptSaved = useCallback(
+    ({ saleId, saleLineId, paperworkRequest }) => {
+      if (!saleId || !saleLineId || !paperworkRequest?.id) return;
 
-    const normalizeLine = (line) => (
-      line?.id === saleLineId
-        ? {
-            ...line,
-            paperworkRequest,
-            paperwork_request: paperworkRequest,
-          }
-        : line
-    );
+      const normalizeLine = (line) =>
+        line?.id === saleLineId
+          ? {
+              ...line,
+              paperworkRequest,
+              paperwork_request: paperworkRequest,
+            }
+          : line;
 
-    const normalizeSale = (sale) => (
-      sale?.id === saleId
-        ? {
-            ...sale,
-            lines: Array.isArray(sale.lines) ? sale.lines.map(normalizeLine) : sale.lines,
-          }
-        : sale
-    );
+      const normalizeSale = (sale) =>
+        sale?.id === saleId
+          ? {
+              ...sale,
+              lines: Array.isArray(sale.lines)
+                ? sale.lines.map(normalizeLine)
+                : sale.lines,
+            }
+          : sale;
 
-    setSales((current) => current.map(normalizeSale));
-    setSelectedSale((current) => normalizeSale(current));
-    setPaperworkPromptSale((current) => {
-      const nextSale = normalizeSale(current);
-      return nextSale && getSalePendingPaperworkLines(nextSale).length ? nextSale : null;
-    });
-  }, []);
+      setSales((current) => current.map(normalizeSale));
+      setSelectedSale((current) => normalizeSale(current));
+      setPaperworkPromptSale((current) => {
+        const nextSale = normalizeSale(current);
+        return nextSale && getSalePendingPaperworkLines(nextSale).length
+          ? nextSale
+          : null;
+      });
+    },
+    [],
+  );
 
   if (isHomeRoute) {
     return (
@@ -797,11 +1073,11 @@ export function ShowroomSellPage() {
           currentConfigId={currentShowroomConfigId}
           onBack={() => navigate(-1)}
           onCreateConfig={() => {
-            setConfigActionError('');
+            setConfigActionError("");
             setIsCreateConfigOpen(true);
           }}
           onEditConfig={(config) => {
-            setConfigActionError('');
+            setConfigActionError("");
             setEditingConfig(config);
             setIsCreateConfigOpen(true);
           }}
@@ -820,21 +1096,27 @@ export function ShowroomSellPage() {
                 selectConfig(null);
               }
 
-              setConfigActionError('');
+              setConfigActionError("");
               await reloadConfigs();
             } catch (error) {
-              setConfigActionError(error.message || 'تعذر تحديث حالة نقطة المعرض.');
+              setConfigActionError(
+                error.message || "تعذر تحديث حالة نقطة المعرض.",
+              );
             }
           }}
           onDeleteConfig={async (config) => {
             if (!tenant?.id) return;
 
             if (configUsageById[config.id]) {
-              setConfigActionError('لا يمكن حذف النقطة بعد تسجيل عمليات عليها. يمكنك تعطيلها فقط.');
+              setConfigActionError(
+                "لا يمكن حذف النقطة بعد تسجيل عمليات عليها. يمكنك تعطيلها فقط.",
+              );
               return;
             }
 
-            const isConfirmed = window.confirm(`هل أنت متأكد من حذف نقطة المعرض "${config.name || 'بدون اسم'}" نهائياً؟`);
+            const isConfirmed = window.confirm(
+              `هل أنت متأكد من حذف نقطة المعرض "${config.name || "بدون اسم"}" نهائياً؟`,
+            );
             if (!isConfirmed) {
               return;
             }
@@ -849,16 +1131,16 @@ export function ShowroomSellPage() {
                 selectConfig(null);
               }
 
-              setConfigActionError('');
+              setConfigActionError("");
               await reloadConfigs();
             } catch (error) {
-              setConfigActionError(error.message || 'تعذر حذف نقطة المعرض.');
+              setConfigActionError(error.message || "تعذر حذف نقطة المعرض.");
             }
           }}
           onOpenConfig={(config) => {
-            setConfigActionError('');
+            setConfigActionError("");
             selectConfig(config);
-            navigate('/app/showroom_point/new');
+            navigate("/app/showroom_point/new");
           }}
         />
         <ShowroomConfigSheet
@@ -913,10 +1195,7 @@ export function ShowroomSellPage() {
     }
 
     return (
-      <ShowroomConfigChooser
-        configs={activeConfigs}
-        onSelect={selectConfig}
-      />
+      <ShowroomConfigChooser configs={activeConfigs} onSelect={selectConfig} />
     );
   }
 
@@ -944,9 +1223,18 @@ export function ShowroomSellPage() {
       `}</style>
       <div className="pointer-events-none absolute inset-0 opacity-55 [background-image:radial-gradient(rgba(255,255,255,0.28)_1px,transparent_1px)] [background-size:18px_18px]" />
       <div className="showroom-backdrop-in pointer-events-none absolute -right-24 top-20 h-56 w-[42rem] -rotate-12 rounded-[32px] bg-white/12" />
-      <div className="showroom-backdrop-in pointer-events-none absolute -left-28 top-36 h-44 w-[34rem] rotate-12 rounded-[32px] bg-[#f4c8cf]/18" style={{ animationDelay: '0.03s' }} />
-      <div className="showroom-backdrop-in pointer-events-none absolute bottom-[-4rem] right-12 h-36 w-[34rem] -rotate-6 rounded-[28px] bg-white/10" style={{ animationDelay: '0.06s' }} />
-      <div className="showroom-backdrop-in pointer-events-none absolute left-10 top-12 hidden h-28 w-44 rounded-[22px] border border-white/30 bg-white/10 backdrop-blur-sm md:block" style={{ animationDelay: '0.08s' }} />
+      <div
+        className="showroom-backdrop-in pointer-events-none absolute -left-28 top-36 h-44 w-[34rem] rotate-12 rounded-[32px] bg-[#f4c8cf]/18"
+        style={{ animationDelay: "0.03s" }}
+      />
+      <div
+        className="showroom-backdrop-in pointer-events-none absolute bottom-[-4rem] right-12 h-36 w-[34rem] -rotate-6 rounded-[28px] bg-white/10"
+        style={{ animationDelay: "0.06s" }}
+      />
+      <div
+        className="showroom-backdrop-in pointer-events-none absolute left-10 top-12 hidden h-28 w-44 rounded-[22px] border border-white/30 bg-white/10 backdrop-blur-sm md:block"
+        style={{ animationDelay: "0.08s" }}
+      />
       <div className="pointer-events-none absolute left-16 top-20 hidden h-2.5 w-12 rounded-full bg-[#f0a6b0] md:block" />
       <div className="pointer-events-none absolute left-16 top-32 hidden grid-cols-2 gap-3 md:grid">
         <span className="h-12 w-16 rounded-xl border border-white/24 bg-white/10" />
@@ -969,21 +1257,32 @@ export function ShowroomSellPage() {
             </button>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl font-black leading-tight text-white sm:text-2xl">نقطة المعرض</h1>
-                <span className="rounded-full bg-white/12 px-2 py-0.5 text-[10px] font-black text-white/80 backdrop-blur">Live Workspace</span>
+                <h1 className="text-xl font-black leading-tight text-white sm:text-2xl">
+                  نقطة المعرض
+                </h1>
+                <span className="rounded-full bg-white/12 px-2 py-0.5 text-[10px] font-black text-white/80 backdrop-blur">
+                  Live Workspace
+                </span>
               </div>
-              <p className="hidden text-[11px] font-semibold text-white/70 sm:block">واجهة بيع احترافية بترتيب واضح ومظهر مؤسسي هادئ</p>
+              <p className="hidden text-[11px] font-semibold text-white/70 sm:block">
+                واجهة بيع احترافية بترتيب واضح ومظهر مؤسسي هادئ
+              </p>
             </div>
           </div>
           <div className="flex w-full items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-3 py-1.5 backdrop-blur sm:w-auto sm:min-w-[17rem]">
             <Store className="h-4 w-4 shrink-0 text-white/80" />
             <div className="min-w-0 flex-1">
-              <label htmlFor="showroom-config" className="sr-only">نقطة المعرض</label>
+              <label htmlFor="showroom-config" className="sr-only">
+                نقطة المعرض
+              </label>
               <select
                 id="showroom-config"
                 value={currentShowroomConfigId}
                 onChange={(event) => {
-                  const nextConfig = activeConfigs.find((config) => config.id === event.target.value) ?? null;
+                  const nextConfig =
+                    activeConfigs.find(
+                      (config) => config.id === event.target.value,
+                    ) ?? null;
                   selectConfig(nextConfig);
                 }}
                 disabled={isLoadingConfigs || activeConfigs.length < 2}
@@ -991,7 +1290,7 @@ export function ShowroomSellPage() {
               >
                 {activeConfigs.map((config) => (
                   <option key={config.id} value={config.id}>
-                    {config.name || config.code || 'نقطة معرض'}
+                    {config.name || config.code || "نقطة معرض"}
                   </option>
                 ))}
               </select>
@@ -1016,6 +1315,16 @@ export function ShowroomSellPage() {
             {configsError}
           </div>
         ) : null}
+        {crmContextError ? (
+          <div className="mb-4 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-black text-red-600">
+            {crmContextError}
+          </div>
+        ) : null}
+        {crmContext?.lead ? (
+          <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-800">
+            عملية البيع مرتبطة بعميل CRM: {crmContext.lead.customer_name}
+          </div>
+        ) : null}
 
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_390px] xl:gap-7">
           <div className="showroom-panel-in overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_28px_60px_-34px_rgba(15,23,42,0.18)] xl:col-start-1">
@@ -1026,9 +1335,13 @@ export function ShowroomSellPage() {
               resumeSale={saleToResume}
               onResumeHandled={handleResumeHandled}
               showroomConfig={currentShowroomConfig}
+              crmContext={crmContext}
             />
           </div>
-          <div className="showroom-panel-in overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_28px_60px_-34px_rgba(15,23,42,0.18)] xl:col-start-2" style={{ animationDelay: '0.04s' }}>
+          <div
+            className="showroom-panel-in overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_28px_60px_-34px_rgba(15,23,42,0.18)] xl:col-start-2"
+            style={{ animationDelay: "0.04s" }}
+          >
             <ShowroomInvoicesCard
               invoices={sales}
               stats={salesStats}
@@ -1038,7 +1351,10 @@ export function ShowroomSellPage() {
               error={salesError}
               onInvoiceSelect={handleInvoiceSelect}
               onPaperworkRequestSelect={(saleToUpdate) => {
-                if (saleToUpdate && getSalePendingPaperworkLines(saleToUpdate).length) {
+                if (
+                  saleToUpdate &&
+                  getSalePendingPaperworkLines(saleToUpdate).length
+                ) {
                   setDismissedPaperworkPromptSaleId(null);
                   setPaperworkPromptSale(saleToUpdate);
                 }
@@ -1054,7 +1370,10 @@ export function ShowroomSellPage() {
         onDeleted={handleSaleDeleted}
         onCancelled={handleSaleCancelled}
         onPaperworkRequestOpen={(saleToUpdate) => {
-          if (saleToUpdate && getSalePendingPaperworkLines(saleToUpdate).length) {
+          if (
+            saleToUpdate &&
+            getSalePendingPaperworkLines(saleToUpdate).length
+          ) {
             setDismissedPaperworkPromptSaleId(null);
             setSelectedSale(null);
             setPaperworkPromptSale(saleToUpdate);
@@ -1068,9 +1387,11 @@ export function ShowroomSellPage() {
             sale={paperworkPromptSale}
             onOpenChange={(open) => {
               if (open) return;
-              setPaperworkPromptSale((current) => (
-                current && getSalePendingPaperworkLines(current).length ? current : null
-              ));
+              setPaperworkPromptSale((current) =>
+                current && getSalePendingPaperworkLines(current).length
+                  ? current
+                  : null,
+              );
             }}
             onSaved={handlePaperworkPromptSaved}
             onIgnored={(ignoredSale) => {
