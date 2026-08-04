@@ -791,11 +791,6 @@ export function ShowroomSellPage() {
       const salesQuery = {
         tenantId: tenant.id,
         showroomConfigId: currentShowroomConfigId,
-        crmLeadId: crmContext?.lead?.id || null,
-        crmInstallmentApplicationId:
-          sale.paymentType === "financing"
-            ? crmContext?.selected_approval?.id || null
-            : null,
         saleDateFrom: from,
         saleDateTo: to,
         limit: null,
