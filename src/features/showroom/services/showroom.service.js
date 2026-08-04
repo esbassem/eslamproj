@@ -1,8 +1,8 @@
-import { requireSupabase } from '@/core/lib/supabase';
-import { invokePaperworkNotification } from '@/core/notifications/paperworkNotifications';
-import { resolveCurrentTenantUserId } from '@/features/workspace/api/currentTenantUser.api';
+import { requireSupabase } from "@/core/lib/supabase";
+import { invokePaperworkNotification } from "@/core/notifications/paperworkNotifications";
+import { resolveCurrentTenantUserId } from "@/features/workspace/api/currentTenantUser.api";
 
-const TENANT_FILES_BUCKET = 'tenant-files';
+const TENANT_FILES_BUCKET = "tenant-files";
 const SIGNED_URL_EXPIRES_IN = 60 * 60;
 
 const SALE_SELECT = `
@@ -19,10 +19,13 @@ const SALE_SELECT = `
   account_move_id,
   created_by,
   created_at,
-  updated_at
+  updated_at,
+  crm_lead_id,
+  crm_installment_application_id
 `;
 
-const SHOWROOM_CONFIG_COLUMNS = 'id, tenant_id, branch_id, name, code, is_active, journal_id';
+const SHOWROOM_CONFIG_COLUMNS =
+  "id, tenant_id, branch_id, name, code, is_active, journal_id";
 
 function todayISODate() {
   return new Date().toISOString().slice(0, 10);
@@ -49,88 +52,120 @@ async function fetchAllPages(buildQuery, pageSize = 500) {
 }
 
 function getFileExtension(file) {
-  const nameExtension = String(file?.name || '').split('.').pop();
-  const mimeExtension = String(file?.type || '').split('/').pop();
-  return (nameExtension && nameExtension !== file?.name ? nameExtension : mimeExtension || 'jpg')
-    .replace(/[^a-z0-9]/gi, '')
-    .toLowerCase() || 'jpg';
+  const nameExtension = String(file?.name || "")
+    .split(".")
+    .pop();
+  const mimeExtension = String(file?.type || "")
+    .split("/")
+    .pop();
+  return (
+    (nameExtension && nameExtension !== file?.name
+      ? nameExtension
+      : mimeExtension || "jpg"
+    )
+      .replace(/[^a-z0-9]/gi, "")
+      .toLowerCase() || "jpg"
+  );
 }
 
 function assertTrackingUnitImage(file) {
   if (!file) return;
-  if (!file.type?.startsWith('image/')) {
-    throw new Error('يمكن رفع صور فقط لصورة الشاسيه أو الموتور.');
+  if (!file.type?.startsWith("image/")) {
+    throw new Error("يمكن رفع صور فقط لصورة الشاسيه أو الموتور.");
   }
 }
 
 function assertPaperworkRequestImage(file) {
   if (!file) return;
-  if (!file.type?.startsWith('image/')) {
-    throw new Error('يمكن رفع صور فقط لمرفقات طلب الأوراق.');
+  if (!file.type?.startsWith("image/")) {
+    throw new Error("يمكن رفع صور فقط لمرفقات طلب الأوراق.");
   }
 }
 
 function normalizeStoragePath(value) {
-  return String(value || '')
+  return String(value || "")
     .trim()
-    .replace(/^\/+/, '')
-    .replace(/^tenant-files\//, '');
+    .replace(/^\/+/, "")
+    .replace(/^tenant-files\//, "");
 }
 
 async function buildTrackingAttachmentWithUrl(client, row) {
   const bucket = row.bucket_name || row.bucket || TENANT_FILES_BUCKET;
-  const path = row.file_path || row.path || '';
+  const path = row.file_path || row.path || "";
   const { data } = path
-    ? await client.storage.from(bucket).createSignedUrl(path, SIGNED_URL_EXPIRES_IN)
+    ? await client.storage
+        .from(bucket)
+        .createSignedUrl(path, SIGNED_URL_EXPIRES_IN)
     : { data: null };
 
   return {
     id: row.id || null,
     trackingUnitId: row.related_id || row.trackingUnitId || null,
-    documentType: row.document_type || row.documentType || '',
+    documentType: row.document_type || row.documentType || "",
     bucket,
     path,
-    name: row.original_file_name || row.name || '',
-    mimeType: row.mime_type || row.mimeType || '',
+    name: row.original_file_name || row.name || "",
+    mimeType: row.mime_type || row.mimeType || "",
     size: row.file_size || row.size || null,
     createdAt: row.created_at || row.createdAt || null,
-    signedUrl: data?.signedUrl || row.signedUrl || '',
+    signedUrl: data?.signedUrl || row.signedUrl || "",
   };
 }
 
 function normalizeConfigCode(value) {
-  return String(value ?? '').trim().toUpperCase();
+  return String(value ?? "")
+    .trim()
+    .toUpperCase();
 }
 
 function requireTenantId(tenantId) {
   if (!tenantId) {
-    throw new Error('لا توجد شركة نشطة.');
+    throw new Error("لا توجد شركة نشطة.");
   }
 }
 
 function requireShowroomConfigId(showroomConfigId) {
   if (!showroomConfigId) {
-    throw new Error('اختر نقطة معرض أولاً.');
+    throw new Error("اختر نقطة معرض أولاً.");
   }
 }
 
-function buildConfigPayload({ tenantId, branchId, branch_id, name, code, isActive, is_active, journalId, journal_id } = {}) {
+function buildConfigPayload({
+  tenantId,
+  branchId,
+  branch_id,
+  name,
+  code,
+  isActive,
+  is_active,
+  journalId,
+  journal_id,
+} = {}) {
   const payload = {};
 
   if (tenantId) payload.tenant_id = tenantId;
-  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'branchId') || Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'branch_id')) {
+  if (
+    Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, "branchId") ||
+    Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, "branch_id")
+  ) {
     payload.branch_id = branchId ?? branch_id ?? null;
   }
-  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'name')) {
-    payload.name = String(name ?? '').trim();
+  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, "name")) {
+    payload.name = String(name ?? "").trim();
   }
-  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'code')) {
+  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, "code")) {
     payload.code = normalizeConfigCode(code);
   }
-  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'isActive') || Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'is_active')) {
+  if (
+    Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, "isActive") ||
+    Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, "is_active")
+  ) {
     payload.is_active = Boolean(isActive ?? is_active);
   }
-  if (Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'journalId') || Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, 'journal_id')) {
+  if (
+    Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, "journalId") ||
+    Object.prototype.hasOwnProperty.call(arguments[0] ?? {}, "journal_id")
+  ) {
     payload.journal_id = journalId ?? journal_id ?? null;
   }
 
@@ -142,42 +177,57 @@ async function ensureConfigCodeUnique(client, tenantId, code, excludeId) {
   if (!normalizedCode) return;
 
   let query = client
-    .from('showroom_configs')
-    .select('id')
-    .eq('tenant_id', tenantId)
-    .eq('code', normalizedCode)
+    .from("showroom_configs")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("code", normalizedCode)
     .limit(1);
 
   if (excludeId) {
-    query = query.neq('id', excludeId);
+    query = query.neq("id", excludeId);
   }
 
   const { data, error } = await query;
   if (error) throw error;
   if ((data || []).length) {
-    throw new Error('كود نقطة المعرض مستخدم بالفعل داخل نفس الشركة.');
+    throw new Error("كود نقطة المعرض مستخدم بالفعل داخل نفس الشركة.");
   }
 }
 
 function getProductProductId(item) {
-  const explicitProductId = item?.productProductId ?? item?.product_product_id ?? item?.productVariantId ?? item?.variantId ?? null;
+  const explicitProductId =
+    item?.productProductId ??
+    item?.product_product_id ??
+    item?.productVariantId ??
+    item?.variantId ??
+    null;
   if (explicitProductId) return explicitProductId;
 
   return item?.id ?? null;
 }
 
 function isUuid(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value ?? ''));
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value ?? ""),
+  );
 }
 
 function getLineAttributes(item) {
-  const attributes = Array.isArray(item?.configuredAttributes) ? item.configuredAttributes : [];
+  const attributes = Array.isArray(item?.configuredAttributes)
+    ? item.configuredAttributes
+    : [];
 
   return attributes
     .map((attribute) => {
-      const attributeId = attribute?.attributeId ?? attribute?.attribute_id ?? attribute?.key ?? null;
-      const attributeValueId = attribute?.valueId ?? attribute?.value_id ?? null;
-      const valueText = attribute?.value ?? attribute?.valueText ?? attribute?.value_text ?? '';
+      const attributeId =
+        attribute?.attributeId ??
+        attribute?.attribute_id ??
+        attribute?.key ??
+        null;
+      const attributeValueId =
+        attribute?.valueId ?? attribute?.value_id ?? null;
+      const valueText =
+        attribute?.value ?? attribute?.valueText ?? attribute?.value_text ?? "";
 
       if (!isUuid(attributeId)) {
         return null;
@@ -186,7 +236,9 @@ function getLineAttributes(item) {
       return {
         attributeId,
         attributeValueId: isUuid(attributeValueId) ? attributeValueId : null,
-        valueText: isUuid(attributeValueId) ? null : String(valueText || '').trim() || null,
+        valueText: isUuid(attributeValueId)
+          ? null
+          : String(valueText || "").trim() || null,
       };
     })
     .filter(Boolean)
@@ -194,17 +246,31 @@ function getLineAttributes(item) {
 }
 
 function getLineTrackingIdentifiers(item) {
-  const identifiers = Array.isArray(item?.trackingIdentifiers) ? item.trackingIdentifiers : [];
+  const identifiers = Array.isArray(item?.trackingIdentifiers)
+    ? item.trackingIdentifiers
+    : [];
 
   return identifiers
     .map((identifier) => ({
-      identifierTypeId: identifier?.identifierTypeId ?? identifier?.identifier_type_id ?? null,
-      label: identifier?.label ?? identifier?.name ?? 'تعريف تتبع',
+      identifierTypeId:
+        identifier?.identifierTypeId ?? identifier?.identifier_type_id ?? null,
+      label: identifier?.label ?? identifier?.name ?? "تعريف تتبع",
       code: identifier?.code ?? null,
-      value: String(identifier?.value ?? identifier?.valueText ?? identifier?.value_text ?? '').trim(),
-      isNotAvailable: Boolean(identifier?.isNotAvailable ?? identifier?.is_not_available),
+      value: String(
+        identifier?.value ??
+          identifier?.valueText ??
+          identifier?.value_text ??
+          "",
+      ).trim(),
+      isNotAvailable: Boolean(
+        identifier?.isNotAvailable ?? identifier?.is_not_available,
+      ),
     }))
-    .filter((identifier) => isUuid(identifier.identifierTypeId) && (identifier.value || identifier.isNotAvailable));
+    .filter(
+      (identifier) =>
+        isUuid(identifier.identifierTypeId) &&
+        (identifier.value || identifier.isNotAvailable),
+    );
 }
 
 function getLineLicense(item) {
@@ -213,111 +279,154 @@ function getLineLicense(item) {
   }
 
   const license = item?.license ?? {};
-  const status = license.status || license.licenseStatus || license.license_status || '';
-  const number = String(license.number ?? license.licenseNumber ?? license.license_number ?? '').trim();
-  const expiresAt = license.expiresAt || license.licenseExpiresAt || license.license_expires_at || null;
+  const status =
+    license.status || license.licenseStatus || license.license_status || "";
+  const number = String(
+    license.number ?? license.licenseNumber ?? license.license_number ?? "",
+  ).trim();
+  const expiresAt =
+    license.expiresAt ||
+    license.licenseExpiresAt ||
+    license.license_expires_at ||
+    null;
 
   if (!status) {
-    throw new Error('حالة الترخيص مطلوبة.');
+    throw new Error("حالة الترخيص مطلوبة.");
   }
 
-  if (status === 'licensed' && !number) {
+  if (status === "licensed" && !number) {
     throw new Error('رقم الترخيص مطلوب عندما تكون حالة الترخيص "مرخص".');
   }
 
-  if (status === 'licensed' && !expiresAt) {
-    throw new Error('تاريخ انتهاء الترخيص مطلوب عندما تكون حالة الترخيص "مرخص".');
+  if (status === "licensed" && !expiresAt) {
+    throw new Error(
+      'تاريخ انتهاء الترخيص مطلوب عندما تكون حالة الترخيص "مرخص".',
+    );
   }
 
   return {
     license_status: status,
     license_number: number || null,
-    license_issued_at: license.issuedAt || license.licenseIssuedAt || license.license_issued_at || null,
+    license_issued_at:
+      license.issuedAt ||
+      license.licenseIssuedAt ||
+      license.license_issued_at ||
+      null,
     license_expires_at: expiresAt,
-    issuing_authority: String(license.issuingAuthority ?? license.issuing_authority ?? '').trim() || null,
-    notes: String(license.notes ?? '').trim() || null,
+    issuing_authority:
+      String(
+        license.issuingAuthority ?? license.issuing_authority ?? "",
+      ).trim() || null,
+    notes: String(license.notes ?? "").trim() || null,
   };
 }
 
-function getTrackingNumber(item, trackingIdentifiers = getLineTrackingIdentifiers(item)) {
-  const explicitSerial = String(item?.serialNumber ?? item?.serial_number ?? '').trim();
+function getTrackingNumber(
+  item,
+  trackingIdentifiers = getLineTrackingIdentifiers(item),
+) {
+  const explicitSerial = String(
+    item?.serialNumber ?? item?.serial_number ?? "",
+  ).trim();
   if (explicitSerial) return explicitSerial;
-  return trackingIdentifiers.map((identifier) => identifier.value).filter(Boolean).join(' - ');
+  return trackingIdentifiers
+    .map((identifier) => identifier.value)
+    .filter(Boolean)
+    .join(" - ");
 }
 
-async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId, saleId, userId, targetStatus = 'sold' }) {
-  if ((item?.tracking ?? item?.tracking_type) !== 'serial') {
+async function ensureSaleTrackingUnit(
+  client,
+  { tenantId, item, productProductId, saleId, userId, targetStatus = "sold" },
+) {
+  if ((item?.tracking ?? item?.tracking_type) !== "serial") {
     return null;
   }
 
   const trackingIdentifiers = getLineTrackingIdentifiers(item);
   const trackingNumber = getTrackingNumber(item, trackingIdentifiers);
 
-  if (!trackingNumber && !trackingIdentifiers.some((identifier) => identifier.isNotAvailable)) {
+  if (
+    !trackingNumber &&
+    !trackingIdentifiers.some((identifier) => identifier.isNotAvailable)
+  ) {
     return null;
   }
-  const safeTrackingNumber = trackingNumber || `NA-${saleId}-${productProductId}-${String(item?.lineId || Date.now()).replace(/[^a-zA-Z0-9-]/g, '')}`;
+  const safeTrackingNumber =
+    trackingNumber ||
+    `NA-${saleId}-${productProductId}-${String(item?.lineId || Date.now()).replace(/[^a-zA-Z0-9-]/g, "")}`;
 
   const { data: conflictingUnit, error: conflictingError } = await client
-    .from('stock_tracking_units')
-    .select('id, data_status, product_product_id')
-    .eq('tenant_id', tenantId)
-    .eq('tracking_number', safeTrackingNumber)
+    .from("stock_tracking_units")
+    .select("id, data_status, product_product_id")
+    .eq("tenant_id", tenantId)
+    .eq("tracking_number", safeTrackingNumber)
     .maybeSingle();
   if (conflictingError) throw conflictingError;
-  if (conflictingUnit && (conflictingUnit.data_status !== 'complete' || !conflictingUnit.product_product_id)) {
-    throw new Error(`لا يمكن بيع الوحدة "${safeTrackingNumber}" قبل استكمال بيانات المنتج.`);
+  if (
+    conflictingUnit &&
+    (conflictingUnit.data_status !== "complete" ||
+      !conflictingUnit.product_product_id)
+  ) {
+    throw new Error(
+      `لا يمكن بيع الوحدة "${safeTrackingNumber}" قبل استكمال بيانات المنتج.`,
+    );
   }
 
   const { data: existingUnits, error: existingError } = await client
-    .from('stock_tracking_units')
-    .select('id, status, notes, data_status')
-    .eq('tenant_id', tenantId)
-    .eq('product_product_id', productProductId)
-    .eq('tracking_number', safeTrackingNumber)
-    .eq('data_status', 'complete')
+    .from("stock_tracking_units")
+    .select("id, status, notes, data_status")
+    .eq("tenant_id", tenantId)
+    .eq("product_product_id", productProductId)
+    .eq("tracking_number", safeTrackingNumber)
+    .eq("data_status", "complete")
     .limit(1);
 
   if (existingError) throw existingError;
 
   let trackingUnit = existingUnits?.[0] ?? null;
 
-  if (trackingUnit?.status === 'sold') {
+  if (trackingUnit?.status === "sold") {
     throw new Error(`الوحدة "${safeTrackingNumber}" تم بيعها من قبل.`);
   }
 
-  if (trackingUnit?.status === 'reserved' && trackingUnit?.notes !== `showroom_sale:${saleId}`) {
+  if (
+    trackingUnit?.status === "reserved" &&
+    trackingUnit?.notes !== `showroom_sale:${saleId}`
+  ) {
     throw new Error(`الوحدة "${safeTrackingNumber}" محجوزة في فاتورة أخرى.`);
   }
 
   if (trackingUnit) {
     const { data: updatedUnit, error: updateError } = await client
-      .from('stock_tracking_units')
+      .from("stock_tracking_units")
       .update({
         status: targetStatus,
-        data_status: 'complete',
+        data_status: "complete",
         incomplete_reason: null,
         notes: `showroom_sale:${saleId}`,
       })
-      .eq('tenant_id', tenantId)
-      .eq('id', trackingUnit.id)
-      .select('id, status')
+      .eq("tenant_id", tenantId)
+      .eq("id", trackingUnit.id)
+      .select("id, status")
       .single();
 
     if (updateError) throw updateError;
     trackingUnit = updatedUnit;
   } else {
     const { data: createdUnit, error: createError } = await client
-      .from('stock_tracking_units')
-      .insert([{
-        tenant_id: tenantId,
-        product_product_id: productProductId,
-        tracking_number: safeTrackingNumber,
-        tracking_type: 'serial',
-        status: targetStatus,
-        notes: `showroom_sale:${saleId}`,
-      }])
-      .select('id, status')
+      .from("stock_tracking_units")
+      .insert([
+        {
+          tenant_id: tenantId,
+          product_product_id: productProductId,
+          tracking_number: safeTrackingNumber,
+          tracking_type: "serial",
+          status: targetStatus,
+          notes: `showroom_sale:${saleId}`,
+        },
+      ])
+      .select("id, status")
       .single();
 
     if (createError) throw createError;
@@ -325,18 +434,28 @@ async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId
   }
 
   if (trackingIdentifiers.length) {
-    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId, tenantUserId: userId });
-    const { data: existingIdentifiers, error: identifiersFetchError } = await client
-      .from('stock_tracking_unit_identifiers')
-      .select('identifier_type_id')
-      .eq('tenant_id', tenantId)
-      .eq('tracking_unit_id', trackingUnit.id);
+    const currentTenantUserId = await resolveCurrentTenantUserId(client, {
+      tenantId,
+      tenantUserId: userId,
+    });
+    const { data: existingIdentifiers, error: identifiersFetchError } =
+      await client
+        .from("stock_tracking_unit_identifiers")
+        .select("identifier_type_id")
+        .eq("tenant_id", tenantId)
+        .eq("tracking_unit_id", trackingUnit.id);
 
     if (identifiersFetchError) throw identifiersFetchError;
 
-    const existingIdentifierIds = new Set((existingIdentifiers || []).map((identifier) => identifier.identifier_type_id));
+    const existingIdentifierIds = new Set(
+      (existingIdentifiers || []).map(
+        (identifier) => identifier.identifier_type_id,
+      ),
+    );
     const identifierRows = trackingIdentifiers
-      .filter((identifier) => !existingIdentifierIds.has(identifier.identifierTypeId))
+      .filter(
+        (identifier) => !existingIdentifierIds.has(identifier.identifierTypeId),
+      )
       .map((identifier) => ({
         tenant_id: tenantId,
         tracking_unit_id: trackingUnit.id,
@@ -348,12 +467,12 @@ async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId
 
     if (identifierRows.length) {
       const { error: identifiersInsertError } = await client
-        .from('stock_tracking_unit_identifiers')
+        .from("stock_tracking_unit_identifiers")
         .insert(identifierRows);
 
       if (identifiersInsertError) {
-        if (identifiersInsertError.code === '23505') {
-          throw new Error('هذه القيمة مستخدمة بالفعل في وحدة أخرى.');
+        if (identifiersInsertError.code === "23505") {
+          throw new Error("هذه القيمة مستخدمة بالفعل في وحدة أخرى.");
         }
         throw identifiersInsertError;
       }
@@ -363,41 +482,59 @@ async function ensureSaleTrackingUnit(client, { tenantId, item, productProductId
   return trackingUnit.id;
 }
 
-async function saveTrackingUnitLicense(client, { tenantId, item, trackingUnitId, userId }) {
+async function saveTrackingUnitLicense(
+  client,
+  { tenantId, item, trackingUnitId, userId },
+) {
   const license = getLineLicense(item);
   if (!license) return;
 
   if (!trackingUnitId) {
-    throw new Error('لا يمكن حفظ الترخيص بدون وحدة تتبع مرتبطة بالمنتج.');
+    throw new Error("لا يمكن حفظ الترخيص بدون وحدة تتبع مرتبطة بالمنتج.");
   }
 
-  const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId, tenantUserId: userId });
+  const currentTenantUserId = await resolveCurrentTenantUserId(client, {
+    tenantId,
+    tenantUserId: userId,
+  });
 
   const { data: currentLicense, error: currentLicenseError } = await client
-    .from('stock_tracking_unit_licenses')
-    .select('license_status, license_number, license_issued_at, license_expires_at, issuing_authority, notes')
-    .eq('tenant_id', tenantId)
-    .eq('tracking_unit_id', trackingUnitId)
-    .eq('is_current', true)
+    .from("stock_tracking_unit_licenses")
+    .select(
+      "license_status, license_number, license_issued_at, license_expires_at, issuing_authority, notes",
+    )
+    .eq("tenant_id", tenantId)
+    .eq("tracking_unit_id", trackingUnitId)
+    .eq("is_current", true)
     .maybeSingle();
   if (currentLicenseError) throw currentLicenseError;
-  if (currentLicense && [
-    'license_status', 'license_number', 'license_issued_at', 'license_expires_at', 'issuing_authority', 'notes',
-  ].every((key) => String(currentLicense[key] ?? '') === String(license[key] ?? ''))) {
+  if (
+    currentLicense &&
+    [
+      "license_status",
+      "license_number",
+      "license_issued_at",
+      "license_expires_at",
+      "issuing_authority",
+      "notes",
+    ].every(
+      (key) => String(currentLicense[key] ?? "") === String(license[key] ?? ""),
+    )
+  ) {
     return;
   }
 
   const { error: updateError } = await client
-    .from('stock_tracking_unit_licenses')
+    .from("stock_tracking_unit_licenses")
     .update({ is_current: false, updated_at: new Date().toISOString() })
-    .eq('tenant_id', tenantId)
-    .eq('tracking_unit_id', trackingUnitId)
-    .eq('is_current', true);
+    .eq("tenant_id", tenantId)
+    .eq("tracking_unit_id", trackingUnitId)
+    .eq("is_current", true);
 
   if (updateError) throw updateError;
 
   const { error: insertError } = await client
-    .from('stock_tracking_unit_licenses')
+    .from("stock_tracking_unit_licenses")
     .insert({
       tenant_id: tenantId,
       tracking_unit_id: trackingUnitId,
@@ -407,8 +544,8 @@ async function saveTrackingUnitLicense(client, { tenantId, item, trackingUnitId,
     });
 
   if (insertError) {
-    if (insertError.code === '23505') {
-      throw new Error('رقم الترخيص مستخدم بالفعل داخل نفس الشركة.');
+    if (insertError.code === "23505") {
+      throw new Error("رقم الترخيص مستخدم بالفعل داخل نفس الشركة.");
     }
     throw insertError;
   }
@@ -440,45 +577,66 @@ async function attachLineAttributes(client, tenantId, lines) {
   }
 
   const { data: attributeRows, error } = await client
-    .from('transaction_line_attributes')
-    .select('id, transaction_line_id, attribute_id, attribute_value_id, value_text')
-    .eq('tenant_id', tenantId)
-    .in('transaction_line_id', lineIds);
+    .from("transaction_line_attributes")
+    .select(
+      "id, transaction_line_id, attribute_id, attribute_value_id, value_text",
+    )
+    .eq("tenant_id", tenantId)
+    .in("transaction_line_id", lineIds);
 
   if (error) throw error;
 
   const rows = attributeRows || [];
-  const attributeIds = [...new Set(rows.map((row) => row.attribute_id).filter(Boolean))];
-  const valueIds = [...new Set(rows.map((row) => row.attribute_value_id).filter(Boolean))];
+  const attributeIds = [
+    ...new Set(rows.map((row) => row.attribute_id).filter(Boolean)),
+  ];
+  const valueIds = [
+    ...new Set(rows.map((row) => row.attribute_value_id).filter(Boolean)),
+  ];
 
-  const [{ data: attributes, error: attributesError }, { data: values, error: valuesError }] = await Promise.all([
+  const [
+    { data: attributes, error: attributesError },
+    { data: values, error: valuesError },
+  ] = await Promise.all([
     attributeIds.length
-      ? client.from('product_attributes').select('id, name').eq('tenant_id', tenantId).in('id', attributeIds)
+      ? client
+          .from("product_attributes")
+          .select("id, name")
+          .eq("tenant_id", tenantId)
+          .in("id", attributeIds)
       : Promise.resolve({ data: [], error: null }),
     valueIds.length
-      ? client.from('product_attribute_values').select('id, name').eq('tenant_id', tenantId).in('id', valueIds)
+      ? client
+          .from("product_attribute_values")
+          .select("id, name")
+          .eq("tenant_id", tenantId)
+          .in("id", valueIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
   if (attributesError) throw attributesError;
   if (valuesError) throw valuesError;
 
-  const attributesById = new Map((attributes || []).map((attribute) => [attribute.id, attribute]));
+  const attributesById = new Map(
+    (attributes || []).map((attribute) => [attribute.id, attribute]),
+  );
   const valuesById = new Map((values || []).map((value) => [value.id, value]));
   const lineAttributesByLineId = new Map();
 
   rows.forEach((row) => {
     const current = lineAttributesByLineId.get(row.transaction_line_id) || [];
     const attribute = attributesById.get(row.attribute_id);
-    const value = row.attribute_value_id ? valuesById.get(row.attribute_value_id) : null;
+    const value = row.attribute_value_id
+      ? valuesById.get(row.attribute_value_id)
+      : null;
 
     current.push({
       id: row.id,
       key: row.attribute_id,
       attributeId: row.attribute_id,
-      label: attribute?.name || 'خاصية',
+      label: attribute?.name || "خاصية",
       valueId: row.attribute_value_id,
-      value: value?.name || row.value_text || '',
+      value: value?.name || row.value_text || "",
     });
 
     lineAttributesByLineId.set(row.transaction_line_id, current);
@@ -492,7 +650,9 @@ async function attachLineAttributes(client, tenantId, lines) {
 
 async function attachLineTrackingIdentifiers(client, tenantId, lines) {
   const saleLines = Array.isArray(lines) ? lines : [];
-  const trackingUnitIds = [...new Set(saleLines.map((line) => line.tracking_unit_id).filter(Boolean))];
+  const trackingUnitIds = [
+    ...new Set(saleLines.map((line) => line.tracking_unit_id).filter(Boolean)),
+  ];
 
   if (!trackingUnitIds.length) {
     return saleLines;
@@ -504,42 +664,54 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
     { data: attachmentRows, error: attachmentsError },
   ] = await Promise.all([
     client
-      .from('stock_tracking_units')
-      .select('id, tracking_number, status, paperwork_processor_partner_id')
-      .eq('tenant_id', tenantId)
-      .in('id', trackingUnitIds),
+      .from("stock_tracking_units")
+      .select("id, tracking_number, status, paperwork_processor_partner_id")
+      .eq("tenant_id", tenantId)
+      .in("id", trackingUnitIds),
     client
-      .from('stock_tracking_unit_identifiers')
-      .select('id, tracking_unit_id, identifier_type_id, value, is_not_available')
-      .eq('tenant_id', tenantId)
-      .in('tracking_unit_id', trackingUnitIds),
+      .from("stock_tracking_unit_identifiers")
+      .select(
+        "id, tracking_unit_id, identifier_type_id, value, is_not_available",
+      )
+      .eq("tenant_id", tenantId)
+      .in("tracking_unit_id", trackingUnitIds),
     client
-      .from('ir_attachments')
-      .select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, created_at')
-      .eq('tenant_id', tenantId)
-      .eq('related_model', 'stock_tracking_units')
-      .in('related_id', trackingUnitIds)
-      .in('document_type', ['chassis_photo', 'engine_photo'])
-      .eq('is_active', true),
+      .from("ir_attachments")
+      .select(
+        "id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, created_at",
+      )
+      .eq("tenant_id", tenantId)
+      .eq("related_model", "stock_tracking_units")
+      .in("related_id", trackingUnitIds)
+      .in("document_type", ["chassis_photo", "engine_photo"])
+      .eq("is_active", true),
   ]);
 
   if (unitsError) throw unitsError;
   if (identifiersError) throw identifiersError;
   if (attachmentsError) throw attachmentsError;
 
-  const identifierTypeIds = [...new Set((identifierRows || []).map((row) => row.identifier_type_id).filter(Boolean))];
+  const identifierTypeIds = [
+    ...new Set(
+      (identifierRows || [])
+        .map((row) => row.identifier_type_id)
+        .filter(Boolean),
+    ),
+  ];
   const { data: identifierTypes, error: typesError } = identifierTypeIds.length
     ? await client
-      .from('product_tracking_identifier_types')
-      .select('id, name, code')
-      .eq('tenant_id', tenantId)
-      .in('id', identifierTypeIds)
+        .from("product_tracking_identifier_types")
+        .select("id, name, code")
+        .eq("tenant_id", tenantId)
+        .in("id", identifierTypeIds)
     : { data: [], error: null };
 
   if (typesError) throw typesError;
 
   const unitsById = new Map((units || []).map((unit) => [unit.id, unit]));
-  const typesById = new Map((identifierTypes || []).map((type) => [type.id, type]));
+  const typesById = new Map(
+    (identifierTypes || []).map((type) => [type.id, type]),
+  );
   const identifiersByUnitId = new Map();
   const attachmentsByUnitId = new Map();
 
@@ -550,16 +722,20 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
     current.push({
       id: row.id,
       identifierTypeId: row.identifier_type_id,
-      label: type?.name || 'تعريف تتبع',
-      code: type?.code || '',
-      value: row.value || '',
+      label: type?.name || "تعريف تتبع",
+      code: type?.code || "",
+      value: row.value || "",
       isNotAvailable: row.is_not_available ?? false,
     });
 
     identifiersByUnitId.set(row.tracking_unit_id, current);
   });
 
-  const attachmentsWithUrls = await Promise.all((attachmentRows || []).map((row) => buildTrackingAttachmentWithUrl(client, row)));
+  const attachmentsWithUrls = await Promise.all(
+    (attachmentRows || []).map((row) =>
+      buildTrackingAttachmentWithUrl(client, row),
+    ),
+  );
 
   attachmentsWithUrls.forEach((attachment) => {
     const current = attachmentsByUnitId.get(attachment.trackingUnitId) || {};
@@ -571,60 +747,88 @@ async function attachLineTrackingIdentifiers(client, tenantId, lines) {
 
   return saleLines.map((line) => {
     const unit = unitsById.get(line.tracking_unit_id);
-    const trackingIdentifiers = identifiersByUnitId.get(line.tracking_unit_id) || [];
+    const trackingIdentifiers =
+      identifiersByUnitId.get(line.tracking_unit_id) || [];
     const attachments = attachmentsByUnitId.get(line.tracking_unit_id) || {};
 
     return {
       ...line,
-      trackingUnit: unit ? {
-        id: unit.id,
-        trackingNumber: unit.tracking_number || '',
-        status: unit.status || '',
-        paperworkProcessorPartnerId: unit.paperwork_processor_partner_id || null,
-        paperwork_processor_partner_id: unit.paperwork_processor_partner_id || null,
-      } : null,
-      serialNumber: unit?.tracking_number || '',
+      trackingUnit: unit
+        ? {
+            id: unit.id,
+            trackingNumber: unit.tracking_number || "",
+            status: unit.status || "",
+            paperworkProcessorPartnerId:
+              unit.paperwork_processor_partner_id || null,
+            paperwork_processor_partner_id:
+              unit.paperwork_processor_partner_id || null,
+          }
+        : null,
+      serialNumber: unit?.tracking_number || "",
       trackingIdentifiers,
       attachments,
     };
   });
 }
 
-async function attachLineDetails(client, tenantId, lines, { includeTrackingDetails = true } = {}) {
+async function attachLineDetails(
+  client,
+  tenantId,
+  lines,
+  { includeTrackingDetails = true } = {},
+) {
   const saleLines = Array.isArray(lines) ? lines : [];
-  const productIds = [...new Set(saleLines.map((line) => line.product_product_id).filter(Boolean))];
+  const productIds = [
+    ...new Set(
+      saleLines.map((line) => line.product_product_id).filter(Boolean),
+    ),
+  ];
   const { data: products, error: productsError } = productIds.length
-    ? await client.from('product_products').select(`
+    ? await client
+        .from("product_products")
+        .select(
+          `
       id, display_name, sku, barcode, tracking, sale_price,
       product_template:product_templates!product_products_product_template_id_fkey (
         id, category_id, product_type, requires_contract,
         requires_ownership_transfer, requires_post_sale_documents, requires_license
       )
-    `).eq('tenant_id', tenantId).in('id', productIds)
+    `,
+        )
+        .eq("tenant_id", tenantId)
+        .in("id", productIds)
     : { data: [], error: null };
   if (productsError) throw productsError;
-  const productsById = new Map((products || []).map((product) => [product.id, product]));
+  const productsById = new Map(
+    (products || []).map((product) => [product.id, product]),
+  );
   const enrichedLines = saleLines.map((line) => {
     const product = productsById.get(line.product_product_id);
     const template = product?.product_template;
     return {
       ...line,
       productProductId: line.product_product_id,
-      displayName: product?.display_name || line.description || 'منتج',
-      name: product?.display_name || line.description || 'منتج',
-      code: product?.sku || '',
-      barcode: product?.barcode || '',
-      tracking: product?.tracking || 'none',
-      productType: template?.product_type || 'goods',
+      displayName: product?.display_name || line.description || "منتج",
+      name: product?.display_name || line.description || "منتج",
+      code: product?.sku || "",
+      barcode: product?.barcode || "",
+      tracking: product?.tracking || "none",
+      productType: template?.product_type || "goods",
       categoryId: template?.category_id || null,
       requiresContract: Boolean(template?.requires_contract),
       requiresOwnershipTransfer: Boolean(template?.requires_ownership_transfer),
-      requiresPostSaleDocuments: Boolean(template?.requires_post_sale_documents),
+      requiresPostSaleDocuments: Boolean(
+        template?.requires_post_sale_documents,
+      ),
       requiresLicense: Boolean(template?.requires_license),
       price: toMoney(line.unit_price),
     };
   });
-  const linesWithAttributes = await attachLineAttributes(client, tenantId, enrichedLines);
+  const linesWithAttributes = await attachLineAttributes(
+    client,
+    tenantId,
+    enrichedLines,
+  );
   if (!includeTrackingDetails) {
     return linesWithAttributes;
   }
@@ -641,8 +845,9 @@ async function attachLinePaperworkRequests(client, tenantId, lines) {
   }
 
   const { data: requests, error } = await client
-    .from('paperwork_requests')
-    .select(`
+    .from("paperwork_requests")
+    .select(
+      `
       id,
       sale_line_id,
       current_stage,
@@ -652,43 +857,56 @@ async function attachLinePaperworkRequests(client, tenantId, lines) {
       document_owner_status,
       document_owner_note,
       processor_partner_id
-    `)
-    .eq('tenant_id', tenantId)
-    .in('sale_line_id', lineIds)
-    .order('created_at', { ascending: false });
+    `,
+    )
+    .eq("tenant_id", tenantId)
+    .in("sale_line_id", lineIds)
+    .order("created_at", { ascending: false });
 
   if (error) throw error;
 
-  const ownerPartnerIds = [...new Set((requests || []).map((request) => request.document_owner_partner_id).filter(Boolean))];
-  const { data: ownerPartners, error: ownerPartnersError } = ownerPartnerIds.length
-    ? await client
-      .from('partners')
-      .select('id, name')
-      .eq('tenant_id', tenantId)
-      .in('id', ownerPartnerIds)
-    : { data: [], error: null };
+  const ownerPartnerIds = [
+    ...new Set(
+      (requests || [])
+        .map((request) => request.document_owner_partner_id)
+        .filter(Boolean),
+    ),
+  ];
+  const { data: ownerPartners, error: ownerPartnersError } =
+    ownerPartnerIds.length
+      ? await client
+          .from("partners")
+          .select("id, name")
+          .eq("tenant_id", tenantId)
+          .in("id", ownerPartnerIds)
+      : { data: [], error: null };
 
   if (ownerPartnersError) throw ownerPartnersError;
 
-  const ownerPartnersById = new Map((ownerPartners || []).map((partner) => [partner.id, partner]));
+  const ownerPartnersById = new Map(
+    (ownerPartners || []).map((partner) => [partner.id, partner]),
+  );
   const requestsByLineId = new Map();
 
   (requests || []).forEach((request) => {
     if (requestsByLineId.has(request.sale_line_id)) return;
-    const ownerPartner = ownerPartnersById.get(request.document_owner_partner_id) || null;
+    const ownerPartner =
+      ownerPartnersById.get(request.document_owner_partner_id) || null;
     requestsByLineId.set(request.sale_line_id, {
       id: request.id,
-      currentStage: request.current_stage || '',
-      current_stage: request.current_stage || '',
-      status: request.status || '',
+      currentStage: request.current_stage || "",
+      current_stage: request.current_stage || "",
+      status: request.status || "",
       documentOwnerPartnerId: request.document_owner_partner_id || null,
       document_owner_partner_id: request.document_owner_partner_id || null,
-      documentOwnerName: request.document_owner_name || ownerPartner?.name || '',
-      document_owner_name: request.document_owner_name || ownerPartner?.name || '',
-      documentOwnerStatus: request.document_owner_status || '',
-      document_owner_status: request.document_owner_status || '',
-      documentOwnerNote: request.document_owner_note || '',
-      document_owner_note: request.document_owner_note || '',
+      documentOwnerName:
+        request.document_owner_name || ownerPartner?.name || "",
+      document_owner_name:
+        request.document_owner_name || ownerPartner?.name || "",
+      documentOwnerStatus: request.document_owner_status || "",
+      document_owner_status: request.document_owner_status || "",
+      documentOwnerNote: request.document_owner_note || "",
+      document_owner_note: request.document_owner_note || "",
       processorPartnerId: request.processor_partner_id || null,
       processor_partner_id: request.processor_partner_id || null,
       documentOwner: ownerPartner,
@@ -701,28 +919,29 @@ async function attachLinePaperworkRequests(client, tenantId, lines) {
   }));
 }
 
-async function restoreQuantityStock(client, { tenantId, productProductId, quantity }) {
+async function restoreQuantityStock(
+  client,
+  { tenantId, productProductId, quantity },
+) {
   const safeQuantity = Math.max(toMoney(quantity), 0);
   if (!productProductId || safeQuantity <= 0) return;
 
   const { data: existingQuant, error: quantError } = await client
-    .from('stock_quants')
-    .select('id, quantity_on_hand, reserved_quantity')
-    .eq('tenant_id', tenantId)
-    .eq('product_product_id', productProductId)
+    .from("stock_quants")
+    .select("id, quantity_on_hand, reserved_quantity")
+    .eq("tenant_id", tenantId)
+    .eq("product_product_id", productProductId)
     .limit(1)
     .maybeSingle();
 
   if (quantError) throw quantError;
 
   if (!existingQuant) {
-    const { error: insertError } = await client
-      .from('stock_quants')
-      .insert({
-        tenant_id: tenantId,
-        product_product_id: productProductId,
-        quantity_on_hand: safeQuantity,
-      });
+    const { error: insertError } = await client.from("stock_quants").insert({
+      tenant_id: tenantId,
+      product_product_id: productProductId,
+      quantity_on_hand: safeQuantity,
+    });
 
     if (insertError) throw insertError;
     return;
@@ -734,33 +953,43 @@ async function restoreQuantityStock(client, { tenantId, productProductId, quanti
 
   if (currentQuantity < 0 && nextQuantity === 0 && reservedQuantity === 0) {
     const { error: deleteError } = await client
-      .from('stock_quants')
+      .from("stock_quants")
       .delete()
-      .eq('tenant_id', tenantId)
-      .eq('id', existingQuant.id);
+      .eq("tenant_id", tenantId)
+      .eq("id", existingQuant.id);
 
     if (deleteError) throw deleteError;
     return;
   }
 
   const { error: updateError } = await client
-    .from('stock_quants')
-    .update({ quantity_on_hand: nextQuantity, updated_at: new Date().toISOString() })
-    .eq('tenant_id', tenantId)
-    .eq('id', existingQuant.id);
+    .from("stock_quants")
+    .update({
+      quantity_on_hand: nextQuantity,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("tenant_id", tenantId)
+    .eq("id", existingQuant.id);
 
   if (updateError) throw updateError;
 }
 
-async function restoreTrackingUnits(client, { tenantId, saleId, saleCreatedAt, lines }) {
-  const trackingUnitIds = [...new Set((lines || []).map((line) => line.tracking_unit_id).filter(Boolean))];
+async function restoreTrackingUnits(
+  client,
+  { tenantId, saleId, saleCreatedAt, lines },
+) {
+  const trackingUnitIds = [
+    ...new Set(
+      (lines || []).map((line) => line.tracking_unit_id).filter(Boolean),
+    ),
+  ];
   if (!trackingUnitIds.length) return [];
 
   const { data: units, error: unitsError } = await client
-    .from('stock_tracking_units')
-    .select('id, notes, created_at')
-    .eq('tenant_id', tenantId)
-    .in('id', trackingUnitIds);
+    .from("stock_tracking_units")
+    .select("id, notes, created_at")
+    .eq("tenant_id", tenantId)
+    .in("id", trackingUnitIds);
 
   if (unitsError) throw unitsError;
 
@@ -771,7 +1000,9 @@ async function restoreTrackingUnits(client, { tenantId, saleId, saleCreatedAt, l
   (units || []).forEach((unit) => {
     const unitCreatedTime = new Date(unit.created_at || 0).getTime();
     const isMarkedForSale = unit.notes === `showroom_sale:${saleId}`;
-    const wasCreatedWithSale = Number.isFinite(unitCreatedTime) && unitCreatedTime >= saleCreatedTime - 5000;
+    const wasCreatedWithSale =
+      Number.isFinite(unitCreatedTime) &&
+      unitCreatedTime >= saleCreatedTime - 5000;
 
     if (isMarkedForSale || wasCreatedWithSale) {
       createdForSaleIds.push(unit.id);
@@ -782,10 +1013,10 @@ async function restoreTrackingUnits(client, { tenantId, saleId, saleCreatedAt, l
 
   if (restoreIds.length) {
     const { error: restoreError } = await client
-      .from('stock_tracking_units')
-      .update({ status: 'in_stock', updated_at: new Date().toISOString() })
-      .eq('tenant_id', tenantId)
-      .in('id', restoreIds);
+      .from("stock_tracking_units")
+      .update({ status: "in_stock", updated_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .in("id", restoreIds);
 
     if (restoreError) throw restoreError;
   }
@@ -798,18 +1029,18 @@ async function deleteTrackingUnits(client, { tenantId, trackingUnitIds }) {
   if (!ids.length) return;
 
   const { error: identifiersDeleteError } = await client
-    .from('stock_tracking_unit_identifiers')
+    .from("stock_tracking_unit_identifiers")
     .delete()
-    .eq('tenant_id', tenantId)
-    .in('tracking_unit_id', ids);
+    .eq("tenant_id", tenantId)
+    .in("tracking_unit_id", ids);
 
   if (identifiersDeleteError) throw identifiersDeleteError;
 
   const { error: unitsDeleteError } = await client
-    .from('stock_tracking_units')
+    .from("stock_tracking_units")
     .delete()
-    .eq('tenant_id', tenantId)
-    .in('id', ids);
+    .eq("tenant_id", tenantId)
+    .in("id", ids);
 
   if (unitsDeleteError) throw unitsDeleteError;
 }
@@ -823,18 +1054,27 @@ async function attachSaleLines(client, tenantId, sales, showroomConfigId) {
   }
 
   const { data: lines, error } = await client
-    .from('showroom_sale_lines')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .in('sale_id', saleIds)
-    .order('created_at', { ascending: true });
+    .from("showroom_sale_lines")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .in("sale_id", saleIds)
+    .order("created_at", { ascending: true });
 
   if (error) throw error;
 
-  const linesWithDetails = await attachLineDetails(client, tenantId, lines || [], {
-    includeTrackingDetails: false,
-  });
-  const linesWithPaperwork = await attachLinePaperworkRequests(client, tenantId, linesWithDetails);
+  const linesWithDetails = await attachLineDetails(
+    client,
+    tenantId,
+    lines || [],
+    {
+      includeTrackingDetails: false,
+    },
+  );
+  const linesWithPaperwork = await attachLinePaperworkRequests(
+    client,
+    tenantId,
+    linesWithDetails,
+  );
   const linesBySaleId = new Map();
 
   linesWithPaperwork.forEach((line) => {
@@ -853,102 +1093,179 @@ async function attachSaleLines(client, tenantId, sales, showroomConfigId) {
 
 async function attachCustomers(client, tenantId, sales) {
   const saleRows = Array.isArray(sales) ? sales : [sales].filter(Boolean);
-  const customerIds = [...new Set(saleRows.map((sale) => sale.customer_id).filter(Boolean))];
+  const customerIds = [
+    ...new Set(saleRows.map((sale) => sale.customer_id).filter(Boolean)),
+  ];
 
   if (!customerIds.length) {
     return Array.isArray(sales) ? saleRows : saleRows[0] || null;
   }
 
   const { data: customers, error } = await client
-    .from('partners')
-    .select('id, name, phone1, phone2, address, national_id')
-    .eq('tenant_id', tenantId)
-    .in('id', customerIds);
+    .from("partners")
+    .select("id, name, phone1, phone2, address, national_id")
+    .eq("tenant_id", tenantId)
+    .in("id", customerIds);
 
   if (error) throw error;
 
-  const customersById = new Map((customers || []).map((customer) => [customer.id, customer]));
+  const customersById = new Map(
+    (customers || []).map((customer) => [customer.id, customer]),
+  );
   const salesWithCustomers = saleRows.map((sale) => ({
     ...sale,
     customer: customersById.has(sale.customer_id)
       ? {
           ...customersById.get(sale.customer_id),
-          phone: customersById.get(sale.customer_id)?.phone1 || customersById.get(sale.customer_id)?.phone2 || '',
-          nationalId: customersById.get(sale.customer_id)?.national_id || '',
+          phone:
+            customersById.get(sale.customer_id)?.phone1 ||
+            customersById.get(sale.customer_id)?.phone2 ||
+            "",
+          nationalId: customersById.get(sale.customer_id)?.national_id || "",
         }
       : null,
   }));
 
-  return Array.isArray(sales) ? salesWithCustomers : salesWithCustomers[0] || null;
+  return Array.isArray(sales)
+    ? salesWithCustomers
+    : salesWithCustomers[0] || null;
 }
 
 async function attachSaleAccountingStatus(client, tenantId, sales) {
   const saleRows = Array.isArray(sales) ? sales : [sales].filter(Boolean);
   const saleIds = saleRows.map((sale) => sale.id).filter(Boolean);
-  if (!saleIds.length) return Array.isArray(sales) ? saleRows : saleRows[0] || null;
+  if (!saleIds.length)
+    return Array.isArray(sales) ? saleRows : saleRows[0] || null;
 
-  const chunk = (values, size = 100) => (
-    Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size))
-  );
-  const accountMoveIds = [...new Set(saleRows.map((sale) => sale.account_move_id).filter(Boolean))];
-  const [moveIdResults, refResults, receivableAccountsResult] = await Promise.all([
-    Promise.all(chunk(accountMoveIds).map((ids) => client.from('account_moves').select('id, ref')
-      .eq('tenant_id', tenantId).eq('move_type', 'sale').eq('state', 'posted').in('id', ids))),
-    Promise.all(chunk(saleIds.map((saleId) => `showroom_sale:${saleId}`)).map((refs) => client
-      .from('account_moves').select('id, ref').eq('tenant_id', tenantId)
-      .eq('move_type', 'sale').eq('state', 'posted').in('ref', refs))),
-    client.from('account_accounts').select('id').eq('tenant_id', tenantId).eq('code', '114001'),
-  ]);
+  const chunk = (values, size = 100) =>
+    Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
+      values.slice(index * size, (index + 1) * size),
+    );
+  const accountMoveIds = [
+    ...new Set(saleRows.map((sale) => sale.account_move_id).filter(Boolean)),
+  ];
+  const [moveIdResults, refResults, receivableAccountsResult] =
+    await Promise.all([
+      Promise.all(
+        chunk(accountMoveIds).map((ids) =>
+          client
+            .from("account_moves")
+            .select("id, ref")
+            .eq("tenant_id", tenantId)
+            .eq("move_type", "sale")
+            .eq("state", "posted")
+            .in("id", ids),
+        ),
+      ),
+      Promise.all(
+        chunk(saleIds.map((saleId) => `showroom_sale:${saleId}`)).map((refs) =>
+          client
+            .from("account_moves")
+            .select("id, ref")
+            .eq("tenant_id", tenantId)
+            .eq("move_type", "sale")
+            .eq("state", "posted")
+            .in("ref", refs),
+        ),
+      ),
+      client
+        .from("account_accounts")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("code", "114001"),
+    ]);
 
   const moveResults = [...moveIdResults, ...refResults];
-  const failedResult = [...moveResults, receivableAccountsResult].find((result) => result.error);
+  const failedResult = [...moveResults, receivableAccountsResult].find(
+    (result) => result.error,
+  );
   if (failedResult?.error) throw failedResult.error;
 
   const accountingMoves = moveResults.flatMap((result) => result.data || []);
   const movesById = new Map(accountingMoves.map((move) => [move.id, move]));
-  const movesByRef = new Map(accountingMoves.filter((move) => move.ref).map((move) => [move.ref, move]));
+  const movesByRef = new Map(
+    accountingMoves.filter((move) => move.ref).map((move) => [move.ref, move]),
+  );
   const moveBySaleId = new Map();
   saleRows.forEach((sale) => {
-    const move = movesById.get(sale.account_move_id) || movesByRef.get(`showroom_sale:${sale.id}`) || null;
+    const move =
+      movesById.get(sale.account_move_id) ||
+      movesByRef.get(`showroom_sale:${sale.id}`) ||
+      null;
     if (move) moveBySaleId.set(sale.id, move);
   });
 
-  const linkedMoveIds = [...new Set([...moveBySaleId.values()].map((move) => move.id))];
-  const receivableAccountIds = (receivableAccountsResult.data || []).map((account) => account.id);
-  const lineResults = linkedMoveIds.length && receivableAccountIds.length
-    ? await Promise.all(chunk(linkedMoveIds).map((ids) => client.from('account_move_lines')
-      .select('id, move_id, debit').eq('tenant_id', tenantId).in('move_id', ids)
-      .in('account_id', receivableAccountIds).gt('debit', 0)))
-    : [];
+  const linkedMoveIds = [
+    ...new Set([...moveBySaleId.values()].map((move) => move.id)),
+  ];
+  const receivableAccountIds = (receivableAccountsResult.data || []).map(
+    (account) => account.id,
+  );
+  const lineResults =
+    linkedMoveIds.length && receivableAccountIds.length
+      ? await Promise.all(
+          chunk(linkedMoveIds).map((ids) =>
+            client
+              .from("account_move_lines")
+              .select("id, move_id, debit")
+              .eq("tenant_id", tenantId)
+              .in("move_id", ids)
+              .in("account_id", receivableAccountIds)
+              .gt("debit", 0),
+          ),
+        )
+      : [];
   const failedLineResult = lineResults.find((result) => result.error);
   if (failedLineResult?.error) throw failedLineResult.error;
 
   const receivableLines = lineResults.flatMap((result) => result.data || []);
   const lineIds = receivableLines.map((line) => line.id);
-  const reconcileResults = await Promise.all(chunk(lineIds).map((ids) => client
-    .from('account_partial_reconcile').select('debit_move_id, amount')
-    .eq('tenant_id', tenantId).in('debit_move_id', ids)));
+  const reconcileResults = await Promise.all(
+    chunk(lineIds).map((ids) =>
+      client
+        .from("account_partial_reconcile")
+        .select("debit_move_id, amount")
+        .eq("tenant_id", tenantId)
+        .in("debit_move_id", ids),
+    ),
+  );
   const failedReconcileResult = reconcileResults.find((result) => result.error);
   if (failedReconcileResult?.error) throw failedReconcileResult.error;
 
   const paidByLineId = new Map();
-  reconcileResults.flatMap((result) => result.data || []).forEach((row) => {
-    paidByLineId.set(row.debit_move_id, toMoney(paidByLineId.get(row.debit_move_id)) + toMoney(row.amount));
-  });
+  reconcileResults
+    .flatMap((result) => result.data || [])
+    .forEach((row) => {
+      paidByLineId.set(
+        row.debit_move_id,
+        toMoney(paidByLineId.get(row.debit_move_id)) + toMoney(row.amount),
+      );
+    });
   const paidByMoveId = new Map();
   const originalByMoveId = new Map();
   receivableLines.forEach((line) => {
-    paidByMoveId.set(line.move_id, toMoney(paidByMoveId.get(line.move_id)) + toMoney(paidByLineId.get(line.id)));
-    originalByMoveId.set(line.move_id, toMoney(originalByMoveId.get(line.move_id)) + toMoney(line.debit));
+    paidByMoveId.set(
+      line.move_id,
+      toMoney(paidByMoveId.get(line.move_id)) +
+        toMoney(paidByLineId.get(line.id)),
+    );
+    originalByMoveId.set(
+      line.move_id,
+      toMoney(originalByMoveId.get(line.move_id)) + toMoney(line.debit),
+    );
   });
 
   const normalized = saleRows.map((sale) => {
     const move = moveBySaleId.get(sale.id) || null;
-    const paidAmount = Math.round(toMoney(paidByMoveId.get(move?.id)) * 100) / 100;
+    const paidAmount =
+      Math.round(toMoney(paidByMoveId.get(move?.id)) * 100) / 100;
     const invoiceReceivableAmount = move
       ? toMoney(originalByMoveId.get(move.id))
       : toMoney(sale.total_amount ?? sale.totalAmount);
-    const remainingAmount = Math.max(Math.round((invoiceReceivableAmount - paidAmount) * 100) / 100, 0);
+    const remainingAmount = Math.max(
+      Math.round((invoiceReceivableAmount - paidAmount) * 100) / 100,
+      0,
+    );
     return {
       ...sale,
       accounting_paid_amount: paidAmount,
@@ -962,72 +1279,138 @@ async function attachSaleAccountingStatus(client, tenantId, sales) {
 async function loadReconciledSalePayments(client, tenantId, sale) {
   if (!sale?.id) return [];
 
-  const [linkedMoveResult, referencedMoveResult, receivableAccountResult] = await Promise.all([
-    sale.account_move_id
-      ? client.from('account_moves').select('id').eq('tenant_id', tenantId)
-        .eq('id', sale.account_move_id).eq('move_type', 'sale').eq('state', 'posted').maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    client.from('account_moves').select('id').eq('tenant_id', tenantId)
-      .eq('ref', `showroom_sale:${sale.id}`).eq('move_type', 'sale').eq('state', 'posted')
-      .order('created_at', { ascending: true }).limit(1).maybeSingle(),
-    client.from('account_accounts').select('id').eq('tenant_id', tenantId)
-      .eq('code', '114001').eq('active', true),
-  ]);
-  const failedLookup = [linkedMoveResult, referencedMoveResult, receivableAccountResult]
-    .find((result) => result.error);
+  const [linkedMoveResult, referencedMoveResult, receivableAccountResult] =
+    await Promise.all([
+      sale.account_move_id
+        ? client
+            .from("account_moves")
+            .select("id")
+            .eq("tenant_id", tenantId)
+            .eq("id", sale.account_move_id)
+            .eq("move_type", "sale")
+            .eq("state", "posted")
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      client
+        .from("account_moves")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("ref", `showroom_sale:${sale.id}`)
+        .eq("move_type", "sale")
+        .eq("state", "posted")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      client
+        .from("account_accounts")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("code", "114001")
+        .eq("active", true),
+    ]);
+  const failedLookup = [
+    linkedMoveResult,
+    referencedMoveResult,
+    receivableAccountResult,
+  ].find((result) => result.error);
   if (failedLookup?.error) throw failedLookup.error;
 
-  const saleMoveId = linkedMoveResult.data?.id || referencedMoveResult.data?.id || null;
-  const receivableAccountIds = (receivableAccountResult.data || []).map((account) => account.id);
+  const saleMoveId =
+    linkedMoveResult.data?.id || referencedMoveResult.data?.id || null;
+  const receivableAccountIds = (receivableAccountResult.data || []).map(
+    (account) => account.id,
+  );
   if (!saleMoveId || !receivableAccountIds.length) return [];
 
   const { data: invoiceLines, error: invoiceLinesError } = await client
-    .from('account_move_lines').select('id').eq('tenant_id', tenantId)
-    .eq('move_id', saleMoveId).in('account_id', receivableAccountIds).gt('debit', 0);
+    .from("account_move_lines")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("move_id", saleMoveId)
+    .in("account_id", receivableAccountIds)
+    .gt("debit", 0);
   if (invoiceLinesError) throw invoiceLinesError;
   const invoiceLineIds = (invoiceLines || []).map((line) => line.id);
   if (!invoiceLineIds.length) return [];
 
   const { data: reconciliations, error: reconciliationsError } = await client
-    .from('account_partial_reconcile').select('credit_move_id, amount, max_date')
-    .eq('tenant_id', tenantId).in('debit_move_id', invoiceLineIds);
+    .from("account_partial_reconcile")
+    .select("credit_move_id, amount, max_date")
+    .eq("tenant_id", tenantId)
+    .in("debit_move_id", invoiceLineIds);
   if (reconciliationsError) throw reconciliationsError;
-  const creditLineIds = [...new Set((reconciliations || []).map((row) => row.credit_move_id).filter(Boolean))];
+  const creditLineIds = [
+    ...new Set(
+      (reconciliations || []).map((row) => row.credit_move_id).filter(Boolean),
+    ),
+  ];
   if (!creditLineIds.length) return [];
 
   const { data: creditLines, error: creditLinesError } = await client
-    .from('account_move_lines').select('id, move_id, source_entity_id').eq('tenant_id', tenantId).in('id', creditLineIds);
+    .from("account_move_lines")
+    .select("id, move_id, source_entity_id")
+    .eq("tenant_id", tenantId)
+    .in("id", creditLineIds);
   if (creditLinesError) throw creditLinesError;
-  const moveIdByCreditLineId = new Map((creditLines || []).map((line) => [line.id, line.move_id]));
-  const sourceEntityIdByMoveId = new Map(
-    (creditLines || []).filter((line) => line.source_entity_id).map((line) => [line.move_id, line.source_entity_id]),
+  const moveIdByCreditLineId = new Map(
+    (creditLines || []).map((line) => [line.id, line.move_id]),
   );
-  const paymentMoveIds = [...new Set((creditLines || []).map((line) => line.move_id).filter(Boolean))];
+  const sourceEntityIdByMoveId = new Map(
+    (creditLines || [])
+      .filter((line) => line.source_entity_id)
+      .map((line) => [line.move_id, line.source_entity_id]),
+  );
+  const paymentMoveIds = [
+    ...new Set((creditLines || []).map((line) => line.move_id).filter(Boolean)),
+  ];
   if (!paymentMoveIds.length) return [];
 
   const [paymentMovesResult, debitLinesResult] = await Promise.all([
-    client.from('account_moves')
-      .select('id, partner_id, invoice_date, date, pay_method, notes, created_at')
-      .eq('tenant_id', tenantId).eq('state', 'posted').in('id', paymentMoveIds),
-    client.from('account_move_lines').select('move_id, account_id, debit')
-      .eq('tenant_id', tenantId).in('move_id', paymentMoveIds).gt('debit', 0),
+    client
+      .from("account_moves")
+      .select(
+        "id, partner_id, invoice_date, date, pay_method, notes, created_at",
+      )
+      .eq("tenant_id", tenantId)
+      .eq("state", "posted")
+      .in("id", paymentMoveIds),
+    client
+      .from("account_move_lines")
+      .select("move_id, account_id, debit")
+      .eq("tenant_id", tenantId)
+      .in("move_id", paymentMoveIds)
+      .gt("debit", 0),
   ]);
   if (paymentMovesResult.error) throw paymentMovesResult.error;
   if (debitLinesResult.error) throw debitLinesResult.error;
 
   const paymentMoves = paymentMovesResult.data || [];
   const debitLines = debitLinesResult.data || [];
-  const partnerIds = [...new Set([
-    ...paymentMoves.map((move) => move.partner_id),
-    ...sourceEntityIdByMoveId.values(),
-  ].filter(Boolean))];
-  const destinationAccountIds = [...new Set(debitLines.map((line) => line.account_id).filter(Boolean))];
+  const partnerIds = [
+    ...new Set(
+      [
+        ...paymentMoves.map((move) => move.partner_id),
+        ...sourceEntityIdByMoveId.values(),
+      ].filter(Boolean),
+    ),
+  ];
+  const destinationAccountIds = [
+    ...new Set(debitLines.map((line) => line.account_id).filter(Boolean)),
+  ];
   const [partnersResult, accountsResult] = await Promise.all([
     partnerIds.length
-      ? client.from('partners').select('id, name').eq('tenant_id', tenantId).in('id', partnerIds)
+      ? client
+          .from("partners")
+          .select("id, name")
+          .eq("tenant_id", tenantId)
+          .in("id", partnerIds)
       : Promise.resolve({ data: [], error: null }),
     destinationAccountIds.length
-      ? client.from('account_accounts').select('id, code, name').eq('tenant_id', tenantId).in('id', destinationAccountIds)
+      ? client
+          .from("account_accounts")
+          .select("id, code, name")
+          .eq("tenant_id", tenantId)
+          .in("id", destinationAccountIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
   if (partnersResult.error) throw partnersResult.error;
@@ -1038,36 +1421,51 @@ async function loadReconciledSalePayments(client, tenantId, sale) {
   (reconciliations || []).forEach((row) => {
     const moveId = moveIdByCreditLineId.get(row.credit_move_id);
     if (!moveId) return;
-    appliedByMoveId.set(moveId, toMoney(appliedByMoveId.get(moveId)) + toMoney(row.amount));
-    if (!paymentDateByMoveId.has(moveId)) paymentDateByMoveId.set(moveId, row.max_date || null);
+    appliedByMoveId.set(
+      moveId,
+      toMoney(appliedByMoveId.get(moveId)) + toMoney(row.amount),
+    );
+    if (!paymentDateByMoveId.has(moveId))
+      paymentDateByMoveId.set(moveId, row.max_date || null);
   });
-  const partnersById = new Map((partnersResult.data || []).map((partner) => [partner.id, partner]));
-  const accountsById = new Map((accountsResult.data || []).map((account) => [account.id, account]));
+  const partnersById = new Map(
+    (partnersResult.data || []).map((partner) => [partner.id, partner]),
+  );
+  const accountsById = new Map(
+    (accountsResult.data || []).map((account) => [account.id, account]),
+  );
   const destinationLineByMoveId = new Map();
   debitLines.forEach((line) => {
     const current = destinationLineByMoveId.get(line.move_id);
-    if (!current || toMoney(line.debit) > toMoney(current.debit)) destinationLineByMoveId.set(line.move_id, line);
+    if (!current || toMoney(line.debit) > toMoney(current.debit))
+      destinationLineByMoveId.set(line.move_id, line);
   });
 
   return paymentMoves
     .map((move) => {
       const destinationLine = destinationLineByMoveId.get(move.id);
-      const destinationAccount = accountsById.get(destinationLine?.account_id) || null;
+      const destinationAccount =
+        accountsById.get(destinationLine?.account_id) || null;
       return {
         id: move.id,
         account_move_id: move.id,
         amount: Math.round(toMoney(appliedByMoveId.get(move.id)) * 100) / 100,
-        payment_date: move.invoice_date || move.date || paymentDateByMoveId.get(move.id) || move.created_at,
-        payment_method: move.pay_method === 'cash'
-          ? 'تحصيل نقدي'
-          : move.pay_method === 'advance_credit'
-            ? `رصيد مسبق - ${partnersById.get(move.partner_id)?.name || 'جهة دفع'}`
-            : move.pay_method === 'payment_entity_credit'
-              ? `اعتماد جهة - ${partnersById.get(sourceEntityIdByMoveId.get(move.id))?.name || 'جهة دفع'}`
-            : move.pay_method === 'account_settlement'
-              ? 'تسوية محاسبية'
-              : move.pay_method || 'قيد محاسبي',
-        payment_type: move.pay_method || 'account_move',
+        payment_date:
+          move.invoice_date ||
+          move.date ||
+          paymentDateByMoveId.get(move.id) ||
+          move.created_at,
+        payment_method:
+          move.pay_method === "cash"
+            ? "تحصيل نقدي"
+            : move.pay_method === "advance_credit"
+              ? `رصيد مسبق - ${partnersById.get(move.partner_id)?.name || "جهة دفع"}`
+              : move.pay_method === "payment_entity_credit"
+                ? `اعتماد جهة - ${partnersById.get(sourceEntityIdByMoveId.get(move.id))?.name || "جهة دفع"}`
+                : move.pay_method === "account_settlement"
+                  ? "تسوية محاسبية"
+                  : move.pay_method || "قيد محاسبي",
+        payment_type: move.pay_method || "account_move",
         destination_account_id: destinationAccount?.id || null,
         destination_account_code: destinationAccount?.code || null,
         destination_account_name: destinationAccount?.name || null,
@@ -1076,7 +1474,10 @@ async function loadReconciledSalePayments(client, tenantId, sale) {
       };
     })
     .filter((payment) => payment.amount > 0)
-    .sort((first, second) => new Date(first.payment_date || 0) - new Date(second.payment_date || 0));
+    .sort(
+      (first, second) =>
+        new Date(first.payment_date || 0) - new Date(second.payment_date || 0),
+    );
 }
 export const showroomService = {
   async getCashOverview({ tenantId } = {}) {
@@ -1084,35 +1485,44 @@ export const showroomService = {
 
     const client = requireSupabase();
     const { data: accountRows, error: accountsError } = await client
-      .from('account_accounts')
-      .select('id, code, name, responsible_user_id')
-      .eq('tenant_id', tenantId)
-      .eq('active', true);
+      .from("account_accounts")
+      .select("id, code, name, responsible_user_id")
+      .eq("tenant_id", tenantId)
+      .eq("active", true);
 
     if (accountsError) throw accountsError;
 
     const accounts = (accountRows || [])
-      .filter((account) => (
-        account.code === '111001' || Boolean(account.responsible_user_id)
-      ))
-      .filter((account) => !['111003', '119001', '111002'].includes(account.code));
+      .filter(
+        (account) =>
+          account.code === "111001" || Boolean(account.responsible_user_id),
+      )
+      .filter(
+        (account) => !["111003", "119001", "111002"].includes(account.code),
+      );
 
     if (!accounts.length) {
       return { total: 0, accounts: [] };
     }
 
     const accountIds = accounts.map((account) => account.id);
-    const lines = await fetchAllPages(() => client
-      .from('account_move_lines')
-      .select('account_id, debit, credit, account_move:account_moves!inner(state)')
-      .eq('tenant_id', tenantId)
-      .eq('account_move.state', 'posted')
-      .in('account_id', accountIds));
+    const lines = await fetchAllPages(() =>
+      client
+        .from("account_move_lines")
+        .select(
+          "account_id, debit, credit, account_move:account_moves!inner(state)",
+        )
+        .eq("tenant_id", tenantId)
+        .eq("account_move.state", "posted")
+        .in("account_id", accountIds),
+    );
 
     const balancesByAccountId = lines.reduce((balances, line) => {
       balances.set(
         line.account_id,
-        toMoney(balances.get(line.account_id)) + toMoney(line.debit) - toMoney(line.credit),
+        toMoney(balances.get(line.account_id)) +
+          toMoney(line.debit) -
+          toMoney(line.credit),
       );
       return balances;
     }, new Map());
@@ -1120,19 +1530,28 @@ export const showroomService = {
     const normalizedAccounts = accounts
       .map((account) => ({
         id: account.id,
-        code: account.code || '',
-        name: account.name || (account.code === '111001' ? 'الخزنة الرئيسية' : 'حساب عهدة موظف'),
+        code: account.code || "",
+        name:
+          account.name ||
+          (account.code === "111001" ? "الخزنة الرئيسية" : "حساب عهدة موظف"),
         responsibleUserId: account.responsible_user_id || null,
-        balance: Math.round(toMoney(balancesByAccountId.get(account.id)) * 100) / 100,
+        balance:
+          Math.round(toMoney(balancesByAccountId.get(account.id)) * 100) / 100,
       }))
       .sort((first, second) => {
-        if (first.code === '111001') return -1;
-        if (second.code === '111001') return 1;
-        return first.name.localeCompare(second.name, 'ar');
+        if (first.code === "111001") return -1;
+        if (second.code === "111001") return 1;
+        return first.name.localeCompare(second.name, "ar");
       });
 
     return {
-      total: Math.round(normalizedAccounts.reduce((sum, account) => sum + account.balance, 0) * 100) / 100,
+      total:
+        Math.round(
+          normalizedAccounts.reduce(
+            (sum, account) => sum + account.balance,
+            0,
+          ) * 100,
+        ) / 100,
       accounts: normalizedAccounts,
     };
   },
@@ -1141,10 +1560,10 @@ export const showroomService = {
     requireTenantId(tenantId);
     const client = requireSupabase();
     const { data, error } = await client
-      .from('showroom_configs')
+      .from("showroom_configs")
       .select(SHOWROOM_CONFIG_COLUMNS)
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: true });
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: true });
 
     if (error) throw error;
     return data || [];
@@ -1154,10 +1573,10 @@ export const showroomService = {
     requireTenantId(tenantId);
     const client = requireSupabase();
     const { data, error } = await client
-      .from('branches')
-      .select('id, name')
-      .eq('tenant_id', tenantId)
-      .order('name', { ascending: true });
+      .from("branches")
+      .select("id, name")
+      .eq("tenant_id", tenantId)
+      .order("name", { ascending: true });
 
     if (error) throw error;
     return data || [];
@@ -1167,11 +1586,11 @@ export const showroomService = {
     requireTenantId(tenantId);
     const client = requireSupabase();
     const { data, error } = await client
-      .from('account_journals')
-      .select('id, name, code, type, is_active')
-      .eq('tenant_id', tenantId)
-      .in('type', ['cash', 'bank'])
-      .order('name', { ascending: true });
+      .from("account_journals")
+      .select("id, name, code, type, is_active")
+      .eq("tenant_id", tenantId)
+      .in("type", ["cash", "bank"])
+      .order("name", { ascending: true });
 
     if (error) throw error;
     return data || [];
@@ -1181,15 +1600,19 @@ export const showroomService = {
     const tenantId = data.tenantId ?? data.tenant_id;
     requireTenantId(tenantId);
 
-    const payload = buildConfigPayload({ ...data, tenantId, isActive: data.isActive ?? data.is_active ?? true });
-    if (!payload.name) throw new Error('اكتب اسم نقطة المعرض.');
-    if (!payload.code) throw new Error('اكتب كود نقطة المعرض.');
+    const payload = buildConfigPayload({
+      ...data,
+      tenantId,
+      isActive: data.isActive ?? data.is_active ?? true,
+    });
+    if (!payload.name) throw new Error("اكتب اسم نقطة المعرض.");
+    if (!payload.code) throw new Error("اكتب كود نقطة المعرض.");
 
     const client = requireSupabase();
     await ensureConfigCodeUnique(client, tenantId, payload.code);
 
     const { data: createdConfig, error } = await client
-      .from('showroom_configs')
+      .from("showroom_configs")
       .insert(payload)
       .select(SHOWROOM_CONFIG_COLUMNS)
       .single();
@@ -1201,33 +1624,37 @@ export const showroomService = {
   async updateConfig(id, data = {}) {
     const tenantId = data.tenantId ?? data.tenant_id;
     requireTenantId(tenantId);
-    if (!id) throw new Error('تعذر تحديد نقطة المعرض.');
+    if (!id) throw new Error("تعذر تحديد نقطة المعرض.");
 
     const client = requireSupabase();
     const { data: current, error: currentError } = await client
-      .from('showroom_configs')
+      .from("showroom_configs")
       .select(SHOWROOM_CONFIG_COLUMNS)
-      .eq('tenant_id', tenantId)
-      .eq('id', id)
+      .eq("tenant_id", tenantId)
+      .eq("id", id)
       .single();
 
     if (currentError) throw currentError;
 
     const payload = buildConfigPayload(data);
-    const nextName = Object.prototype.hasOwnProperty.call(payload, 'name') ? payload.name : current.name;
-    const nextCode = Object.prototype.hasOwnProperty.call(payload, 'code') ? payload.code : current.code;
+    const nextName = Object.prototype.hasOwnProperty.call(payload, "name")
+      ? payload.name
+      : current.name;
+    const nextCode = Object.prototype.hasOwnProperty.call(payload, "code")
+      ? payload.code
+      : current.code;
 
-    if (!nextName) throw new Error('اكتب اسم نقطة المعرض.');
-    if (!nextCode) throw new Error('اكتب كود نقطة المعرض.');
+    if (!nextName) throw new Error("اكتب اسم نقطة المعرض.");
+    if (!nextCode) throw new Error("اكتب كود نقطة المعرض.");
     await ensureConfigCodeUnique(client, tenantId, nextCode, id);
 
     delete payload.tenant_id;
 
     const { data: updatedConfig, error } = await client
-      .from('showroom_configs')
+      .from("showroom_configs")
       .update(payload)
-      .eq('tenant_id', tenantId)
-      .eq('id', id)
+      .eq("tenant_id", tenantId)
+      .eq("id", id)
       .select(SHOWROOM_CONFIG_COLUMNS)
       .single();
 
@@ -1241,7 +1668,9 @@ export const showroomService = {
 
   async listConfigActivity({ tenantId, configIds } = {}) {
     requireTenantId(tenantId);
-    const scopedConfigIds = Array.isArray(configIds) ? configIds.filter(Boolean) : [];
+    const scopedConfigIds = Array.isArray(configIds)
+      ? configIds.filter(Boolean)
+      : [];
 
     if (!scopedConfigIds.length) {
       return {};
@@ -1249,10 +1678,10 @@ export const showroomService = {
 
     const client = requireSupabase();
     const { data, error } = await client
-      .from('showroom_sales')
-      .select('showroom_config_id')
-      .eq('tenant_id', tenantId)
-      .in('showroom_config_id', scopedConfigIds);
+      .from("showroom_sales")
+      .select("showroom_config_id")
+      .eq("tenant_id", tenantId)
+      .in("showroom_config_id", scopedConfigIds);
 
     if (error) throw error;
 
@@ -1266,27 +1695,29 @@ export const showroomService = {
 
   async deleteConfig({ tenantId, id } = {}) {
     requireTenantId(tenantId);
-    if (!id) throw new Error('تعذر تحديد نقطة المعرض.');
+    if (!id) throw new Error("تعذر تحديد نقطة المعرض.");
 
     const client = requireSupabase();
     const { data: linkedSales, error: linkedSalesError } = await client
-      .from('showroom_sales')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('showroom_config_id', id)
+      .from("showroom_sales")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("showroom_config_id", id)
       .limit(1);
 
     if (linkedSalesError) throw linkedSalesError;
 
     if ((linkedSales || []).length) {
-      throw new Error('لا يمكن حذف النقطة بعد تسجيل عمليات عليها. يمكنك تعطيلها فقط.');
+      throw new Error(
+        "لا يمكن حذف النقطة بعد تسجيل عمليات عليها. يمكنك تعطيلها فقط.",
+      );
     }
 
     const { error } = await client
-      .from('showroom_configs')
+      .from("showroom_configs")
       .delete()
-      .eq('tenant_id', tenantId)
-      .eq('id', id);
+      .eq("tenant_id", tenantId)
+      .eq("id", id);
 
     if (error) throw error;
     return true;
@@ -1310,24 +1741,26 @@ export const showroomService = {
     const client = requireSupabase();
     const buildQuery = () => {
       let query = client
-        .from('showroom_sales')
+        .from("showroom_sales")
         .select(SALE_SELECT)
-        .eq('tenant_id', tenantId)
-        .eq('showroom_config_id', showroomConfigId);
+        .eq("tenant_id", tenantId)
+        .eq("showroom_config_id", showroomConfigId);
 
       if (status) {
-        query = query.eq('status', status);
+        query = query.eq("status", status);
       }
 
       if (saleDateFrom) {
-        query = query.gte('sale_date', saleDateFrom);
+        query = query.gte("sale_date", saleDateFrom);
       }
 
       if (saleDateTo) {
-        query = query.lt('sale_date', saleDateTo);
+        query = query.lt("sale_date", saleDateTo);
       }
 
-      return query.order('sale_date', { ascending: false }).order('created_at', { ascending: false });
+      return query
+        .order("sale_date", { ascending: false })
+        .order("created_at", { ascending: false });
     };
 
     let data = [];
@@ -1359,127 +1792,176 @@ export const showroomService = {
       return salesWithCustomers;
     }
 
-    const salesWithAccountingStatus = await attachSaleAccountingStatus(client, tenantId, salesWithCustomers);
-    return attachSaleLines(client, tenantId, salesWithAccountingStatus, showroomConfigId);
+    const salesWithAccountingStatus = await attachSaleAccountingStatus(
+      client,
+      tenantId,
+      salesWithCustomers,
+    );
+    return attachSaleLines(
+      client,
+      tenantId,
+      salesWithAccountingStatus,
+      showroomConfigId,
+    );
   },
 
   async getInvoices(params = {}) {
     return showroomService.getSales(params);
   },
 
-  async saveTrackingUnitAttachment({ tenantId, trackingUnitId, documentType, file, userId } = {}) {
+  async saveTrackingUnitAttachment({
+    tenantId,
+    trackingUnitId,
+    documentType,
+    file,
+    userId,
+  } = {}) {
     requireTenantId(tenantId);
-    if (!trackingUnitId) throw new Error('تعذر تحديد القطعة الفريدة.');
-    if (!documentType) throw new Error('تعذر تحديد نوع الصورة.');
-    if (!file) throw new Error('اختر صورة أولاً.');
+    if (!trackingUnitId) throw new Error("تعذر تحديد القطعة الفريدة.");
+    if (!documentType) throw new Error("تعذر تحديد نوع الصورة.");
+    if (!file) throw new Error("اختر صورة أولاً.");
 
     assertTrackingUnitImage(file);
 
     const client = requireSupabase();
     const { data: unit, error: unitError } = await client
-      .from('stock_tracking_units')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('id', trackingUnitId)
+      .from("stock_tracking_units")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("id", trackingUnitId)
       .maybeSingle();
 
     if (unitError) throw unitError;
-    if (!unit) throw new Error('القطعة الفريدة غير موجودة.');
+    if (!unit) throw new Error("القطعة الفريدة غير موجودة.");
 
-    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
+    const createdBy =
+      userId || (await resolveCurrentTenantUserId(client, { tenantId }));
     const extension = getFileExtension(file);
     const path = `${tenantId}/tracking-units/${trackingUnitId}/${documentType}-${crypto.randomUUID()}.${extension}`;
 
-    const { error: uploadError } = await client.storage.from(TENANT_FILES_BUCKET).upload(path, file, {
-      cacheControl: '3600',
-      contentType: file.type || 'image/jpeg',
-      upsert: false,
-    });
+    const { error: uploadError } = await client.storage
+      .from(TENANT_FILES_BUCKET)
+      .upload(path, file, {
+        cacheControl: "3600",
+        contentType: file.type || "image/jpeg",
+        upsert: false,
+      });
 
     if (uploadError) {
-      throw new Error(uploadError.message || 'تعذر رفع صورة القطعة.');
+      throw new Error(uploadError.message || "تعذر رفع صورة القطعة.");
     }
 
-    const { data: attachment, error: attachmentError } = await client.from('ir_attachments').insert({
-      tenant_id: tenantId,
-      bucket_name: TENANT_FILES_BUCKET,
-      file_path: path,
-      document_type: documentType,
-      related_model: 'stock_tracking_units',
-      related_id: trackingUnitId,
-      original_file_name: file.name || null,
-      mime_type: file.type || null,
-      file_size: file.size || null,
-      created_by: createdBy,
-    }).select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, file_size, created_at').single();
+    const { data: attachment, error: attachmentError } = await client
+      .from("ir_attachments")
+      .insert({
+        tenant_id: tenantId,
+        bucket_name: TENANT_FILES_BUCKET,
+        file_path: path,
+        document_type: documentType,
+        related_model: "stock_tracking_units",
+        related_id: trackingUnitId,
+        original_file_name: file.name || null,
+        mime_type: file.type || null,
+        file_size: file.size || null,
+        created_by: createdBy,
+      })
+      .select(
+        "id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, file_size, created_at",
+      )
+      .single();
 
     if (attachmentError) {
       await client.storage.from(TENANT_FILES_BUCKET).remove([path]);
-      throw new Error(attachmentError.message || 'تم رفع الصورة لكن تعذر ربطها بالقطعة.');
+      throw new Error(
+        attachmentError.message || "تم رفع الصورة لكن تعذر ربطها بالقطعة.",
+      );
     }
 
     return buildTrackingAttachmentWithUrl(client, attachment);
   },
 
-  async linkExistingTrackingUnitAttachment({ tenantId, trackingUnitId, documentType, source, userId } = {}) {
+  async linkExistingTrackingUnitAttachment({
+    tenantId,
+    trackingUnitId,
+    documentType,
+    source,
+    userId,
+  } = {}) {
     requireTenantId(tenantId);
-    if (!trackingUnitId) throw new Error('تعذر تحديد القطعة الفريدة.');
-    if (!documentType) throw new Error('تعذر تحديد نوع الصورة.');
-    if (!source?.path) throw new Error('اختر صورة موجودة أولاً.');
+    if (!trackingUnitId) throw new Error("تعذر تحديد القطعة الفريدة.");
+    if (!documentType) throw new Error("تعذر تحديد نوع الصورة.");
+    if (!source?.path) throw new Error("اختر صورة موجودة أولاً.");
 
     const path = normalizeStoragePath(source.path);
     if (!path.startsWith(`${tenantId}/`)) {
-      throw new Error('لا يمكن ربط صورة من مساحة شركة أخرى.');
+      throw new Error("لا يمكن ربط صورة من مساحة شركة أخرى.");
     }
 
     const client = requireSupabase();
     const { data: unit, error: unitError } = await client
-      .from('stock_tracking_units')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('id', trackingUnitId)
+      .from("stock_tracking_units")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("id", trackingUnitId)
       .maybeSingle();
 
     if (unitError) throw unitError;
-    if (!unit) throw new Error('القطعة الفريدة غير موجودة.');
+    if (!unit) throw new Error("القطعة الفريدة غير موجودة.");
 
-    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
-    const { data: attachment, error: attachmentError } = await client.from('ir_attachments').insert({
-      tenant_id: tenantId,
-      bucket_name: source.bucket || source.bucketName || TENANT_FILES_BUCKET,
-      file_path: path,
-      document_type: documentType,
-      related_model: 'stock_tracking_units',
-      related_id: trackingUnitId,
-      original_file_name: source.name || source.originalFileName || path.split('/').pop() || null,
-      mime_type: source.mimeType || null,
-      file_size: source.size || null,
-      created_by: createdBy,
-    }).select('id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, file_size, created_at').single();
+    const createdBy =
+      userId || (await resolveCurrentTenantUserId(client, { tenantId }));
+    const { data: attachment, error: attachmentError } = await client
+      .from("ir_attachments")
+      .insert({
+        tenant_id: tenantId,
+        bucket_name: source.bucket || source.bucketName || TENANT_FILES_BUCKET,
+        file_path: path,
+        document_type: documentType,
+        related_model: "stock_tracking_units",
+        related_id: trackingUnitId,
+        original_file_name:
+          source.name ||
+          source.originalFileName ||
+          path.split("/").pop() ||
+          null,
+        mime_type: source.mimeType || null,
+        file_size: source.size || null,
+        created_by: createdBy,
+      })
+      .select(
+        "id, related_id, document_type, bucket_name, file_path, original_file_name, mime_type, file_size, created_at",
+      )
+      .single();
 
     if (attachmentError) {
-      throw new Error(attachmentError.message || 'تعذر ربط الصورة الموجودة بالقطعة.');
+      throw new Error(
+        attachmentError.message || "تعذر ربط الصورة الموجودة بالقطعة.",
+      );
     }
 
     return buildTrackingAttachmentWithUrl(client, attachment);
   },
 
-  async removeTrackingUnitAttachment({ tenantId, trackingUnitId, attachmentId } = {}) {
+  async removeTrackingUnitAttachment({
+    tenantId,
+    trackingUnitId,
+    attachmentId,
+  } = {}) {
     requireTenantId(tenantId);
-    if (!trackingUnitId) throw new Error('تعذر تحديد القطعة الفريدة.');
-    if (!attachmentId) throw new Error('تعذر تحديد الصورة.');
+    if (!trackingUnitId) throw new Error("تعذر تحديد القطعة الفريدة.");
+    if (!attachmentId) throw new Error("تعذر تحديد الصورة.");
 
     const client = requireSupabase();
     const { error } = await client
-      .from('ir_attachments')
+      .from("ir_attachments")
       .update({ is_active: false })
-      .eq('tenant_id', tenantId)
-      .eq('id', attachmentId)
-      .eq('related_model', 'stock_tracking_units')
-      .eq('related_id', trackingUnitId);
+      .eq("tenant_id", tenantId)
+      .eq("id", attachmentId)
+      .eq("related_model", "stock_tracking_units")
+      .eq("related_id", trackingUnitId);
 
     if (error) {
-      throw new Error(error.message || 'تعذر حذف الصورة.');
+      throw new Error(error.message || "تعذر حذف الصورة.");
     }
 
     return true;
@@ -1491,25 +1973,25 @@ export const showroomService = {
     item,
     ownerStatus,
     ownerName,
-    ownerNationalId = '',
-    ownerNote = '',
+    ownerNationalId = "",
+    ownerNote = "",
     identityFile = null,
     identitySource = null,
     trackingPhotosIgnored = false,
-    trackingPhotosIgnoreReason = '',
+    trackingPhotosIgnoreReason = "",
     processorPartnerId = null,
     userId,
   } = {}) {
     requireTenantId(tenantId);
     if (!sale?.id && !item?.saleId) {
-      throw new Error('تعذر تحديد الفاتورة المرتبطة بطلب الأوراق.');
+      throw new Error("تعذر تحديد الفاتورة المرتبطة بطلب الأوراق.");
     }
     if (!item?.id) {
-      throw new Error('تعذر تحديد المنتج المطلوب.');
+      throw new Error("تعذر تحديد المنتج المطلوب.");
     }
 
-    const normalizedStatus = ownerStatus === 'later' ? 'later' : 'confirmed';
-    const safeOwnerName = String(ownerName || '').trim();
+    const normalizedStatus = ownerStatus === "later" ? "later" : "confirmed";
+    const safeOwnerName = String(ownerName || "").trim();
     const client = requireSupabase();
     let uploadedPath = null;
     let ownerAttachment = null;
@@ -1519,20 +2001,24 @@ export const showroomService = {
       const extension = getFileExtension(identityFile);
       uploadedPath = `${tenantId}/paperwork-requests/sale-lines/${item.id}/document-owner-id-card-${crypto.randomUUID()}.${extension}`;
 
-      const { error: uploadError } = await client.storage.from(TENANT_FILES_BUCKET).upload(uploadedPath, identityFile, {
-        cacheControl: '3600',
-        contentType: identityFile.type || 'image/jpeg',
-        upsert: false,
-      });
+      const { error: uploadError } = await client.storage
+        .from(TENANT_FILES_BUCKET)
+        .upload(uploadedPath, identityFile, {
+          cacheControl: "3600",
+          contentType: identityFile.type || "image/jpeg",
+          upsert: false,
+        });
 
       if (uploadError) {
-        throw new Error(uploadError.message || 'تعذر رفع صورة بطاقة صاحب الورق.');
+        throw new Error(
+          uploadError.message || "تعذر رفع صورة بطاقة صاحب الورق.",
+        );
       }
 
       ownerAttachment = {
         bucket_name: TENANT_FILES_BUCKET,
         file_path: uploadedPath,
-        document_type: 'document_owner_id_card',
+        document_type: "document_owner_id_card",
         original_file_name: identityFile.name || null,
         mime_type: identityFile.type || null,
         file_size: identityFile.size || null,
@@ -1540,63 +2026,86 @@ export const showroomService = {
     } else if (identitySource?.path) {
       const path = normalizeStoragePath(identitySource.path);
       if (!path.startsWith(`${tenantId}/`)) {
-        throw new Error('لا يمكن ربط صورة من مساحة شركة أخرى.');
+        throw new Error("لا يمكن ربط صورة من مساحة شركة أخرى.");
       }
 
       ownerAttachment = {
-        bucket_name: identitySource.bucket || identitySource.bucketName || TENANT_FILES_BUCKET,
+        bucket_name:
+          identitySource.bucket ||
+          identitySource.bucketName ||
+          TENANT_FILES_BUCKET,
         file_path: path,
-        document_type: 'document_owner_id_card',
-        original_file_name: identitySource.name || identitySource.originalFileName || path.split('/').pop() || null,
+        document_type: "document_owner_id_card",
+        original_file_name:
+          identitySource.name ||
+          identitySource.originalFileName ||
+          path.split("/").pop() ||
+          null,
         mime_type: identitySource.mimeType || null,
         file_size: identitySource.size || null,
       };
     }
 
     try {
-      const { data, error } = await client.rpc('confirm_sale_paperwork_request', {
-        p_tenant_id: tenantId,
-        p_branch_id: item.branchId || sale?.branchId || sale?.branch_id || null,
-        p_sale_id: item.saleId || sale?.id,
-        p_sale_line_id: item.id,
-        p_tracking_unit_id: item.trackingUnitId || item.tracking_unit_id || item.trackingUnit?.id || null,
-        p_customer_id: item.customerId || sale?.customerId || sale?.customer_id || null,
-        p_document_owner_status: normalizedStatus,
-        p_document_owner_name: normalizedStatus === 'later' ? null : safeOwnerName || null,
-        p_document_owner_national_id: String(ownerNationalId || '').trim() || null,
-        p_document_owner_note: String(ownerNote || '').trim() || null,
-        p_owner_attachment: ownerAttachment,
-        p_tracking_photos_ignored: Boolean(trackingPhotosIgnored),
-        p_tracking_photos_ignore_reason: String(trackingPhotosIgnoreReason || '').trim() || null,
-      });
+      const { data, error } = await client.rpc(
+        "confirm_sale_paperwork_request",
+        {
+          p_tenant_id: tenantId,
+          p_branch_id:
+            item.branchId || sale?.branchId || sale?.branch_id || null,
+          p_sale_id: item.saleId || sale?.id,
+          p_sale_line_id: item.id,
+          p_tracking_unit_id:
+            item.trackingUnitId ||
+            item.tracking_unit_id ||
+            item.trackingUnit?.id ||
+            null,
+          p_customer_id:
+            item.customerId || sale?.customerId || sale?.customer_id || null,
+          p_document_owner_status: normalizedStatus,
+          p_document_owner_name:
+            normalizedStatus === "later" ? null : safeOwnerName || null,
+          p_document_owner_national_id:
+            String(ownerNationalId || "").trim() || null,
+          p_document_owner_note: String(ownerNote || "").trim() || null,
+          p_owner_attachment: ownerAttachment,
+          p_tracking_photos_ignored: Boolean(trackingPhotosIgnored),
+          p_tracking_photos_ignore_reason:
+            String(trackingPhotosIgnoreReason || "").trim() || null,
+        },
+      );
 
       if (error) throw error;
 
       const requestId = data?.id || null;
-      const trackingUnitId = item.trackingUnitId || item.tracking_unit_id || item.trackingUnit?.id || null;
+      const trackingUnitId =
+        item.trackingUnitId ||
+        item.tracking_unit_id ||
+        item.trackingUnit?.id ||
+        null;
       const safeProcessorPartnerId = processorPartnerId || null;
 
       if (safeProcessorPartnerId && requestId) {
         const { error: requestProcessorError } = await client
-          .from('paperwork_requests')
+          .from("paperwork_requests")
           .update({
             processor_partner_id: safeProcessorPartnerId,
             updated_at: new Date().toISOString(),
           })
-          .eq('tenant_id', tenantId)
-          .eq('id', requestId);
+          .eq("tenant_id", tenantId)
+          .eq("id", requestId);
 
         if (requestProcessorError) throw requestProcessorError;
 
         if (trackingUnitId) {
           const { error: trackingProcessorError } = await client
-            .from('stock_tracking_units')
+            .from("stock_tracking_units")
             .update({
               paperwork_processor_partner_id: safeProcessorPartnerId,
               updated_at: new Date().toISOString(),
             })
-            .eq('tenant_id', tenantId)
-            .eq('id', trackingUnitId);
+            .eq("tenant_id", tenantId)
+            .eq("id", trackingUnitId);
 
           if (trackingProcessorError) throw trackingProcessorError;
         }
@@ -1608,14 +2117,16 @@ export const showroomService = {
 
       return {
         id: requestId,
-        currentStage: data?.current_stage || 'preparation',
-        status: data?.status || 'open',
+        currentStage: data?.current_stage || "preparation",
+        status: data?.status || "open",
         documentOwnerName: data?.document_owner_name || null,
         documentOwnerNationalId: data?.document_owner_national_id || null,
         documentOwnerStatus: data?.document_owner_status || null,
         documentOwnerNote: data?.document_owner_note || null,
-        processorPartnerId: safeProcessorPartnerId || data?.processor_partner_id || null,
-        processor_partner_id: safeProcessorPartnerId || data?.processor_partner_id || null,
+        processorPartnerId:
+          safeProcessorPartnerId || data?.processor_partner_id || null,
+        processor_partner_id:
+          safeProcessorPartnerId || data?.processor_partner_id || null,
         trackingPhotosIgnored: Boolean(data?.tracking_photos_ignored),
         trackingPhotosIgnoreReason: data?.tracking_photos_ignore_reason || null,
         created: Boolean(data?.created),
@@ -1624,7 +2135,7 @@ export const showroomService = {
       if (uploadedPath) {
         await client.storage.from(TENANT_FILES_BUCKET).remove([uploadedPath]);
       }
-      throw new Error(saveError?.message || 'تعذر حفظ طلب الأوراق بالكامل.');
+      throw new Error(saveError?.message || "تعذر حفظ طلب الأوراق بالكامل.");
     }
   },
 
@@ -1636,111 +2147,170 @@ export const showroomService = {
     totalAmount,
     showroomConfigId,
     userId,
+    crmLeadId = null,
+    crmInstallmentApplicationId = null,
   }) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
-    if (!customerId) throw new Error('اختر العميل أولاً.');
+    if (!customerId) throw new Error("اختر العميل أولاً.");
     const client = requireSupabase();
     const saleItems = Array.isArray(items) ? items : [];
-    if (!saleItems.length) throw new Error('أضف منتجًا واحدًا على الأقل.');
+    if (!saleItems.length) throw new Error("أضف منتجًا واحدًا على الأقل.");
     const safeTotalAmount = Math.max(toMoney(totalAmount), 0);
-    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
+    const createdBy =
+      userId || (await resolveCurrentTenantUserId(client, { tenantId }));
     let sale;
     let previousTrackingUnitIds = [];
 
     if (pendingSaleId) {
-      const { data, error } = await client.from('showroom_sales').update({
+      const pendingUpdate = {
         customer_id: customerId,
         total_amount: safeTotalAmount,
         updated_at: new Date().toISOString(),
-      }).eq('tenant_id', tenantId).eq('showroom_config_id', showroomConfigId)
-        .eq('id', pendingSaleId).eq('status', 'pending_payment').select(SALE_SELECT).single();
+        ...(crmLeadId
+          ? {
+              crm_lead_id: crmLeadId,
+              crm_installment_application_id:
+                crmInstallmentApplicationId || null,
+            }
+          : {}),
+      };
+      const { data, error } = await client
+        .from("showroom_sales")
+        .update(pendingUpdate)
+        .eq("tenant_id", tenantId)
+        .eq("showroom_config_id", showroomConfigId)
+        .eq("id", pendingSaleId)
+        .eq("status", "pending_payment")
+        .select(SALE_SELECT)
+        .single();
       if (error) throw error;
       sale = data;
-      const { data: previousLines, error: previousLinesError } = await client.from('showroom_sale_lines')
-        .select('id, tracking_unit_id').eq('tenant_id', tenantId).eq('sale_id', sale.id);
+      const { data: previousLines, error: previousLinesError } = await client
+        .from("showroom_sale_lines")
+        .select("id, tracking_unit_id")
+        .eq("tenant_id", tenantId)
+        .eq("sale_id", sale.id);
       if (previousLinesError) throw previousLinesError;
       const previousLineIds = (previousLines || []).map((line) => line.id);
-      previousTrackingUnitIds = (previousLines || []).map((line) => line.tracking_unit_id).filter(Boolean);
+      previousTrackingUnitIds = (previousLines || [])
+        .map((line) => line.tracking_unit_id)
+        .filter(Boolean);
       if (previousLineIds.length) {
-        const { error: attributesDeleteError } = await client.from('transaction_line_attributes')
-          .delete().eq('tenant_id', tenantId).in('transaction_line_id', previousLineIds);
+        const { error: attributesDeleteError } = await client
+          .from("transaction_line_attributes")
+          .delete()
+          .eq("tenant_id", tenantId)
+          .in("transaction_line_id", previousLineIds);
         if (attributesDeleteError) throw attributesDeleteError;
       }
-      const { error: deleteLinesError } = await client.from('showroom_sale_lines')
-        .delete().eq('tenant_id', tenantId).eq('sale_id', sale.id);
+      const { error: deleteLinesError } = await client
+        .from("showroom_sale_lines")
+        .delete()
+        .eq("tenant_id", tenantId)
+        .eq("sale_id", sale.id);
       if (deleteLinesError) throw deleteLinesError;
     } else {
-      const { data, error } = await client.from('showroom_sales').insert({
-        tenant_id: tenantId,
-        customer_id: customerId,
-        showroom_config_id: showroomConfigId,
-        sale_date: todayISODate(),
-        status: 'pending_payment',
-        total_amount: safeTotalAmount,
-        created_by: createdBy,
-      }).select(SALE_SELECT).single();
+      const { data, error } = await client
+        .from("showroom_sales")
+        .insert({
+          tenant_id: tenantId,
+          customer_id: customerId,
+          showroom_config_id: showroomConfigId,
+          sale_date: todayISODate(),
+          status: "pending_payment",
+          total_amount: safeTotalAmount,
+          created_by: createdBy,
+          crm_lead_id: crmLeadId || null,
+          crm_installment_application_id: crmInstallmentApplicationId || null,
+        })
+        .select(SALE_SELECT)
+        .single();
       if (error) throw error;
       sale = data;
     }
 
-    const preparedSaleItems = await Promise.all(saleItems.map(async (item) => {
-      const productProductId = getProductProductId(item);
-      const trackingUnitId = productProductId
-        ? await ensureSaleTrackingUnit(client, {
+    const preparedSaleItems = await Promise.all(
+      saleItems.map(async (item) => {
+        const productProductId = getProductProductId(item);
+        const trackingUnitId = productProductId
+          ? await ensureSaleTrackingUnit(client, {
+              tenantId,
+              item,
+              productProductId,
+              saleId: sale.id,
+              userId: createdBy,
+              targetStatus: "reserved",
+            })
+          : null;
+
+        await saveTrackingUnitLicense(client, {
           tenantId,
           item,
-          productProductId,
-          saleId: sale.id,
+          trackingUnitId,
           userId: createdBy,
-          targetStatus: 'reserved',
-        })
-        : null;
+        });
 
-      await saveTrackingUnitLicense(client, {
-        tenantId,
-        item,
-        trackingUnitId,
-        userId: createdBy,
-      });
+        return { item, trackingUnitId };
+      }),
+    );
 
-      return { item, trackingUnitId };
-    }));
-
-    const activeTrackingUnitIds = preparedSaleItems.map(({ trackingUnitId }) => trackingUnitId).filter(Boolean);
-    const releasedTrackingUnitIds = previousTrackingUnitIds.filter((id) => !activeTrackingUnitIds.includes(id));
+    const activeTrackingUnitIds = preparedSaleItems
+      .map(({ trackingUnitId }) => trackingUnitId)
+      .filter(Boolean);
+    const releasedTrackingUnitIds = previousTrackingUnitIds.filter(
+      (id) => !activeTrackingUnitIds.includes(id),
+    );
     if (releasedTrackingUnitIds.length) {
-      const { error: releaseError } = await client.from('stock_tracking_units').update({
-        status: 'in_stock',
-        notes: null,
-        updated_at: new Date().toISOString(),
-      }).eq('tenant_id', tenantId).eq('status', 'reserved').eq('notes', `showroom_sale:${sale.id}`).in('id', releasedTrackingUnitIds);
+      const { error: releaseError } = await client
+        .from("stock_tracking_units")
+        .update({
+          status: "in_stock",
+          notes: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("tenant_id", tenantId)
+        .eq("status", "reserved")
+        .eq("notes", `showroom_sale:${sale.id}`)
+        .in("id", releasedTrackingUnitIds);
       if (releaseError) throw releaseError;
     }
 
-    const lineRows = preparedSaleItems.map(({ item, trackingUnitId }) => buildSaleLine({
-      tenantId,
-      saleId: sale.id,
-      item,
-      trackingUnitId,
-    }));
-    const { data: lines, error: linesError } = await client.from('showroom_sale_lines')
-      .insert(lineRows).select();
+    const lineRows = preparedSaleItems.map(({ item, trackingUnitId }) =>
+      buildSaleLine({
+        tenantId,
+        saleId: sale.id,
+        item,
+        trackingUnitId,
+      }),
+    );
+    const { data: lines, error: linesError } = await client
+      .from("showroom_sale_lines")
+      .insert(lineRows)
+      .select();
     if (linesError) throw linesError;
 
-    const attributeRows = (lines || []).flatMap((line, index) => getLineAttributes(saleItems[index]).map((attribute) => ({
-      tenant_id: tenantId,
-      transaction_line_id: line.id,
-      attribute_id: attribute.attributeId,
-      attribute_value_id: attribute.attributeValueId,
-      value_text: attribute.valueText,
-    })));
+    const attributeRows = (lines || []).flatMap((line, index) =>
+      getLineAttributes(saleItems[index]).map((attribute) => ({
+        tenant_id: tenantId,
+        transaction_line_id: line.id,
+        attribute_id: attribute.attributeId,
+        attribute_value_id: attribute.attributeValueId,
+        value_text: attribute.valueText,
+      })),
+    );
     if (attributeRows.length) {
-      const { error: attributesError } = await client.from('transaction_line_attributes').insert(attributeRows);
+      const { error: attributesError } = await client
+        .from("transaction_line_attributes")
+        .insert(attributeRows);
       if (attributesError) throw attributesError;
     }
 
-    const detailedLines = await attachLineDetails(client, tenantId, lines || []);
+    const detailedLines = await attachLineDetails(
+      client,
+      tenantId,
+      lines || [],
+    );
     return { ...sale, lines: detailedLines, payments: [] };
   },
 
@@ -1751,12 +2321,14 @@ export const showroomService = {
     openCreditAllocations = [],
     tenantId,
     showroomConfigId,
+    crmLeadId = null,
+    crmInstallmentApplicationId = null,
   }) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
-    if (!saleId) throw new Error('تعذر تحديد الفاتورة المعلقة.');
+    if (!saleId) throw new Error("تعذر تحديد الفاتورة المعلقة.");
     const normalizedCashAmount = toMoney(cashAmount);
-    const normalizedCashNote = String(cashNote || '').trim();
+    const normalizedCashNote = String(cashNote || "").trim();
     const normalizedOpenCreditAllocations = (
       Array.isArray(openCreditAllocations) ? openCreditAllocations : []
     ).map((allocation) => ({
@@ -1765,55 +2337,70 @@ export const showroomService = {
     }));
 
     if (normalizedCashAmount > 0 && !normalizedCashNote) {
-      throw new Error('ملاحظة الدفع النقدي مطلوبة.');
+      throw new Error("ملاحظة الدفع النقدي مطلوبة.");
     }
-    if (normalizedOpenCreditAllocations.some(
-      (allocation) => !allocation.open_credit_line_id || allocation.amount <= 0,
-    )) {
-      throw new Error('بيانات تخصيص الاعتمادات المفتوحة غير صحيحة.');
+    if (
+      normalizedOpenCreditAllocations.some(
+        (allocation) =>
+          !allocation.open_credit_line_id || allocation.amount <= 0,
+      )
+    ) {
+      throw new Error("بيانات تخصيص الاعتمادات المفتوحة غير صحيحة.");
     }
 
     const client = requireSupabase();
-    const { data, error } = await client.rpc('complete_showroom_sale', {
+    const { data, error } = await client.rpc("complete_showroom_sale", {
       p_sale_id: saleId,
       p_cash_amount: normalizedCashAmount,
       p_cash_note: normalizedCashNote || null,
       p_open_credit_allocations: normalizedOpenCreditAllocations,
+      p_crm_lead_id: crmLeadId || null,
+      p_crm_installment_application_id: crmInstallmentApplicationId || null,
     });
-    if (error) throw new Error(error.message || 'تعذر إتمام البيع.');
-    const sale = await showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });
+    if (error) throw new Error(error.message || "تعذر إتمام البيع.");
+    const sale = await showroomService.getSaleDetails({
+      tenantId,
+      saleId,
+      showroomConfigId,
+    });
     return { ...sale, completion: data };
   },
 
   async ensureCurrentUserFinancialPartner({ tenantId }) {
     requireTenantId(tenantId);
     const client = requireSupabase();
-    const { data, error } = await client.rpc('ensure_current_user_financial_partner', {
-      p_tenant_id: tenantId,
-    });
+    const { data, error } = await client.rpc(
+      "ensure_current_user_financial_partner",
+      {
+        p_tenant_id: tenantId,
+      },
+    );
 
-    if (error) throw new Error(error.message || 'تعذر تحديد حساب تحصيل الموظف.');
+    if (error)
+      throw new Error(error.message || "تعذر تحديد حساب تحصيل الموظف.");
     if (!data?.partner_id || !data?.account_id) {
-      throw new Error('بيانات حساب تحصيل الموظف غير مكتملة.');
+      throw new Error("بيانات حساب تحصيل الموظف غير مكتملة.");
     }
 
     return {
       accountId: data.account_id,
-      accountCode: data.account_code || '',
-      accountName: data.account_name || 'حساب عهدة الموظف',
+      accountCode: data.account_code || "",
+      accountName: data.account_name || "حساب عهدة الموظف",
       tenantUserId: data.tenant_user_id,
-      employeeName: data.employee_name || '',
+      employeeName: data.employee_name || "",
       partnerId: data.partner_id,
-      partnerName: data.partner_name || '',
+      partnerName: data.partner_name || "",
     };
   },
 
   async deletePendingSale({ tenantId, saleId }) {
     requireTenantId(tenantId);
-    if (!saleId) throw new Error('تعذر تحديد الفاتورة المعلقة.');
+    if (!saleId) throw new Error("تعذر تحديد الفاتورة المعلقة.");
     const client = requireSupabase();
-    const { data, error } = await client.rpc('delete_pending_showroom_sale', { p_sale_id: saleId });
-    if (error) throw new Error(error.message || 'تعذر حذف الفاتورة المعلقة.');
+    const { data, error } = await client.rpc("delete_pending_showroom_sale", {
+      p_sale_id: saleId,
+    });
+    if (error) throw new Error(error.message || "تعذر حذف الفاتورة المعلقة.");
     return data;
   },
 
@@ -1856,11 +2443,11 @@ export const showroomService = {
     if (!customerId) return [];
     const client = requireSupabase();
     const { data: account, error: accountError } = await client
-      .from('account_accounts')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('code', '114002')
-      .eq('active', true)
+      .from("account_accounts")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("code", "114002")
+      .eq("active", true)
       .maybeSingle();
     if (accountError) throw accountError;
     if (!account?.id) return [];
@@ -1868,22 +2455,22 @@ export const showroomService = {
     // The accountant app records the customer on account_moves.partner_id and
     // the payment entity on the 114002 account_move_lines.partner_id.
     const { data: moves, error: movesError } = await client
-      .from('account_moves')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('partner_id', customerId)
-      .eq('state', 'posted');
+      .from("account_moves")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("partner_id", customerId)
+      .eq("state", "posted");
     if (movesError) throw movesError;
     const moveIds = (moves || []).map((move) => move.id).filter(Boolean);
     if (!moveIds.length) return [];
 
     const { data: lines, error: linesError } = await client
-      .from('account_move_lines')
-      .select('partner_id, debit, credit, label')
-      .eq('tenant_id', tenantId)
-      .eq('account_id', account.id)
-      .in('move_id', moveIds)
-      .or('label.ilike.اعتماد دفعة من جهة%,label.ilike.استخدام دفعة مسبقة%');
+      .from("account_move_lines")
+      .select("partner_id, debit, credit, label")
+      .eq("tenant_id", tenantId)
+      .eq("account_id", account.id)
+      .in("move_id", moveIds)
+      .or("label.ilike.اعتماد دفعة من جهة%,label.ilike.استخدام دفعة مسبقة%");
     if (linesError) throw linesError;
 
     const amountsByEntity = new Map();
@@ -1891,29 +2478,52 @@ export const showroomService = {
       if (!line.partner_id) return;
       amountsByEntity.set(
         line.partner_id,
-        toMoney(amountsByEntity.get(line.partner_id)) + toMoney(line.debit) - toMoney(line.credit),
+        toMoney(amountsByEntity.get(line.partner_id)) +
+          toMoney(line.debit) -
+          toMoney(line.credit),
       );
     });
 
     const { data: advanceAccount, error: advanceAccountError } = await client
-      .from('account_accounts').select('id').eq('tenant_id', tenantId).eq('code', '212001').eq('active', true).maybeSingle();
+      .from("account_accounts")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("code", "212001")
+      .eq("active", true)
+      .maybeSingle();
     if (advanceAccountError) throw advanceAccountError;
     if (advanceAccount?.id) {
-      const { data: consumptionMoves, error: consumptionMovesError } = await client
-        .from('account_moves').select('id, partner_id').eq('tenant_id', tenantId)
-        .eq('pay_method', 'advance_credit').eq('state', 'posted');
+      const { data: consumptionMoves, error: consumptionMovesError } =
+        await client
+          .from("account_moves")
+          .select("id, partner_id")
+          .eq("tenant_id", tenantId)
+          .eq("pay_method", "advance_credit")
+          .eq("state", "posted");
       if (consumptionMovesError) throw consumptionMovesError;
-      const consumptionMoveIds = (consumptionMoves || []).map((move) => move.id);
+      const consumptionMoveIds = (consumptionMoves || []).map(
+        (move) => move.id,
+      );
       if (consumptionMoveIds.length) {
-        const { data: consumptionLines, error: consumptionLinesError } = await client
-          .from('account_move_lines').select('move_id, debit').eq('tenant_id', tenantId)
-          .eq('account_id', advanceAccount.id).eq('partner_id', customerId).in('move_id', consumptionMoveIds);
+        const { data: consumptionLines, error: consumptionLinesError } =
+          await client
+            .from("account_move_lines")
+            .select("move_id, debit")
+            .eq("tenant_id", tenantId)
+            .eq("account_id", advanceAccount.id)
+            .eq("partner_id", customerId)
+            .in("move_id", consumptionMoveIds);
         if (consumptionLinesError) throw consumptionLinesError;
-        const consumptionMovesById = new Map((consumptionMoves || []).map((move) => [move.id, move]));
+        const consumptionMovesById = new Map(
+          (consumptionMoves || []).map((move) => [move.id, move]),
+        );
         (consumptionLines || []).forEach((line) => {
           const entityId = consumptionMovesById.get(line.move_id)?.partner_id;
           if (!entityId) return;
-          amountsByEntity.set(entityId, toMoney(amountsByEntity.get(entityId)) - toMoney(line.debit));
+          amountsByEntity.set(
+            entityId,
+            toMoney(amountsByEntity.get(entityId)) - toMoney(line.debit),
+          );
         });
       }
     }
@@ -1923,45 +2533,53 @@ export const showroomService = {
     if (!entityIds.length) return [];
 
     const { data: entities, error: entitiesError } = await client
-      .from('partners')
-      .select('id, name, display_config')
-      .eq('tenant_id', tenantId)
-      .in('id', entityIds);
+      .from("partners")
+      .select("id, name, display_config")
+      .eq("tenant_id", tenantId)
+      .in("id", entityIds);
     if (entitiesError) throw entitiesError;
 
-    return (entities || []).map((entity) => ({
-      paymentEntityId: entity.id,
-      paymentEntityName: entity.name || 'جهة دفع',
-      displayConfig: entity.display_config || null,
-      availableAmount: Math.round(toMoney(amountsByEntity.get(entity.id)) * 100) / 100,
-    })).filter((balance) => balance.availableAmount > 0);
+    return (entities || [])
+      .map((entity) => ({
+        paymentEntityId: entity.id,
+        paymentEntityName: entity.name || "جهة دفع",
+        displayConfig: entity.display_config || null,
+        availableAmount:
+          Math.round(toMoney(amountsByEntity.get(entity.id)) * 100) / 100,
+      }))
+      .filter((balance) => balance.availableAmount > 0);
   },
 
-  async getCustomerOpenCredits({ tenantId, customerId, includeFullyUsed = false }) {
+  async getCustomerOpenCredits({
+    tenantId,
+    customerId,
+    includeFullyUsed = false,
+  }) {
     requireTenantId(tenantId);
     if (!customerId) return [];
 
     const client = requireSupabase();
-    const { data, error } = await client.rpc('list_customer_open_credits', {
+    const { data, error } = await client.rpc("list_customer_open_credits", {
       p_tenant_id: tenantId,
       p_customer_id: customerId,
       p_include_fully_used: Boolean(includeFullyUsed),
     });
-    if (error) throw new Error(error.message || 'تعذر تحميل اعتمادات العميل المتاحة.');
+    if (error)
+      throw new Error(error.message || "تعذر تحميل اعتمادات العميل المتاحة.");
 
     return (data || []).map((credit) => ({
       openCreditLineId: credit.open_credit_line_id,
       moveId: credit.move_id,
       customerId: credit.customer_id,
       paymentEntityId: credit.payment_entity_id,
-      paymentEntityName: credit.payment_entity_name || 'جهة دفع',
+      paymentEntityName: credit.payment_entity_name || "جهة دفع",
       originalAmount: toMoney(credit.original_amount),
       reconciledAmount: toMoney(credit.reconciled_amount),
       availableAmount: toMoney(credit.available_amount),
       moveDate: credit.move_date,
-      moveName: credit.move_name || '',
-      currencyCode: credit.currency_code || 'EGP',
-      status: credit.status || 'open',
+      moveName: credit.move_name || "",
+      currencyCode: credit.currency_code || "EGP",
+      status: credit.status || "open",
       attachment: credit.attachment || null,
     }));
   },
@@ -1971,30 +2589,46 @@ export const showroomService = {
     requireShowroomConfigId(showroomConfigId);
     const client = requireSupabase();
     const { data: sale, error: saleError } = await client
-      .from('showroom_sales')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .eq('showroom_config_id', showroomConfigId)
-      .eq('id', saleId)
+      .from("showroom_sales")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("showroom_config_id", showroomConfigId)
+      .eq("id", saleId)
       .single();
 
     if (saleError) throw saleError;
 
     const { data: lines, error: linesError } = await client
-      .from('showroom_sale_lines')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .eq('sale_id', saleId)
-      .order('created_at', { ascending: true });
+      .from("showroom_sale_lines")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("sale_id", saleId)
+      .order("created_at", { ascending: true });
 
     if (linesError) throw linesError;
 
-    const ledgerPayments = await loadReconciledSalePayments(client, tenantId, sale);
+    const ledgerPayments = await loadReconciledSalePayments(
+      client,
+      tenantId,
+      sale,
+    );
 
     const saleWithCustomer = await attachCustomers(client, tenantId, sale);
-    const saleWithAccountingStatus = await attachSaleAccountingStatus(client, tenantId, saleWithCustomer);
-    const linesWithDetails = await attachLineDetails(client, tenantId, lines || []);
-    const linesWithPaperwork = await attachLinePaperworkRequests(client, tenantId, linesWithDetails);
+    const saleWithAccountingStatus = await attachSaleAccountingStatus(
+      client,
+      tenantId,
+      saleWithCustomer,
+    );
+    const linesWithDetails = await attachLineDetails(
+      client,
+      tenantId,
+      lines || [],
+    );
+    const linesWithPaperwork = await attachLinePaperworkRequests(
+      client,
+      tenantId,
+      linesWithDetails,
+    );
 
     return {
       ...saleWithAccountingStatus,
@@ -2005,42 +2639,48 @@ export const showroomService = {
 
   async getSaleReceiptContext({ tenantId, saleId }) {
     requireTenantId(tenantId);
-    if (!saleId) throw new Error('تعذر تحديد الفاتورة.');
+    if (!saleId) throw new Error("تعذر تحديد الفاتورة.");
 
     const client = requireSupabase();
     const { data: sale, error: saleError } = await client
-      .from('showroom_sales')
-      .select('id, customer_id, total_amount, account_move_id')
-      .eq('tenant_id', tenantId)
-      .eq('id', saleId)
+      .from("showroom_sales")
+      .select("id, customer_id, total_amount, account_move_id")
+      .eq("tenant_id", tenantId)
+      .eq("id", saleId)
       .maybeSingle();
 
     if (saleError) throw saleError;
-    if (!sale) throw new Error('الفاتورة غير موجودة.');
+    if (!sale) throw new Error("الفاتورة غير موجودة.");
 
     const [payments, customerResult] = await Promise.all([
       loadReconciledSalePayments(client, tenantId, sale),
       sale.customer_id
         ? client
-          .from('partners')
-          .select('id, name')
-          .eq('tenant_id', tenantId)
-          .eq('id', sale.customer_id)
-          .maybeSingle()
+            .from("partners")
+            .select("id, name")
+            .eq("tenant_id", tenantId)
+            .eq("id", sale.customer_id)
+            .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
     ]);
 
     if (customerResult.error) throw customerResult.error;
 
-    const paidAmount = payments.reduce((sum, payment) => sum + toMoney(payment.amount), 0);
+    const paidAmount = payments.reduce(
+      (sum, payment) => sum + toMoney(payment.amount),
+      0,
+    );
     const totalAmount = toMoney(sale.total_amount);
 
     return {
       id: sale.id,
-      customerName: customerResult.data?.name || 'عميل غير محدد',
+      customerName: customerResult.data?.name || "عميل غير محدد",
       totalAmount,
       paidAmount,
-      remainingAmount: Math.max(Math.round((totalAmount - paidAmount) * 100) / 100, 0),
+      remainingAmount: Math.max(
+        Math.round((totalAmount - paidAmount) * 100) / 100,
+        0,
+      ),
       payments,
     };
   },
@@ -2051,20 +2691,20 @@ export const showroomService = {
     const client = requireSupabase();
 
     const { data: sale, error: saleError } = await client
-      .from('showroom_sales')
-      .select('id, tenant_id, showroom_config_id, created_at')
-      .eq('tenant_id', tenantId)
-      .eq('showroom_config_id', showroomConfigId)
-      .eq('id', saleId)
+      .from("showroom_sales")
+      .select("id, tenant_id, showroom_config_id, created_at")
+      .eq("tenant_id", tenantId)
+      .eq("showroom_config_id", showroomConfigId)
+      .eq("id", saleId)
       .single();
 
     if (saleError) throw saleError;
 
     const { data: lines, error: linesError } = await client
-      .from('showroom_sale_lines')
-      .select('id, product_product_id, tracking_unit_id, quantity')
-      .eq('tenant_id', tenantId)
-      .eq('sale_id', saleId);
+      .from("showroom_sale_lines")
+      .select("id, product_product_id, tracking_unit_id, quantity")
+      .eq("tenant_id", tenantId)
+      .eq("sale_id", saleId);
 
     if (linesError) throw linesError;
 
@@ -2088,28 +2728,28 @@ export const showroomService = {
     }
 
     const { error: movesDeleteError } = await client
-      .from('stock_moves')
+      .from("stock_moves")
       .delete()
-      .eq('tenant_id', tenantId)
-      .eq('notes', `showroom_sale:${saleId}`);
+      .eq("tenant_id", tenantId)
+      .eq("notes", `showroom_sale:${saleId}`);
 
     if (movesDeleteError) throw movesDeleteError;
 
     if (lineIds.length) {
       const { error: attributesDeleteError } = await client
-        .from('transaction_line_attributes')
+        .from("transaction_line_attributes")
         .delete()
-        .eq('tenant_id', tenantId)
-        .in('transaction_line_id', lineIds);
+        .eq("tenant_id", tenantId)
+        .in("transaction_line_id", lineIds);
 
       if (attributesDeleteError) throw attributesDeleteError;
     }
 
     const { error: linesDeleteError } = await client
-      .from('showroom_sale_lines')
+      .from("showroom_sale_lines")
       .delete()
-      .eq('tenant_id', tenantId)
-      .eq('sale_id', saleId);
+      .eq("tenant_id", tenantId)
+      .eq("sale_id", saleId);
 
     if (linesDeleteError) throw linesDeleteError;
 
@@ -2119,11 +2759,11 @@ export const showroomService = {
     });
 
     const { error: saleDeleteError } = await client
-      .from('showroom_sales')
+      .from("showroom_sales")
       .delete()
-      .eq('tenant_id', tenantId)
-      .eq('showroom_config_id', showroomConfigId)
-      .eq('id', saleId);
+      .eq("tenant_id", tenantId)
+      .eq("showroom_config_id", showroomConfigId)
+      .eq("id", saleId);
 
     if (saleDeleteError) throw saleDeleteError;
 
@@ -2136,48 +2776,62 @@ export const showroomService = {
     showroomConfigId,
     amount,
     notes,
-    paymentMethod = 'cash',
+    paymentMethod = "cash",
     openCreditAllocations = [],
   }) {
     requireTenantId(tenantId);
     requireShowroomConfigId(showroomConfigId);
-    const allocations = (Array.isArray(openCreditAllocations) ? openCreditAllocations : [])
+    const allocations = (
+      Array.isArray(openCreditAllocations) ? openCreditAllocations : []
+    )
       .map((allocation) => ({
         open_credit_line_id: allocation.openCreditLineId,
         amount: Math.round(Math.max(toMoney(allocation.amount), 0) * 100) / 100,
       }))
-      .filter((allocation) => allocation.open_credit_line_id && allocation.amount > 0);
+      .filter(
+        (allocation) => allocation.open_credit_line_id && allocation.amount > 0,
+      );
     const paymentAmount = Math.round(Math.max(toMoney(amount), 0) * 100) / 100;
-    if (!saleId || (!allocations.length && paymentAmount <= 0)) throw new Error('اكتب مبلغ دفع صحيح.');
-    const paymentNotes = String(notes || '').trim();
-    if (!allocations.length && !paymentNotes) throw new Error('ملاحظة الدفع مطلوبة.');
+    if (!saleId || (!allocations.length && paymentAmount <= 0))
+      throw new Error("اكتب مبلغ دفع صحيح.");
+    const paymentNotes = String(notes || "").trim();
+    if (!allocations.length && !paymentNotes)
+      throw new Error("ملاحظة الدفع مطلوبة.");
 
     const client = requireSupabase();
     const { error } = allocations.length
-      ? await client.rpc('settle_showroom_sale_with_open_credits', {
+      ? await client.rpc("settle_showroom_sale_with_open_credits", {
           p_tenant_id: tenantId,
           p_sale_id: saleId,
           p_allocations: allocations,
         })
-      : await client.rpc('pay_showroom_sale_accounting', {
+      : await client.rpc("pay_showroom_sale_accounting", {
           p_sale_id: saleId,
           p_amount: paymentAmount,
           p_notes: paymentNotes,
-          p_payment_method: paymentMethod || 'cash',
+          p_payment_method: paymentMethod || "cash",
         });
-    if (error) throw new Error(error.message || 'تعذر تسجيل الدفعة المحاسبية.');
+    if (error) throw new Error(error.message || "تعذر تسجيل الدفعة المحاسبية.");
 
-    return showroomService.getSaleDetails({ tenantId, saleId, showroomConfigId });
+    return showroomService.getSaleDetails({
+      tenantId,
+      saleId,
+      showroomConfigId,
+    });
   },
   async getInvoiceDetails({ tenantId, invoiceId, showroomConfigId }) {
-    return showroomService.getSaleDetails({ tenantId, saleId: invoiceId, showroomConfigId });
+    return showroomService.getSaleDetails({
+      tenantId,
+      saleId: invoiceId,
+      showroomConfigId,
+    });
   },
 
   async createInvoiceFromSale() {
-    throw new Error('إنشاء فواتير محاسبية غير مفعل داخل نقطة المعرض حاليًا.');
+    throw new Error("إنشاء فواتير محاسبية غير مفعل داخل نقطة المعرض حاليًا.");
   },
 
   async updateInvoiceStatus() {
-    throw new Error('تحديث فواتير محاسبية غير مفعل داخل نقطة المعرض حاليًا.');
+    throw new Error("تحديث فواتير محاسبية غير مفعل داخل نقطة المعرض حاليًا.");
   },
 };

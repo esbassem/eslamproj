@@ -142,6 +142,10 @@ const followUpSections = [
 function buildPaperworkSidebarReports(sales = [], paperworkRequests = []) {
   return (Array.isArray(sales) ? sales : []).reduce(
     (accumulator, sale) => {
+      if (sale?.status === 'cancelled') {
+        return accumulator;
+      }
+
       const items = Array.isArray(sale?.items) ? sale.items : [];
 
       items.forEach((item) => {
@@ -171,6 +175,10 @@ function buildPaperworkSidebarReports(sales = [], paperworkRequests = []) {
 function saleMatchesPaperworkReportFilter(sale, paperworkRequests = [], filterId) {
   if (!filterId) {
     return true;
+  }
+
+  if (filterId === 'missing' && sale?.status === 'cancelled') {
+    return false;
   }
 
   const items = Array.isArray(sale?.items) ? sale.items : [];
@@ -427,12 +435,17 @@ function getPaperworkDocumentLastInDate(document) {
 }
 
 function getPaperworkStatusLabel(request) {
-  if (!request) return 'لم يتم تحديد حالة الأوراق';
-  if (request.status === 'done') return 'تم تسليم الأوراق';
+  if (!request) return 'حالة الأوراق غير محددة';
+  if (request.status === 'cancelled') return 'طلب الأوراق ملغي';
+  if (request.status === 'blocked') return 'طلب الأوراق متوقف';
+  if (request.status === 'deferred') return 'طلب الأوراق مؤجل';
+  if (request.status === 'done' || request.currentStage === 'delivered') return 'تم تسليم الأوراق للعميل';
   if (isVaultPaperworkRequest(request)) {
     return 'الورق موجود بالخزنة';
   }
-  return 'تم تحديد حالة الأوراق';
+  if (request.stage?.name) return request.stage.name;
+  if (request.currentStage) return request.currentStage;
+  return PAPERWORK_STATUS_LABELS[request.status] || 'حالة الأوراق غير محددة';
 }
 
 function isVaultPaperworkRequest(request) {
@@ -604,7 +617,7 @@ function SaleProductsCards({
                       title="تحديد حالة الأوراق لهذا المنتج"
                     >
                       <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-red-500" aria-hidden="true" />
-                      <span className="truncate">لم يتم تحديد حالة الأوراق</span>
+                      <span className="truncate">{getPaperworkStatusLabel(null)}</span>
                     </button>
                     {currentPaperworkDocument ? (
                       <span
@@ -3157,6 +3170,15 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
 }
 
 function InvoiceAmountStatus({ sale }) {
+  if (sale.status === 'cancelled') {
+    return (
+      <div className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-black text-red-700 ring-1 ring-red-100">
+        <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />
+        <span>فاتورة ملغاة</span>
+      </div>
+    );
+  }
+
   const hasRemaining = sale.remainingAmount > 0;
 
   return (
@@ -3242,12 +3264,20 @@ function SalesFollowUpCard({
   const customerPhone = sale.customer?.phone || sale.customer?.phone1 || sale.customer?.phone2 || '--';
   const customerAddress = sale.customer?.address || '--';
   const invoiceDate = formatDate(sale.saleDate || sale.createdAt);
+  const isCancelled = sale.status === 'cancelled';
 
   return (
-    <article className="relative bg-white px-4 pb-5 pt-5 transition before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-slate-200 first:before:hidden hover:bg-blue-50/45">
+    <article className={`relative px-4 pb-5 pt-5 transition before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-slate-200 first:before:hidden ${isCancelled ? 'bg-red-50/30 hover:bg-red-50/55' : 'bg-white hover:bg-blue-50/45'}`}>
       <div className="min-w-0 space-y-4">
         <div className="min-w-0">
-          <h2 className="truncate text-lg font-black leading-6 text-slate-950">{sale.customer?.name || 'عميل غير محدد'}</h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className={`truncate text-lg font-black leading-6 ${isCancelled ? 'text-slate-600' : 'text-slate-950'}`}>{sale.customer?.name || 'عميل غير محدد'}</h2>
+            {isCancelled ? (
+              <span className="inline-flex flex-none items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black text-red-700 ring-1 ring-inset ring-red-200">
+                ملغاة
+              </span>
+            ) : null}
+          </div>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-semibold leading-4 text-slate-400">
             <span className="truncate font-mono font-black text-slate-600" dir="ltr">{customerPhone}</span>
             <span className="h-0.5 w-0.5 flex-shrink-0 rounded-full bg-slate-300" aria-hidden="true" />
@@ -3283,6 +3313,89 @@ function SalesFollowUpCard({
   );
 }
 
+function SalesStatusFilters({ value, onChange, counts }) {
+  const filters = [
+    { id: 'active', label: 'الفواتير النشطة', count: counts.active },
+    { id: 'cancelled', label: 'الفواتير الملغاة', count: counts.cancelled },
+  ];
+
+  return (
+    <div className="border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:px-6">
+      <div className="flex max-w-full items-center gap-1.5 overflow-x-auto" role="group" aria-label="فلترة فواتير المبيعات">
+        {filters.map((filter) => {
+          const isActive = value === filter.id;
+
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              onClick={() => onChange(filter.id)}
+              className={`inline-flex h-8 flex-none items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                isActive
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-700'
+              }`}
+              aria-pressed={isActive}
+            >
+              <span>{filter.label}</span>
+              <span className={`inline-flex min-w-5 items-center justify-center rounded-md px-1 py-0.5 font-mono text-[9px] leading-none ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`} dir="ltr">
+                {filter.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const COMPLETED_PAPERWORK_REQUEST_STAGES = new Set([
+  'received_from_processor',
+  'client_notified',
+  'delivered',
+]);
+
+function isCompletedPaperworkRequest(request) {
+  const currentStage = request?.currentStage || request?.stage?.code || '';
+  return request?.status === 'done' || COMPLETED_PAPERWORK_REQUEST_STAGES.has(currentStage);
+}
+
+function PaperworkRequestStatusFilters({ value, onChange, counts }) {
+  const filters = [
+    { id: 'open', label: 'الطلبات المفتوحة', count: counts.open },
+    { id: 'completed', label: 'الطلبات المكتملة', count: counts.completed },
+  ];
+
+  return (
+    <div className="border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:px-6">
+      <div className="flex max-w-full items-center gap-1.5 overflow-x-auto" role="group" aria-label="فلترة طلبات الأوراق">
+        {filters.map((filter) => {
+          const isActive = value === filter.id;
+
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              onClick={() => onChange(filter.id)}
+              className={`inline-flex h-8 flex-none items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                isActive
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-700'
+              }`}
+              aria-pressed={isActive}
+            >
+              <span>{filter.label}</span>
+              <span className={`inline-flex min-w-5 items-center justify-center rounded-md px-1 py-0.5 font-mono text-[9px] leading-none ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`} dir="ltr">
+                {filter.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function MotoCustomerCareSalesFollowUpListPage() {
   const [activeSection, setActiveSection] = useState('sales');
   const [isMobileContentOpen, setIsMobileContentOpen] = useState(false);
@@ -3296,6 +3409,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   });
   const [hasRequestedMobileData, setHasRequestedMobileData] = useState(false);
   const [paperworkFilter, setPaperworkFilter] = useState('all');
+  const [salesStatusFilter, setSalesStatusFilter] = useState('active');
+  const [paperworkRequestStatusFilter, setPaperworkRequestStatusFilter] = useState('open');
   const [activeReportFilter, setActiveReportFilter] = useState(null);
   const [isReportFilterLoading, setIsReportFilterLoading] = useState(false);
   const [trackingSheetItem, setTrackingSheetItem] = useState(null);
@@ -3332,8 +3447,36 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       return [];
     }
 
-    return filterSalesByPaperworkReport(sales, paperworkRequests, activeReportFilter);
-  }, [activeReportFilter, activeSection, paperworkRequests, sales]);
+    const reportFilteredSales = filterSalesByPaperworkReport(sales, paperworkRequests, activeReportFilter);
+
+    if (salesStatusFilter === 'cancelled') {
+      return reportFilteredSales.filter((sale) => sale.status === 'cancelled');
+    }
+
+    if (salesStatusFilter === 'active') {
+      return reportFilteredSales.filter((sale) => sale.status !== 'cancelled');
+    }
+
+    return reportFilteredSales;
+  }, [activeReportFilter, activeSection, paperworkRequests, sales, salesStatusFilter]);
+  const salesStatusCounts = useMemo(() => ({
+    active: sales.filter((sale) => sale.status !== 'cancelled').length,
+    cancelled: sales.filter((sale) => sale.status === 'cancelled').length,
+  }), [sales]);
+  const displayedPaperworkRequests = useMemo(() => paperworkRequests.filter((request) => {
+    if (request.status === 'cancelled') return false;
+    const isCompleted = isCompletedPaperworkRequest(request);
+    return paperworkRequestStatusFilter === 'completed' ? isCompleted : !isCompleted;
+  }), [paperworkRequestStatusFilter, paperworkRequests]);
+  const paperworkRequestStatusCounts = useMemo(() => paperworkRequests.reduce((counts, request) => {
+    if (request.status === 'cancelled') return counts;
+    if (isCompletedPaperworkRequest(request)) {
+      counts.completed += 1;
+    } else {
+      counts.open += 1;
+    }
+    return counts;
+  }, { open: 0, completed: 0 }), [paperworkRequests]);
   const hasOpenSheet = Boolean(
     trackingSheetItem
       || licenseSheetItem
@@ -3577,13 +3720,29 @@ export function MotoCustomerCareSalesFollowUpListPage() {
               ) : null}
             </div>
 
+            {activeSection === 'sales' ? (
+              <SalesStatusFilters
+                value={salesStatusFilter}
+                onChange={setSalesStatusFilter}
+                counts={salesStatusCounts}
+              />
+            ) : null}
+
+            {activeSection === 'requests' ? (
+              <PaperworkRequestStatusFilters
+                value={paperworkRequestStatusFilter}
+                onChange={setPaperworkRequestStatusFilter}
+                counts={paperworkRequestStatusCounts}
+              />
+            ) : null}
+
             <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100">
               {isLoading || (['sales', 'requests'].includes(activeSection) && isReportFilterLoading) ? (
                 <LoadingSpinner title="جاري تحميل العمليات" description="يتم تجهيز بيانات القسم الحالي." />
               ) : error ? (
                 <div className="m-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm font-bold text-red-700">{error}</div>
-              ) : activeSection === 'requests' && paperworkRequests.length ? (
-                paperworkRequests.map((request) => (
+              ) : activeSection === 'requests' && displayedPaperworkRequests.length ? (
+                displayedPaperworkRequests.map((request) => (
                   <PaperworkRequestCard
                     key={request.id}
                     request={request}
@@ -3612,8 +3771,14 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center">
                   {activeSection === 'requests' ? (
                     <>
-                      <h2 className="text-lg font-black text-slate-950">لا توجد طلبات أوراق</h2>
-                      <p className="mt-2 text-sm font-semibold text-slate-500">ستظهر هنا طلبات تنفيذ الأوراق ومراحل متابعتها.</p>
+                      <h2 className="text-lg font-black text-slate-950">
+                        {paperworkRequestStatusFilter === 'completed' ? 'لا توجد طلبات مكتملة' : 'لا توجد طلبات مفتوحة'}
+                      </h2>
+                      <p className="mt-2 text-sm font-semibold text-slate-500">
+                        {paperworkRequestStatusFilter === 'completed'
+                          ? 'تظهر هنا الطلبات التي تم استلام أوراقها من جهة الإصدار.'
+                          : 'لا توجد طلبات أوراق قيد التنفيذ حاليًا.'}
+                      </p>
                     </>
                   ) : (
                     <>

@@ -97,6 +97,12 @@ const PAPERWORK_DOCUMENT_COLUMNS = `
   cancelled_by,
   cancellation_reason,
   cancellation_notes,
+  release_authorized_at,
+  release_authorized_by,
+  release_authorized_to_partner_id,
+  release_authorized_to_name,
+  release_authorization_notes,
+  release_authorization_consumed_at,
   notes,
   created_by,
   created_at,
@@ -152,6 +158,7 @@ const PAPERWORK_DOCUMENT_SOURCE_LABELS = {
   manual: 'استلام يدوي',
   from_processor: 'استلام من الجهة',
   to_customer: 'تسليم للعميل',
+  retrospective_delivery: 'صرف سابق مسجل بأثر رجعي',
   request: 'طلب أوراق',
 };
 
@@ -850,11 +857,17 @@ function normalizeSalePayment(record) {
   };
 }
 
-function normalizeSale(record, customerMap, linesMap = new Map(), paymentsMap = new Map()) {
+function normalizeSale(record, customerMap, linesMap = new Map(), paymentsMap = new Map(), accountingMap = new Map()) {
   const customer = customerMap.get(record.customer_id) ?? null;
   const payments = paymentsMap.get(record.id) || [];
-  const paidAmount = payments.reduce((sum, payment) => sum + toNumber(payment.amount), 0);
   const totalAmount = toNumber(record.total_amount);
+  const accounting = accountingMap.get(record.id) || null;
+  const paidAmount = accounting
+    ? accounting.paidAmount
+    : payments.reduce((sum, payment) => sum + toNumber(payment.amount), 0);
+  const remainingAmount = accounting
+    ? accounting.remainingAmount
+    : Math.max(totalAmount - paidAmount, 0);
 
   return {
     id: record.id,
@@ -865,7 +878,7 @@ function normalizeSale(record, customerMap, linesMap = new Map(), paymentsMap = 
     status: record.status || 'pending',
     totalAmount,
     paidAmount,
-    remainingAmount: Math.max(totalAmount - paidAmount, 0),
+    remainingAmount,
     notes: record.notes || '',
     accountMoveId: record.account_move_id,
     createdBy: record.created_by,
@@ -974,6 +987,107 @@ async function loadSalePaymentsMap(client, tenantId, sales) {
     const current = map.get(payment.saleId) || [];
     current.push(payment);
     map.set(payment.saleId, current);
+    return map;
+  }, new Map());
+}
+
+async function loadSaleAccountingMap(client, tenantId, sales) {
+  const saleRows = Array.isArray(sales) ? sales : [sales].filter(Boolean);
+  const saleIds = saleRows.map((sale) => sale?.id).filter(Boolean);
+
+  if (!saleIds.length) {
+    return new Map();
+  }
+
+  const chunk = (values, size = 100) => (
+    Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size))
+  );
+  const accountMoveIds = [...new Set(saleRows.map((sale) => sale?.account_move_id).filter(Boolean))];
+  const [moveIdResults, refResults, receivableAccountsResult] = await Promise.all([
+    Promise.all(chunk(accountMoveIds).map((ids) => client
+      .from('account_moves')
+      .select('id, ref')
+      .eq('tenant_id', tenantId)
+      .eq('move_type', 'sale')
+      .eq('state', 'posted')
+      .in('id', ids))),
+    Promise.all(chunk(saleIds.map((saleId) => `showroom_sale:${saleId}`)).map((refs) => client
+      .from('account_moves')
+      .select('id, ref')
+      .eq('tenant_id', tenantId)
+      .eq('move_type', 'sale')
+      .eq('state', 'posted')
+      .in('ref', refs))),
+    client
+      .from('account_accounts')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('code', '114001'),
+  ]);
+
+  const moveResults = [...moveIdResults, ...refResults];
+  const failedResult = [...moveResults, receivableAccountsResult].find((result) => result.error);
+  if (failedResult?.error) throw failedResult.error;
+
+  const accountingMoves = moveResults.flatMap((result) => result.data || []);
+  const movesById = new Map(accountingMoves.map((move) => [move.id, move]));
+  const movesByRef = new Map(accountingMoves.filter((move) => move.ref).map((move) => [move.ref, move]));
+  const moveBySaleId = new Map();
+
+  saleRows.forEach((sale) => {
+    const move = movesById.get(sale.account_move_id) || movesByRef.get(`showroom_sale:${sale.id}`) || null;
+    if (move) moveBySaleId.set(sale.id, move);
+  });
+
+  const linkedMoveIds = [...new Set([...moveBySaleId.values()].map((move) => move.id))];
+  const receivableAccountIds = (receivableAccountsResult.data || []).map((account) => account.id);
+  const lineResults = linkedMoveIds.length && receivableAccountIds.length
+    ? await Promise.all(chunk(linkedMoveIds).map((ids) => client
+      .from('account_move_lines')
+      .select('id, move_id, debit')
+      .eq('tenant_id', tenantId)
+      .in('move_id', ids)
+      .in('account_id', receivableAccountIds)
+      .gt('debit', 0)))
+    : [];
+  const failedLineResult = lineResults.find((result) => result.error);
+  if (failedLineResult?.error) throw failedLineResult.error;
+
+  const receivableLines = lineResults.flatMap((result) => result.data || []);
+  const lineIds = receivableLines.map((line) => line.id);
+  const reconcileResults = lineIds.length
+    ? await Promise.all(chunk(lineIds).map((ids) => client
+      .from('account_partial_reconcile')
+      .select('debit_move_id, amount')
+      .eq('tenant_id', tenantId)
+      .in('debit_move_id', ids)))
+    : [];
+  const failedReconcileResult = reconcileResults.find((result) => result.error);
+  if (failedReconcileResult?.error) throw failedReconcileResult.error;
+
+  const paidByLineId = new Map();
+  reconcileResults.flatMap((result) => result.data || []).forEach((row) => {
+    paidByLineId.set(row.debit_move_id, toNumber(paidByLineId.get(row.debit_move_id)) + toNumber(row.amount));
+  });
+
+  const paidByMoveId = new Map();
+  const originalByMoveId = new Map();
+  receivableLines.forEach((line) => {
+    paidByMoveId.set(line.move_id, toNumber(paidByMoveId.get(line.move_id)) + toNumber(paidByLineId.get(line.id)));
+    originalByMoveId.set(line.move_id, toNumber(originalByMoveId.get(line.move_id)) + toNumber(line.debit));
+  });
+
+  return saleRows.reduce((map, sale) => {
+    const move = moveBySaleId.get(sale.id) || null;
+    const paidAmount = Math.round(toNumber(paidByMoveId.get(move?.id)) * 100) / 100;
+    const invoiceReceivableAmount = move
+      ? toNumber(originalByMoveId.get(move.id))
+      : toNumber(sale.total_amount);
+
+    map.set(sale.id, {
+      paidAmount,
+      remainingAmount: Math.max(Math.round((invoiceReceivableAmount - paidAmount) * 100) / 100, 0),
+    });
     return map;
   }, new Map());
 }
@@ -1263,9 +1377,20 @@ function getMovePartyLabel({ userId, partnerId, location, usersMap, partnersMap 
   return location || 'غير محدد';
 }
 
+function parseRetrospectiveMoveNotes(value) {
+  const text = value || '';
+  const reason = text.match(/(?:^|\n)retrospective_reason=([^\n]*)/)?.[1]?.trim() || '';
+  const notes = text.match(/(?:^|\n)retrospective_notes=([\s\S]*)/)?.[1]?.trim() || '';
+  return { reason, notes };
+}
+
 function normalizePaperworkDocumentMove(record, maps = {}) {
   const document = maps.documentsMap?.get(record.document_id) || null;
   const fallbackDirection = ['opening', 'receive', 'return', 'manual', 'manual_adjustment'].includes(record.move_type) ? 'in' : 'out';
+
+  const retrospective = record.source_type === 'retrospective_delivery'
+    ? parseRetrospectiveMoveNotes(record.notes)
+    : { reason: '', notes: '' };
 
   return {
     id: record.id,
@@ -1281,6 +1406,8 @@ function normalizePaperworkDocumentMove(record, maps = {}) {
     toLocation: record.to_location || '',
     movedAt: record.moved_at,
     notes: record.notes || '',
+    retrospectiveReason: retrospective.reason,
+    retrospectiveNotes: retrospective.notes,
     createdBy: record.created_by,
     createdAt: record.created_at,
     documentTitle: document?.documentTitle || document?.displayTitle || 'مستند غير محدد',
@@ -1340,6 +1467,14 @@ function normalizePaperworkDocument(record, maps = {}) {
     cancelledByName: maps.usersMap?.get(record.cancelled_by)?.name || '',
     cancellationReason: record.cancellation_reason || '',
     cancellationNotes: record.cancellation_notes || '',
+    releaseAuthorizedAt: record.release_authorized_at || null,
+    releaseAuthorizedBy: record.release_authorized_by || null,
+    releaseAuthorizedByName: maps.usersMap?.get(record.release_authorized_by)?.name || '',
+    releaseAuthorizedToPartnerId: record.release_authorized_to_partner_id || null,
+    releaseAuthorizedToName: record.release_authorized_to_name || '',
+    releaseAuthorizationNotes: record.release_authorization_notes || '',
+    releaseAuthorizationConsumedAt: record.release_authorization_consumed_at || null,
+    hasActiveReleaseAuthorization: Boolean(record.release_authorized_at && !record.release_authorization_consumed_at),
     notes: record.notes || '',
     createdBy: record.created_by,
     createdAt: record.created_at,
@@ -1451,16 +1586,35 @@ export const motoCustomerCareService = {
     requireTenantId(tenantId);
     const client = requireSupabase();
 
+    const loadActiveSaleLineIds = async () => {
+      const rows = [];
+      const pageSize = 1000;
+
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await client
+          .from('showroom_sale_lines')
+          .select('id, showroom_sales!inner(status)')
+          .eq('tenant_id', tenantId)
+          .neq('showroom_sales.status', 'cancelled')
+          .range(from, from + pageSize - 1);
+
+        if (error) throw error;
+
+        const page = data || [];
+        rows.push(...page);
+        if (page.length < pageSize) break;
+      }
+
+      return new Set(rows.map((row) => row.id));
+    };
+
     const [
-      saleLinesResult,
+      activeSaleLineIds,
       requestsResult,
       requestsCountResult,
       vaultDocumentsResult,
     ] = await Promise.all([
-      client
-        .from('showroom_sale_lines')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId),
+      loadActiveSaleLineIds(),
       client
         .from('paperwork_requests')
         .select('id, sale_line_id, status, current_stage, notes')
@@ -1476,10 +1630,6 @@ export const motoCustomerCareService = {
         .eq('tenant_id', tenantId)
         .eq('status', 'in_custody'),
     ]);
-
-    if (saleLinesResult.error) {
-      throw saleLinesResult.error;
-    }
 
     if (requestsResult.error) {
       throw requestsResult.error;
@@ -1502,6 +1652,10 @@ export const motoCustomerCareService = {
         return;
       }
 
+      if (!activeSaleLineIds.has(request.sale_line_id)) {
+        return;
+      }
+
       requestedSaleLineIds.add(request.sale_line_id);
 
       if (['sent_to_processor', 'processor_ready'].includes(request.current_stage)) {
@@ -1512,7 +1666,7 @@ export const motoCustomerCareService = {
     });
 
     return {
-      missing: Math.max((saleLinesResult.count || 0) - requestedSaleLineIds.size, 0),
+      missing: Math.max(activeSaleLineIds.size - requestedSaleLineIds.size, 0),
       totalRequests: requestsCountResult.count || 0,
       vault: vaultDocumentsResult.count || 0,
       sentPendingReceipt: sentPendingReceiptSaleLineIds.size,
@@ -1542,13 +1696,14 @@ export const motoCustomerCareService = {
     }
 
     const sales = data || [];
-    const [customerMap, linesMap, paymentsMap] = await Promise.all([
+    const [customerMap, linesMap, paymentsMap, accountingMap] = await Promise.all([
       loadCustomersMap(client, tenantId, sales),
       loadSaleLinesMap(client, tenantId, sales, { includeAttachments }),
       loadSalePaymentsMap(client, tenantId, sales),
+      loadSaleAccountingMap(client, tenantId, sales),
     ]);
 
-    return sales.map((sale) => normalizeSale(sale, customerMap, linesMap, paymentsMap));
+    return sales.map((sale) => normalizeSale(sale, customerMap, linesMap, paymentsMap, accountingMap));
   },
 
   async listPaperworkRequests({ tenantId, limit = 150 } = {}) {
@@ -1891,6 +2046,7 @@ export const motoCustomerCareService = {
     ].filter(Boolean);
     const userIds = [
       record.cancelled_by,
+      record.release_authorized_by,
       ...moveRows.flatMap((move) => [move.from_user_id, move.to_user_id, move.created_by]),
     ].filter(Boolean);
 
@@ -1965,6 +2121,41 @@ export const motoCustomerCareService = {
       p_document_id: documentId,
       p_reason: reason,
       p_notes: notes || null,
+    });
+
+    if (error) throw error;
+    return this.getPaperworkDocumentDetails({ tenantId, documentId });
+  },
+
+  async recordPreviousPaperworkDocumentDelivery({ tenantId, documentId, deliveredAt, reason, notes = null } = {}) {
+    requireTenantId(tenantId);
+    if (!documentId) throw new Error('تعذر تحديد المستند.');
+    if (!deliveredAt) throw new Error('تاريخ ووقت التسليم إلزامي.');
+
+    const client = requireSupabase();
+    const { error } = await client.rpc('record_previous_paperwork_document_delivery', {
+      p_tenant_id: tenantId,
+      p_document_id: documentId,
+      p_delivered_at: deliveredAt,
+      p_reason: reason,
+      p_notes: notes || null,
+    });
+
+    if (error) throw error;
+    return this.getPaperworkDocumentDetails({ tenantId, documentId });
+  },
+
+  async authorizePaperworkDocumentRelease({ tenantId, documentId, recipientType, recipientName = null, notes } = {}) {
+    requireTenantId(tenantId);
+    if (!documentId) throw new Error('تعذر تحديد المستند.');
+
+    const client = requireSupabase();
+    const { error } = await client.rpc('authorize_paperwork_document_release', {
+      p_tenant_id: tenantId,
+      p_document_id: documentId,
+      p_recipient_type: recipientType,
+      p_recipient_name: recipientName || null,
+      p_notes: notes,
     });
 
     if (error) throw error;
@@ -2479,12 +2670,13 @@ export const motoCustomerCareService = {
       throw error;
     }
 
-    const [customerMap, linesMap, paymentsMap] = await Promise.all([
+    const [customerMap, linesMap, paymentsMap, accountingMap] = await Promise.all([
       loadCustomersMap(client, tenantId, data),
       loadSaleLinesMap(client, tenantId, data),
       loadSalePaymentsMap(client, tenantId, data),
+      loadSaleAccountingMap(client, tenantId, data),
     ]);
-    return normalizeSale(data, customerMap, linesMap, paymentsMap);
+    return normalizeSale(data, customerMap, linesMap, paymentsMap, accountingMap);
   },
 
   async saveSaleLineTrackingIdentifiers({ tenantId, lineId, productProductId, trackingUnitId, identifiers = [] } = {}) {

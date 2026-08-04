@@ -43,6 +43,9 @@ export function getAppCodeFromPathname(pathname = '') {
 
 export function getAppBasePath(appCode) {
   const normalizedAppCode = normalizeAppCode(appCode);
+  if (normalizedAppCode === 'crm') {
+    return '/apps/crm';
+  }
   if (normalizedAppCode === 'accounting') {
     return '/apps/accounting';
   }

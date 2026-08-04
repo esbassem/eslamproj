@@ -1,0 +1,41 @@
+begin;
+create temporary table crm_installment_context as select tenant_id,id tenant_user_id,auth_user_id from public.tenant_users where auth_user_id is not null and is_active limit 1;
+grant select on crm_installment_context to authenticated;
+select set_config('request.jwt.claim.sub',auth_user_id::text,true) from crm_installment_context;
+set local role authenticated;
+insert into public.crm_sales_users(tenant_id,user_id,active) select tenant_id,tenant_user_id,true from crm_installment_context on conflict(tenant_id,user_id) do update set active=true;
+do $$
+declare t uuid:=(select tenant_id from crm_installment_context);u uuid:=(select tenant_user_id from crm_installment_context);l uuid;c1 uuid;c2 uuid;r1 uuid;a1 uuid;a2 uuid;a3 uuid;j jsonb;d jsonb;
+begin
+ insert into public.crm_finance_companies(tenant_id,name,active,created_by) values(t,'شركة اختبار تقسيط 1',true,u) returning id into c1;
+ insert into public.crm_finance_companies(tenant_id,name,active,created_by) values(t,'شركة اختبار تقسيط 2',true,u) returning id into c2;
+ insert into public.crm_finance_company_representatives(tenant_id,finance_company_id,name,active,created_by) values(t,c1,'مندوب اختبار تقسيط',true,u) returning id into r1;
+ l:=(public.crm_create_lead(t,jsonb_build_object('customer_name','عميل دورة تقسيط اختبار','phone','01119999001','assigned_sales_user_id',u))).id;
+ a1:=(public.crm_create_installment_application(t,l,c1,r1,'التقديم الأول')).id;
+ if (select status from public.crm_installment_applications where id=a1)<>'submitted' then raise exception 'initial application status failed';end if;
+ if (select status from public.crm_leads where id=l)<>'installment_processing' then raise exception 'lead processing status failed';end if;
+ if not exists(select 1 from public.crm_installment_application_events where application_id=a1 and event_type='submitted' and new_status='submitted') then raise exception 'initial submitted event missing';end if;
+ if not exists(select 1 from public.crm_lead_activities where lead_id=l and activity_type='sent_to_installment') then raise exception 'lead installment activity missing';end if;
+ begin
+  perform public.crm_create_installment_application(t,l,c1,r1,null);
+  raise exception 'duplicate was allowed';
+ exception when others then if sqlerrm='duplicate was allowed' or position('CRM_OPEN_INSTALLMENT_APPLICATION_EXISTS' in sqlerrm)=0 then raise;end if;end;
+ a2:=(public.crm_create_installment_application(t,l,c2,null,'شركة أخرى')).id;
+ perform public.crm_transition_installment_application(t,a1,'waiting_documents','مستندات ناقصة');
+ perform public.crm_transition_installment_application(t,a1,'under_review','اكتملت المستندات');
+ perform public.crm_transition_installment_application(t,a1,'rejected','رفض اختباري');
+ if (select status from public.crm_leads where id=l)<>'installment_processing' then raise exception 'rejection changed lead incorrectly';end if;
+ a3:=(public.crm_create_installment_application(t,l,c1,r1,'إعادة تقديم بعد الرفض')).id;
+ perform public.crm_transition_installment_application(t,a3,'approved','موافقة اختبارية');
+ if (select status from public.crm_leads where id=l)<>'installment_approved' then raise exception 'approval did not update lead';end if;
+ if not exists(select 1 from public.crm_lead_activities where lead_id=l and activity_type='installment_approved') then raise exception 'approval lead activity missing';end if;
+ if (select count(*) from public.crm_installment_application_events where application_id=a1)<>4 then raise exception 'application timeline count failed';end if;
+ j:=public.crm_list_installment_applications(t,'عميل دورة',jsonb_build_object('company_id',c1,'status','approved','sales_user_id',u),null,1,25);
+ if (j->>'count')::int<>1 or (j->'data'->0->>'id')::uuid<>a3 then raise exception 'list search or filters failed';end if;
+ j:=public.crm_list_installment_applications(t,'01119999001','{}'::jsonb,l,1,2);
+ if (j->>'count')::int<>3 or jsonb_array_length(j->'data')<>2 then raise exception 'lead list or pagination failed';end if;
+ d:=public.crm_get_installment_application(t,a3);
+ if d->'application'->>'company_name'<>'شركة اختبار تقسيط 1' or jsonb_array_length(d->'events')<>2 then raise exception 'application details failed';end if;
+ j:=public.crm_list_installment_applications(gen_random_uuid(),'','{}'::jsonb,null,1,25);if (j->>'count')::int<>0 then raise exception 'tenant isolation failed';end if;
+end $$;
+rollback;

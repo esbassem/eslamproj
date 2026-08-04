@@ -1,0 +1,20 @@
+begin;
+create temporary table crm_settings_context as select tenant_id,id tenant_user_id,auth_user_id from public.tenant_users where auth_user_id is not null and is_active limit 1;grant select on crm_settings_context to authenticated;
+select set_config('request.jwt.claim.sub',auth_user_id::text,true)from crm_settings_context;set local role authenticated;
+do $$declare t uuid:=(select tenant_id from crm_settings_context);u uuid:=(select tenant_user_id from crm_settings_context);s uuid;r uuid;su uuid;begin
+ insert into public.crm_lead_sources(tenant_id,name,description,sort_order,active,created_by)values(t,'مصدر اختبار إعدادات','قديم',5,true,u)returning id into s;
+ update public.crm_lead_sources set description='محدث',active=false where id=s and tenant_id=t;
+ if exists(select 1 from public.crm_lead_sources where id=s and active)then raise exception 'source disable failed';end if;
+ update public.crm_lead_sources set active=true where id=s and tenant_id=t;
+ begin insert into public.crm_lead_sources(tenant_id,name)values(t,'مصدر اختبار إعدادات');raise exception 'duplicate source accepted';exception when unique_violation then null;end;
+ insert into public.crm_lead_cancel_reasons(tenant_id,name,sort_order,active,created_by)values(t,'سبب اختبار إعدادات',3,true,u)returning id into r;
+ update public.crm_lead_cancel_reasons set active=false where id=r;
+ if exists(select 1 from public.crm_lead_cancel_reasons where id=r and active)then raise exception 'reason disable failed';end if;
+ update public.crm_lead_cancel_reasons set active=true where id=r;
+ insert into public.crm_sales_users(tenant_id,user_id,active,notes,created_by)values(t,u,true,'اختبار',u)on conflict(tenant_id,user_id)do update set active=true,notes='اختبار' returning id into su;
+ update public.crm_sales_users set notes='محدث',active=false where id=su;
+ if exists(select 1 from public.crm_sales_users where id=su and active)then raise exception 'sales disable failed';end if;
+ update public.crm_sales_users set active=true where id=su;
+ if not exists(select 1 from public.crm_lead_sources where tenant_id=t and id=s and active)or not exists(select 1 from public.crm_lead_cancel_reasons where tenant_id=t and id=r and active)or not exists(select 1 from public.crm_sales_users where tenant_id=t and id=su and active)then raise exception 'active selection failed';end if;
+end $$;
+rollback;

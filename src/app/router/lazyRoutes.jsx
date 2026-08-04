@@ -34,6 +34,15 @@ const loadMotoCustomerCareSalesFollowUpListPage = () => import('@/features/moto-
 const loadMotoCustomerCareSaleFollowUpDetailsPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSaleFollowUpDetailsPage');
 const loadReceivablesPage = () => import('@/features/receivables/pages/ReceivablesPage');
 const loadAccountantHomePage = () => import('@/features/accountant/pages/AccountantHomePage');
+const loadCrmWorkspaceLayout = () => import('@/features/crm/layouts/CrmWorkspaceLayout');
+const loadCrmHomePage = () => import('@/features/crm/pages/CrmHomePage');
+const loadCrmPlaceholderPage = () => import('@/features/crm/pages/CrmPlaceholderPage');
+const loadCrmLeadsPage = () => import('@/features/crm/pages/CrmLeadsPage');
+const loadCrmLeadDetailsPage = () => import('@/features/crm/pages/CrmLeadDetailsPage');
+const loadCrmSettingsPage = () => import('@/features/crm/pages/CrmSettingsPage');
+const loadCrmFollowupsPage = () => import('@/features/crm/pages/CrmFollowupsPage');
+const loadCrmInstallmentsPage = () => import('@/features/crm/pages/CrmInstallmentsPage');
+const loadCrmInstallmentDetailsPage = () => import('@/features/crm/pages/CrmInstallmentDetailsPage');
 
 export const PublicLayout = lazyNamed(loadPublicLayout, 'PublicLayout');
 export const AuthLayout = lazyNamed(loadAuthLayout, 'AuthLayout');
@@ -62,6 +71,15 @@ export const MotoCustomerCareSalesFollowUpListPage = lazyNamed(loadMotoCustomerC
 export const MotoCustomerCareSaleFollowUpDetailsPage = lazyNamed(loadMotoCustomerCareSaleFollowUpDetailsPage, 'MotoCustomerCareSaleFollowUpDetailsPage');
 export const ReceivablesPage = lazyNamed(loadReceivablesPage, 'ReceivablesPage');
 export const AccountantHomePage = lazyNamed(loadAccountantHomePage, 'AccountantHomePage');
+export const CrmWorkspaceLayout = lazyNamed(loadCrmWorkspaceLayout, 'CrmWorkspaceLayout');
+export const CrmHomePage = lazyNamed(loadCrmHomePage, 'CrmHomePage');
+export const CrmPlaceholderPage = lazyNamed(loadCrmPlaceholderPage, 'CrmPlaceholderPage');
+export const CrmLeadsPage = lazyNamed(loadCrmLeadsPage, 'CrmLeadsPage');
+export const CrmLeadDetailsPage = lazyNamed(loadCrmLeadDetailsPage, 'CrmLeadDetailsPage');
+export const CrmSettingsPage = lazyNamed(loadCrmSettingsPage, 'CrmSettingsPage');
+export const CrmFollowupsPage = lazyNamed(loadCrmFollowupsPage, 'CrmFollowupsPage');
+export const CrmInstallmentsPage = lazyNamed(loadCrmInstallmentsPage, 'CrmInstallmentsPage');
+export const CrmInstallmentDetailsPage = lazyNamed(loadCrmInstallmentDetailsPage, 'CrmInstallmentDetailsPage');
 
 const protectedRoutePreloaders = {
   [ROUTES.dashboard]: loadDashboardPage,

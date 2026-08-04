@@ -10,6 +10,14 @@ import {
   AppLayout,
   AccountantHomePage,
   AuthLayout,
+  CrmLeadDetailsPage,
+  CrmLeadsPage,
+  CrmSettingsPage,
+  CrmFollowupsPage,
+  CrmInstallmentsPage,
+  CrmInstallmentDetailsPage,
+  CrmPlaceholderPage,
+  CrmWorkspaceLayout,
   ForgotPasswordPage,
   LandingPage,
   MotoCustomerCareSaleFollowUpDetailsPage,
@@ -103,6 +111,15 @@ export function AppRouter() {
               <Route path="/apps/accountant" element={<AppAccessRoute appCode="accountant_app"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
                 <Route index element={<AccountantHomePage />} />
                 <Route path="payments" element={<AccountantHomePage />} />
+              </Route>
+              <Route path="/apps/crm" element={<AppAccessRoute appCode="crm"><CrmWorkspaceLayout /></AppAccessRoute>}>
+                <Route index element={<Navigate to="/apps/crm/leads" replace />} />
+                <Route path="leads" element={<CrmLeadsPage />} />
+                <Route path="leads/:leadId" element={<CrmLeadDetailsPage />} />
+                <Route path="followups" element={<CrmFollowupsPage />} />
+                <Route path="installments" element={<CrmInstallmentsPage />} />
+                <Route path="installments/:applicationId" element={<CrmInstallmentDetailsPage />} />
+                <Route path="settings" element={<CrmSettingsPage />} />
               </Route>
               <Route path="/app/accounting" element={<Navigate to="/apps/accounting" replace />} />
               <Route path="/app/accounting/payments" element={<Navigate to="/apps/accounting/payments" replace />} />
