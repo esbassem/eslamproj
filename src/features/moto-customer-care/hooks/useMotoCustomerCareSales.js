@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
@@ -34,8 +34,10 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
   const [paperworkReports, setPaperworkReports] = useState({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
   const [reportsStatus, setReportsStatus] = useState('idle');
   const [reportsError, setReportsError] = useState('');
-  const [sectionStatus, setSectionStatus] = useState({ sales: 'idle', papers: 'idle' });
-  const [sectionError, setSectionError] = useState({ sales: '', papers: '' });
+  const [sectionStatus, setSectionStatus] = useState({ sales: 'idle', requests: 'idle', papers: 'idle' });
+  const [sectionError, setSectionError] = useState({ sales: '', requests: '', papers: '' });
+  const requestsReadyRef = useRef(false);
+  const requestsTenantIdRef = useRef(null);
 
   const setLoadStatus = useCallback((sectionId, nextStatus) => {
     setSectionStatus((current) => ({ ...current, [sectionId]: nextStatus }));
@@ -53,8 +55,10 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     setPaperworkReports({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
     setReportsStatus('idle');
     setReportsError('');
-    setSectionStatus({ sales: 'idle', papers: 'idle' });
-    setSectionError({ sales: '', papers: '' });
+    setSectionStatus({ sales: 'idle', requests: 'idle', papers: 'idle' });
+    setSectionError({ sales: '', requests: '', papers: '' });
+    requestsReadyRef.current = false;
+    requestsTenantIdRef.current = null;
   }, []);
 
   const loadReports = useCallback(() => {
@@ -111,17 +115,13 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     setLoadStatus('sales', 'loading');
     setLoadError('sales', '');
 
-    Promise.all([
-      motoCustomerCareService.listSales({ tenantId: tenant.id, status, limit, includeAttachments: false }),
-      motoCustomerCareService.listPaperworkRequests({ tenantId: tenant.id, limit: paperworkRequestsLimit }),
-    ])
-      .then(([rows, requests]) => {
+    motoCustomerCareService.listSales({ tenantId: tenant.id, status, limit, includeAttachments: false })
+      .then((rows) => {
         if (!active) {
           return;
         }
 
         setSales(rows);
-        setPaperworkRequests(requests);
         setLoadStatus('sales', 'ready');
       })
       .catch((nextError) => {
@@ -130,7 +130,6 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
         }
 
         setSales([]);
-        setPaperworkRequests([]);
         setLoadStatus('sales', 'error');
         setLoadError('sales', nextError?.message || 'تعذر تحميل عمليات المبيعات.');
       });
@@ -138,7 +137,59 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     return () => {
       active = false;
     };
-  }, [enabled, limit, paperworkRequestsLimit, resetData, setLoadError, setLoadStatus, status, tenant?.id]);
+  }, [enabled, limit, resetData, setLoadError, setLoadStatus, status, tenant?.id]);
+
+  const loadRequests = useCallback((force = false) => {
+    let active = true;
+    const tenantChanged = requestsTenantIdRef.current !== tenant?.id;
+
+    if (tenantChanged) {
+      requestsReadyRef.current = false;
+      requestsTenantIdRef.current = tenant?.id || null;
+    }
+
+    if (!tenant?.id) {
+      setPaperworkRequests([]);
+      requestsReadyRef.current = false;
+      setLoadStatus('requests', 'idle');
+      return () => {};
+    }
+    if (!enabled) {
+      setLoadStatus('requests', 'idle');
+      setLoadError('requests', '');
+      return () => {};
+    }
+    if (!force && requestsReadyRef.current) {
+      return () => {};
+    }
+
+    setLoadStatus('requests', 'loading');
+    setLoadError('requests', '');
+
+    motoCustomerCareService.listPaperworkRequests({
+      tenantId: tenant.id,
+      limit: paperworkRequestsLimit,
+      includeDetails: false,
+    })
+      .then((requests) => {
+        if (!active) return;
+        setPaperworkRequests(requests);
+        requestsReadyRef.current = true;
+        requestsTenantIdRef.current = tenant.id;
+        setLoadStatus('requests', 'ready');
+      })
+      .catch((nextError) => {
+        if (!active) return;
+        setPaperworkRequests([]);
+        requestsReadyRef.current = false;
+        setLoadStatus('requests', 'error');
+        setLoadError('requests', nextError?.message || 'تعذر تحميل طلبات الأوراق.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [enabled, paperworkRequestsLimit, setLoadError, setLoadStatus, tenant?.id]);
 
   const loadPaperwork = useCallback(() => {
     let active = true;
@@ -187,9 +238,17 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     if (activeSection === 'papers') {
       return loadPaperwork();
     }
+    if (activeSection === 'requests') {
+      return loadRequests();
+    }
 
-    return loadSales();
-  }, [activeSection, loadPaperwork, loadSales]);
+    const cancelSales = loadSales();
+    const cancelRequests = loadRequests();
+    return () => {
+      cancelSales?.();
+      cancelRequests?.();
+    };
+  }, [activeSection, loadPaperwork, loadRequests, loadSales]);
 
   useEffect(() => loadReports(), [loadReports]);
 
@@ -199,9 +258,13 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     if (activeSection === 'papers') {
       return loadPaperwork();
     }
+    if (activeSection === 'requests') {
+      return loadRequests(true);
+    }
 
+    loadRequests(true);
     return loadSales();
-  }, [activeSection, loadPaperwork, loadReports, loadSales]);
+  }, [activeSection, loadPaperwork, loadReports, loadRequests, loadSales]);
 
   const updatePaperworkRequestLocally = useCallback((requestId, patch) => {
     if (!requestId || !patch) {
@@ -262,7 +325,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     );
   }, [filteredSales]);
 
-  const loadSectionId = activeSection === 'requests' ? 'sales' : activeSection;
+  const loadSectionId = activeSection;
   const currentSectionStatus = sectionStatus[loadSectionId] || 'idle';
   const currentSectionError = sectionError[loadSectionId] || '';
 

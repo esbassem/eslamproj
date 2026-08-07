@@ -1,7 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { ImagePlus, MoreHorizontal, Settings, Store, UserPlus, WalletCards } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { preloadApp } from '@/app/router/appRouteRegistry';
+import { recordAppOpen, scheduleLikelyAppPreloads } from '@/app/router/appPreloading';
+import { markNavigationStart } from '@/app/router/navigationPerformance';
 import { uiExperiments } from '@/core/config/app.config';
 import { ROUTES } from '@/core/config/routes.config';
 import { useI18n } from '@/core/i18n/useI18n';
@@ -23,16 +26,14 @@ import {
 } from '@/core/ui/sheet';
 import { useAppContext } from '@/contexts/AppContext';
 import { useAuth } from '@/features/auth/hooks/useAuth';
-import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
-import { partnersService } from '@/features/contacts/services/partners.service';
-import { CashLocationSheet } from '@/features/accountant/components/CashLocationSheet';
-import { QuickImageUploadSheet } from '@/features/dashboard/components/QuickImageUploadSheet';
 import { resolveModuleIcon } from '@/features/modules/modules.navigation';
-import { cashLocationsSettingsService } from '@/features/settings/services/cashLocationsSettings.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { appsService } from '@/services/apps.service';
 
 const DEFAULT_APP_ICON_COLOR = '#64748B';
+const LazyPartnerFormSheet = lazy(() => import('@/features/contacts/components/PartnerFormSheet').then((module) => ({ default: module.PartnerFormSheet })));
+const LazyCashLocationSheet = lazy(() => import('@/features/accountant/components/CashLocationSheet').then((module) => ({ default: module.CashLocationSheet })));
+const LazyQuickImageUploadSheet = lazy(() => import('@/features/dashboard/components/QuickImageUploadSheet').then((module) => ({ default: module.QuickImageUploadSheet })));
 const NEW_CUSTOMER_INITIAL_VALUES = {
   isCustomer: true,
   isSupplier: false,
@@ -61,7 +62,7 @@ export function DashboardPage() {
   const isOwner = tenantUser?.role === 'owner';
   const navigate = useNavigate();
   const [launchingApp, setLaunchingApp] = useState(null);
-  const launchTimeoutRef = useRef(null);
+  const navigationPendingRef = useRef(false);
   const [uninstallDialog, setUninstallDialog] = useState({ open: false, app: null });
   const [isUninstalling, setIsUninstalling] = useState(false);
   const [installingAppId, setInstallingAppId] = useState(null);
@@ -145,14 +146,12 @@ export function DashboardPage() {
     return () => window.clearTimeout(timerId);
   }, [toast]);
 
-  useEffect(
-    () => () => {
-      if (launchTimeoutRef.current) {
-        window.clearTimeout(launchTimeoutRef.current);
-      }
-    },
-    [],
-  );
+  const usageScope = `${tenant?.id || 'none'}:${user?.id || 'none'}`;
+
+  useEffect(() => scheduleLikelyAppPreloads({
+    scope: usageScope,
+    allowedAppCodes: dashboardApps.map((app) => app.code),
+  }), [apps, usageScope]);
 
   useEffect(() => {
     let mounted = true;
@@ -200,7 +199,8 @@ export function DashboardPage() {
       return undefined;
     }
 
-    cashLocationsSettingsService.getEmployeeCustodyAccount(tenant.id, tenantUser.id)
+    import('@/features/settings/services/cashLocationsSettings.service')
+      .then(({ cashLocationsSettingsService }) => cashLocationsSettingsService.getEmployeeCustodyAccount(tenant.id, tenantUser.id))
       .then((account) => {
         if (mounted) setCashCustodyAccount(account);
       })
@@ -219,8 +219,12 @@ export function DashboardPage() {
     }
 
     event.preventDefault();
+    if (navigationPendingRef.current) return;
+    navigationPendingRef.current = true;
     setLaunchingApp(item);
-    launchTimeoutRef.current = window.setTimeout(() => navigate(item.href), 85);
+    recordAppOpen(usageScope, item.code);
+    markNavigationStart();
+    navigate(item.href);
   };
 
   const openUninstallDialog = (app) => {
@@ -294,6 +298,7 @@ export function DashboardPage() {
 
     try {
       setIsCustomerSubmitting(true);
+      const { partnersService } = await import('@/features/contacts/services/partners.service');
       await partnersService.createPartner({
         tenantId: tenant.id,
         ...payload,
@@ -411,6 +416,10 @@ export function DashboardPage() {
                           <Link
                             to={item.href}
                             onClick={(event) => handleLaunchApp(event, { ...item, title, Icon })}
+                            onPointerEnter={() => preloadApp(item.code)?.catch(() => {})}
+                            onFocus={() => preloadApp(item.code)?.catch(() => {})}
+                            onPointerDown={() => preloadApp(item.code)?.catch(() => {})}
+                            onTouchStart={() => preloadApp(item.code)?.catch(() => {})}
                             className={`relative flex aspect-square min-h-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[1.65rem] p-3 text-white shadow-lg ring-1 ring-white/10 transition-all duration-150 ease-out hover:shadow-[0_12px_24px_rgba(15,23,42,0.14)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 sm:aspect-auto sm:min-h-28 sm:items-stretch sm:justify-between sm:gap-0 sm:rounded-2xl sm:p-4 ${isLaunching ? 'app-launching z-20 ring-2 ring-white/60' : ''}`}
                             style={{ backgroundColor: item.iconColor || DEFAULT_APP_ICON_COLOR }}
                           >
@@ -483,7 +492,7 @@ export function DashboardPage() {
           onConfirm={handleConfirmUninstall}
           isSubmitting={isUninstalling}
         />
-        <PartnerFormSheet
+        {isCustomerSheetOpen ? <Suspense fallback={null}><LazyPartnerFormSheet
           open={isCustomerSheetOpen}
           onOpenChange={setIsCustomerSheetOpen}
           initialValues={NEW_CUSTOMER_INITIAL_VALUES}
@@ -497,23 +506,24 @@ export function DashboardPage() {
           accentHeader
           hideDismissButton
           inlineSubmit
-        />
-        <QuickImageUploadSheet
+        /></Suspense> : null}
+        {isImageUploadSheetOpen ? <Suspense fallback={null}><LazyQuickImageUploadSheet
           open={isImageUploadSheetOpen}
           onOpenChange={setIsImageUploadSheetOpen}
           tenantId={tenant?.id}
           onUploaded={() => setToast({ tone: 'success', message: 'تم رفع الصورة.' })}
-        />
-        <CashLocationSheet
+        /></Suspense> : null}
+        {isCashCustodySheetOpen ? <Suspense fallback={null}><LazyCashLocationSheet
           location={isCashCustodySheetOpen ? cashCustodyAccount : null}
           tenantId={tenant?.id}
           onOpenChange={setIsCashCustodySheetOpen}
           onOperationCreated={async () => {
             if (!tenant?.id || !tenantUser?.id) return;
+            const { cashLocationsSettingsService } = await import('@/features/settings/services/cashLocationsSettings.service');
             const account = await cashLocationsSettingsService.getEmployeeCustodyAccount(tenant.id, tenantUser.id);
             setCashCustodyAccount(account);
           }}
-        />
+        /></Suspense> : null}
         <FloatingNotice notice={toast} onClose={() => setToast(null)} />
       </div>
     );

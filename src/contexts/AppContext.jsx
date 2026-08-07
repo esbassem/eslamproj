@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { appsService } from '@/services/apps.service';
+import { appsService, buildAppMenusFromWorkspace } from '@/services/apps.service';
 import { resolveCurrentApp } from '@/utils/appResolver';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
-  const { tenant, tenantUser, ready } = useWorkspace();
+  const { tenant, tenantUser, ready, installedModules, installedMenus, modulesStatus } = useWorkspace();
   const tenantId = tenant?.id ?? null;
   const userRole = tenantUser?.role ?? null;
   const canManageApps = userRole === 'owner';
@@ -19,6 +19,9 @@ export function AppProvider({ children }) {
   const [menusError, setMenusError] = useState(null);
   const appsLoadRunRef = useRef(0);
   const menusLoadRunRef = useRef(0);
+  const menusByAppCode = useMemo(() => Object.fromEntries(
+    apps.map((app) => [app.code, buildAppMenusFromWorkspace(app.code, apps, installedMenus)]),
+  ), [apps, installedMenus]);
 
   useEffect(() => {
     let mounted = true;
@@ -68,8 +71,23 @@ export function AppProvider({ children }) {
   const loadAppMenus = useCallback(
     async (appCode) => {
       const runId = ++menusLoadRunRef.current;
-      setMenusStatus('loading');
       setMenusError(null);
+
+      if (modulesStatus === 'idle' || modulesStatus === 'loading') {
+        setActiveMenus([]);
+        setMenusStatus('loading');
+        return [];
+      }
+
+      const workspaceHasApp = installedModules.some((module) => module.id === apps.find((app) => app.code === appCode)?.id);
+      if (modulesStatus === 'ready' && workspaceHasApp) {
+        const cachedMenus = menusByAppCode[appCode] ?? [];
+        setActiveMenus(cachedMenus);
+        setMenusStatus('ready');
+        return cachedMenus;
+      }
+
+      setMenusStatus('loading');
 
       try {
         const menus = await appsService.getAppMenus(appCode, { tenantId, userRole });
@@ -92,7 +110,7 @@ export function AppProvider({ children }) {
         return [];
       }
     },
-    [tenantId, userRole],
+    [apps, installedModules, menusByAppCode, modulesStatus, tenantId, userRole],
   );
 
   const uninstallApp = useCallback(
@@ -153,12 +171,13 @@ export function AppProvider({ children }) {
       menusStatus,
       appsError,
       menusError,
+      menusByAppCode,
       setActiveApp,
       loadAppMenus,
       installApp,
       uninstallApp,
     }),
-    [activeApp, activeMenus, apps, appsError, appsStatus, installApp, loadAppMenus, menusError, menusStatus, setActiveApp, uninstallApp],
+    [activeApp, activeMenus, apps, appsError, appsStatus, installApp, loadAppMenus, menusByAppCode, menusError, menusStatus, setActiveApp, uninstallApp],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

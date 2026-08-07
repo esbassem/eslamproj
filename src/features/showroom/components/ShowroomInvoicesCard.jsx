@@ -19,13 +19,17 @@ function isInvoiceInMonth(invoice, reportMonth) {
   );
 }
 
-function InvoiceStatusBadge({ status }) {
+function InvoiceStatusBadge({ status, hasAccountingMove }) {
   if (status === 'pending_payment') {
     return <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 ring-1 ring-inset ring-amber-200">معلقة بانتظار الدفع</span>;
   }
 
   if (status === 'cancelled') {
     return <span className="mt-2 inline-flex rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-black text-red-700 ring-1 ring-inset ring-red-200">ملغاة</span>;
+  }
+
+  if (status === 'confirmed' && hasAccountingMove === false) {
+    return <span className="mt-2 inline-flex rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-black text-violet-700 ring-1 ring-inset ring-violet-200">غير مرحلة محاسبيًا</span>;
   }
 
   return null;
@@ -170,8 +174,10 @@ export function ShowroomInvoicesCard({
           <div className="divide-y divide-slate-100">
             {filteredInvoices.map((invoice) => {
               const totalAmount = Number(invoice.total_amount ?? invoice.totalAmount ?? 0);
-              const paidAmount = Number(invoice.accounting_paid_amount ?? 0);
-              const remainingAmount = Number(invoice.accounting_remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+              const hasAccountingMove = invoice.has_accounting_move === true
+                || (invoice.has_accounting_move == null && invoice.accounting_paid_amount != null && invoice.accounting_remaining_amount != null);
+              const paidAmount = hasAccountingMove ? Number(invoice.accounting_paid_amount) : null;
+              const remainingAmount = hasAccountingMove ? Number(invoice.accounting_remaining_amount) : null;
 
               return (
                 <button
@@ -188,7 +194,7 @@ export function ShowroomInvoicesCard({
                           {getInvoiceProductsText(invoice)}
                         </p>
                       ) : null}
-                      <InvoiceStatusBadge status={invoice.status} />
+                      <InvoiceStatusBadge status={invoice.status} hasAccountingMove={invoice.has_accounting_move} />
                       <p className="mt-2 text-xs font-bold text-[#7e969f]">
                         {new Intl.DateTimeFormat('ar-EG', {
                           dateStyle: 'short',
@@ -200,12 +206,12 @@ export function ShowroomInvoicesCard({
                       <p className="text-sm font-black text-slate-900">
                         {totalAmount.toLocaleString('ar-EG')} EGP
                       </p>
-                      <p className="mt-1 text-[11px] font-bold text-emerald-700">
-                        مدفوع {paidAmount.toLocaleString('ar-EG')}
-                      </p>
-                      <p className="mt-0.5 text-[11px] font-bold text-red-600">
-                        متبقي {remainingAmount.toLocaleString('ar-EG')}
-                      </p>
+                      {hasAccountingMove ? <>
+                        <p className="mt-1 text-[11px] font-bold text-emerald-700">مدفوع {paidAmount.toLocaleString('ar-EG')}</p>
+                        <p className="mt-0.5 text-[11px] font-bold text-red-600">متبقي {remainingAmount.toLocaleString('ar-EG')}</p>
+                      </> : (
+                        <p className="mt-1 text-[11px] font-black text-violet-700">{invoice.status === 'pending_payment' ? 'بانتظار إتمام البيع' : 'غير مرحلة محاسبيًا'}</p>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -228,8 +234,10 @@ export function ShowroomInvoicesCard({
           <div className="divide-y divide-slate-100">
             {filteredInvoices.map((invoice) => {
               const totalAmount = Number(invoice.total_amount ?? invoice.totalAmount ?? 0);
-              const paidAmount = Number(invoice.accounting_paid_amount ?? 0);
-              const remainingAmount = Number(invoice.accounting_remaining_amount ?? Math.max(totalAmount - paidAmount, 0));
+              const hasAccountingMove = invoice.has_accounting_move === true
+                || (invoice.has_accounting_move == null && invoice.accounting_paid_amount != null && invoice.accounting_remaining_amount != null);
+              const paidAmount = hasAccountingMove ? Number(invoice.accounting_paid_amount) : null;
+              const remainingAmount = hasAccountingMove ? Number(invoice.accounting_remaining_amount) : null;
               return (
                 <button
                   type="button"
@@ -245,7 +253,7 @@ export function ShowroomInvoicesCard({
                           {getInvoiceProductsText(invoice)}
                         </p>
                       ) : null}
-                      <InvoiceStatusBadge status={invoice.status} />
+                      <InvoiceStatusBadge status={invoice.status} hasAccountingMove={invoice.has_accounting_move} />
                       <p className="mt-2 text-xs font-bold text-[#7e969f]">
                         {new Intl.DateTimeFormat('ar-EG', {
                           dateStyle: 'short',
@@ -257,12 +265,12 @@ export function ShowroomInvoicesCard({
                       <p className="text-sm font-black text-slate-900">
                         {totalAmount.toLocaleString('ar-EG')} EGP
                       </p>
-                      <p className="mt-1 text-[11px] font-bold text-emerald-700">
-                        مدفوع {paidAmount.toLocaleString('ar-EG')}
-                      </p>
-                      <p className="mt-0.5 text-[11px] font-bold text-red-600">
-                        متبقي {remainingAmount.toLocaleString('ar-EG')}
-                      </p>
+                      {hasAccountingMove ? <>
+                        <p className="mt-1 text-[11px] font-bold text-emerald-700">مدفوع {paidAmount.toLocaleString('ar-EG')}</p>
+                        <p className="mt-0.5 text-[11px] font-bold text-red-600">متبقي {remainingAmount.toLocaleString('ar-EG')}</p>
+                      </> : (
+                        <p className="mt-1 text-[11px] font-black text-violet-700">{invoice.status === 'pending_payment' ? 'بانتظار إتمام البيع' : 'غير مرحلة محاسبيًا'}</p>
+                      )}
                     </div>
                   </div>
                 </button>

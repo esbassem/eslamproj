@@ -1,6 +1,5 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useLocation, useOutlet } from 'react-router-dom';
-import { preloadAllProtectedRoutes } from '@/app/router/lazyRoutes';
 import { uiExperiments } from '@/core/config/app.config';
 import { AppContentFallback } from '@/core/ui/app-content-fallback';
 import { PageTransition } from '@/core/ui/page-transition';
@@ -9,6 +8,8 @@ import { AppSidebar } from '@/features/workspace/components/AppSidebar';
 import { AppTopbar } from '@/features/workspace/components/AppTopbar';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { getAppCodeFromPathname, resolveCurrentApp } from '@/utils/appResolver';
+import { AppRouteErrorBoundary } from '@/app/router/AppRouteErrorBoundary';
+import { markAppContentReady, markAppShellVisible } from '@/app/router/navigationPerformance';
 
 function AccessDeniedAppPage() {
   return (
@@ -90,20 +91,18 @@ export function AppLayout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
+    const hasNavigationMeasurement = markAppShellVisible();
+    try {
+      sessionStorage.removeItem(`businesshub:chunk-retry:${location.pathname}`);
+    } catch {
+      // Session storage is optional and must not affect rendering.
     }
-
-    const preload = () => preloadAllProtectedRoutes();
-
-    if ('requestIdleCallback' in window) {
-      const idleId = window.requestIdleCallback(preload, { timeout: 1500 });
-      return () => window.cancelIdleCallback(idleId);
-    }
-
-    const timeoutId = window.setTimeout(preload, 600);
-    return () => window.clearTimeout(timeoutId);
-  }, []);
+    if (!hasNavigationMeasurement) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      markAppContentReady();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [location.pathname, outlet]);
 
   useEffect(() => {
     const appCode = currentAppCode;
@@ -154,6 +153,9 @@ export function AppLayout() {
         .app-sidebar-open {
           animation: appSidebarOpen 0.12s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
+        @media (prefers-reduced-motion: reduce) {
+          .app-shell-open, .app-sidebar-open { animation: none !important; }
+        }
       `}</style>
       {shouldShowTopbar ? <AppTopbar onMenuClick={handleOpenSidebar} /> : null}
       <div className={`${isFullBleedApp ? 'min-h-screen pt-0' : isLauncherHome ? 'min-h-0 pt-0' : 'min-h-[calc(100vh-5rem)] pt-4'} gap-4 lg:gap-6 ${shouldShowSidebar ? 'grid app-shell-grid' : 'block'}`}>
@@ -165,6 +167,7 @@ export function AppLayout() {
         <div className={`relative min-w-0 transition-colors duration-150 ease-out ${shouldAnimateAppOpen && !isFullBleedApp ? 'app-shell-open' : ''} ${isFullBleedApp ? 'min-h-screen' : isLauncherHome ? 'min-h-0' : 'min-h-[calc(100vh-4rem)]'}`}>
           <main className={`relative overflow-x-clip ${isFullBleedApp || isLauncherHome ? 'py-0' : 'py-1'} ${shouldShowSidebar ? 'pl-2 lg:pl-4' : ''}`}>
             <div className={`mx-auto flex min-h-full w-full flex-col bg-transparent ${isFullBleedApp ? 'max-w-none gap-0' : isLauncherHome ? 'max-w-none gap-6' : 'max-w-7xl gap-6'}`}>
+              <AppRouteErrorBoundary resetKey={location.pathname}>
               <PageTransition pathname={location.pathname}>
                 {isCheckingAppAccess && currentAppCode !== 'dashboard' ? (
                   <AppContentFallback pathname={location.pathname} />
@@ -174,6 +177,7 @@ export function AppLayout() {
                   <Suspense fallback={<AppContentFallback pathname={location.pathname} />}>{outlet}</Suspense>
                 )}
               </PageTransition>
+              </AppRouteErrorBoundary>
             </div>
           </main>
         </div>

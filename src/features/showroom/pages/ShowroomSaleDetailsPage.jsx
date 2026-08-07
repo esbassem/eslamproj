@@ -121,15 +121,20 @@ export function ShowroomSaleDetailsPage() {
 
   const saleNumber = sale?.sale_number || sale?.invoice_number || sale?.id?.slice(0, 8).toUpperCase();
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
+  const status = sale?.status;
+  const hasAccountingMove = sale?.has_accounting_move === true
+    || (sale?.has_accounting_move == null && sale?.accounting_paid_amount != null && sale?.accounting_remaining_amount != null);
+  const isConfirmedWithoutAccounting = status === 'confirmed' && !hasAccountingMove;
   const paymentsTotal = Array.isArray(sale?.payments)
     ? sale.payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : Number(sale?.accounting_paid_amount ?? 0);
-  const paidAmount = paymentsTotal;
-  const remainingAmount = Math.max(totalAmount - paidAmount, 0);
+  const paidAmount = hasAccountingMove ? paymentsTotal : null;
+  const remainingAmount = hasAccountingMove
+    ? Number(sale?.accounting_remaining_amount ?? Math.max(totalAmount - paymentsTotal, 0))
+    : null;
   const items = Array.isArray(sale?.items) ? sale.items : [];
-  const status = sale?.status;
   const statusInfo = statusConfig[status] || { label: status || '—', color: 'bg-slate-50 border-slate-200 text-slate-600' };
-  const isPaid = remainingAmount <= 0;
+  const isPaid = hasAccountingMove && remainingAmount <= 0;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8" dir="rtl">
@@ -177,7 +182,12 @@ export function ShowroomSaleDetailsPage() {
 
           {/* Status badge */}
           <div className="mb-6">
-            {isPaid ? (
+            {isConfirmedWithoutAccounting ? (
+              <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 text-violet-800">
+                <p className="font-black">غير مرحلة محاسبيًا</p>
+                <p className="mt-1 text-sm font-bold">لا يمكن حساب المدفوع والمتبقي لهذه الفاتورة لعدم وجود قيد محاسبي مرحّل مرتبط بها.</p>
+              </div>
+            ) : isPaid ? (
               <div className="flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                 <CheckCircle className="h-5 w-5 text-emerald-700" />
                 <span className="font-bold text-emerald-800">مسددة بالكامل</span>
@@ -231,13 +241,13 @@ export function ShowroomSaleDetailsPage() {
               <span className="text-sm font-bold text-slate-600">الإجمالي</span>
               <span className="font-mono text-lg font-black text-slate-800">{formatMoney(totalAmount)}</span>
             </div>
-            {paidAmount > 0 && (
+            {hasAccountingMove && paidAmount > 0 && (
               <div className="flex items-center justify-between border-t border-slate-200 pt-3">
                 <span className="text-sm font-bold text-emerald-700">المدفوع</span>
                 <span className="font-mono text-lg font-black text-emerald-700">{formatMoney(paidAmount)}</span>
               </div>
             )}
-            {remainingAmount > 0 && (
+            {hasAccountingMove && remainingAmount > 0 && (
               <div className="flex items-center justify-between border-t border-slate-200 pt-3">
                 <span className="text-sm font-bold text-red-600">المتبقي</span>
                 <span className="font-mono text-lg font-black text-red-700">{formatMoney(remainingAmount)}</span>

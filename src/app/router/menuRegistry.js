@@ -1,77 +1,48 @@
 import { lazy } from 'react';
+import { routeLoaders } from '@/app/router/appRouteRegistry';
 
 function lazyNamed(loader, exportName) {
   return lazy(() => loader().then((module) => ({ default: module[exportName] })));
 }
 
-export const MENU_COMPONENTS = {
-  '/app/products': lazyNamed(() => import('@/features/products/pages/ProductsPage'), 'ProductsPage'),
-  '/app/products/attributes': lazyNamed(() => import('@/features/products/pages/ProductAttributesPage'), 'ProductAttributesPage'),
-  '/app/products/attribute-values': lazyNamed(() => import('@/features/products/pages/ProductAttributeValuesPage'), 'ProductAttributeValuesPage'),
-  '/app/products/tracking-identifiers': lazyNamed(() => import('@/features/products/pages/ProductTrackingIdentifiersPage'), 'ProductTrackingIdentifiersPage'),
+function component(loaderName, exportName) {
+  return lazyNamed(routeLoaders[loaderName], exportName);
+}
 
-  '/app/inventory': lazyNamed(() => import('@/features/inventory/pages/InventoryDashboard'), 'InventoryDashboard'),
-  '/app/inventory/stock': lazyNamed(() => import('@/features/inventory/pages/StockListPage'), 'StockListPage'),
-  '/app/inventory/serials': lazyNamed(() => import('@/features/inventory/pages/SerialUnitsPage'), 'SerialUnitsPage'),
-  '/app/inventory/moves': lazyNamed(() => import('@/features/inventory/pages/StockMovesPage'), 'StockMovesPage'),
+const routes = {};
+function register(paths, loaderName, exportName) {
+  const Component = component(loaderName, exportName);
+  paths.forEach((path) => { routes[path] = Component; });
+}
 
-  '/app/sales': lazyNamed(() => import('@/features/invoices/pages/InvoicesPage'), 'InvoicesPage'),
-  '/app/sales/invoices': lazyNamed(() => import('@/features/invoices/pages/InvoicesPage'), 'InvoicesPage'),
-  '/app/sales/contracts': lazyNamed(() => import('@/features/contracts/pages/ContractsPage'), 'ContractsPage'),
+register(['/app/products'], 'products', 'ProductsPage');
+register(['/app/products/attributes'], 'productAttributes', 'ProductAttributesPage');
+register(['/app/products/attribute-values'], 'productAttributeValues', 'ProductAttributeValuesPage');
+register(['/app/products/tracking-identifiers'], 'productTrackingIdentifiers', 'ProductTrackingIdentifiersPage');
+register(['/app/inventory'], 'inventory', 'InventoryDashboard');
+register(['/app/inventory/stock'], 'inventoryStock', 'StockListPage');
+register(['/app/inventory/serials'], 'inventorySerials', 'SerialUnitsPage');
+register(['/app/inventory/moves'], 'inventoryMoves', 'StockMovesPage');
+register(['/app/sales', '/app/sales/invoices'], 'invoices', 'InvoicesPage');
+register(['/app/sales/contracts', '/app/contracts'], 'contracts', 'ContractsPage');
+register(['/app/accounting', '/app/accounting/payments', '/apps/accounting', '/apps/accounting/payments'], 'payments', 'PaymentsPage');
+register(['/app/accounting/journals', '/apps/accounting/journals', '/apps/accountant/journals'], 'settings', 'SettingsPage');
+register(['/apps/accountant', '/apps/accountant/payments'], 'accountant', 'AccountantHomePage');
+register(['/app/contacts'], 'contacts', 'ContactsPage');
+register(['/app/contacts/customers', '/app/partners/customers'], 'customers', 'CustomersPage');
+register(['/app/contacts/suppliers', '/app/partners/suppliers'], 'suppliers', 'SuppliersPage');
+register(['/app/contacts/payment-entities', '/app/partners/payment-entities'], 'paymentEntities', 'PaymentEntitiesPage');
+register(['/photos', '/app/photos'], 'photosHome', 'PhotosHomePage');
+register(['/photos/all', '/app/photos/all'], 'photosAll', 'PhotosAllPage');
+register(['/photos/unlinked', '/app/photos/unlinked'], 'photosUnlinked', 'PhotosUnlinkedPage');
+register(['/photos/settings', '/app/photos/settings'], 'photosSettings', 'PhotosSettingsPage');
+register(['/app/partners'], 'partners', 'PartnersPage');
+register(['/app/pos'], 'pos', 'PosPage');
+register(['/app/old_cashbox', '/app/old-cashbox', '/apps/old-cashbox'], 'oldCashbox', 'OldCashboxPage');
+register(['/app/showroom_point', '/app/showroom_point/new', '/app/showroom_point/customers', '/app/showroom_point/settings'], 'showroomSell', 'ShowroomSellPage');
+register(['/app/moto-customer-care', '/app/moto-customer-care/dashboard', '/app/moto-customer-care/sales', '/apps/moto-customer-care', '/apps/moto-customer-care/dashboard', '/apps/moto-customer-care/sales'], 'customerCareList', 'MotoCustomerCareSalesFollowUpListPage');
+register(['/app/receivables', '/app/receivables/installments', '/apps/receivables', '/apps/receivables/installments'], 'receivables', 'ReceivablesPage');
+register(['/app/settings', '/app/settings/team', '/app/settings/permissions', '/app/team'], 'settings', 'SettingsPage');
+register(['/app/settings/accounting/cash-locations'], 'cashLocationsSettings', 'CashLocationsSettingsPage');
 
-  '/app/accounting': lazyNamed(() => import('@/features/payments/pages/PaymentsPage'), 'PaymentsPage'),
-  '/app/accounting/payments': lazyNamed(() => import('@/features/payments/pages/PaymentsPage'), 'PaymentsPage'),
-  '/app/accounting/journals': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
-  '/apps/accounting': lazyNamed(() => import('@/features/payments/pages/PaymentsPage'), 'PaymentsPage'),
-  '/apps/accounting/payments': lazyNamed(() => import('@/features/payments/pages/PaymentsPage'), 'PaymentsPage'),
-  '/apps/accounting/journals': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
-  '/apps/accountant': lazyNamed(() => import('@/features/accountant/pages/AccountantHomePage'), 'AccountantHomePage'),
-  '/apps/accountant/payments': lazyNamed(() => import('@/features/accountant/pages/AccountantHomePage'), 'AccountantHomePage'),
-  '/apps/accountant/journals': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
-
-  '/app/contacts': lazyNamed(() => import('@/features/contacts/pages/ContactsPage'), 'ContactsPage'),
-  '/app/contacts/customers': lazyNamed(() => import('@/features/contacts/pages/CustomersPage'), 'CustomersPage'),
-  '/app/contacts/suppliers': lazyNamed(() => import('@/features/contacts/pages/SuppliersPage'), 'SuppliersPage'),
-  '/app/contacts/payment-entities': lazyNamed(() => import('@/features/contacts/pages/PaymentEntitiesPage'), 'PaymentEntitiesPage'),
-  '/app/partners/customers': lazyNamed(() => import('@/features/contacts/pages/CustomersPage'), 'CustomersPage'),
-  '/app/partners/suppliers': lazyNamed(() => import('@/features/contacts/pages/SuppliersPage'), 'SuppliersPage'),
-  '/app/partners/payment-entities': lazyNamed(() => import('@/features/contacts/pages/PaymentEntitiesPage'), 'PaymentEntitiesPage'),
-
-  '/photos': lazyNamed(() => import('@/features/photos/pages/PhotosHomePage'), 'PhotosHomePage'),
-  '/photos/all': lazyNamed(() => import('@/features/photos/pages/PhotosAllPage'), 'PhotosAllPage'),
-  '/photos/unlinked': lazyNamed(() => import('@/features/photos/pages/PhotosUnlinkedPage'), 'PhotosUnlinkedPage'),
-  '/photos/settings': lazyNamed(() => import('@/features/photos/pages/PhotosSettingsPage'), 'PhotosSettingsPage'),
-  '/app/photos': lazyNamed(() => import('@/features/photos/pages/PhotosHomePage'), 'PhotosHomePage'),
-  '/app/photos/all': lazyNamed(() => import('@/features/photos/pages/PhotosAllPage'), 'PhotosAllPage'),
-  '/app/photos/unlinked': lazyNamed(() => import('@/features/photos/pages/PhotosUnlinkedPage'), 'PhotosUnlinkedPage'),
-  '/app/photos/settings': lazyNamed(() => import('@/features/photos/pages/PhotosSettingsPage'), 'PhotosSettingsPage'),
-
-  '/app/partners': lazyNamed(() => import('@/features/partners/pages/PartnersPage'), 'PartnersPage'),
-  '/app/pos': lazyNamed(() => import('@/features/pos/pages/PosPage'), 'PosPage'),
-  '/app/old_cashbox': lazyNamed(() => import('@/features/old-cashbox/pages/OldCashboxPage'), 'OldCashboxPage'),
-  '/app/old-cashbox': lazyNamed(() => import('@/features/old-cashbox/pages/OldCashboxPage'), 'OldCashboxPage'),
-  '/apps/old-cashbox': lazyNamed(() => import('@/features/old-cashbox/pages/OldCashboxPage'), 'OldCashboxPage'),
-  '/app/showroom_point': lazyNamed(() => import('@/features/showroom/pages/ShowroomSellPage'), 'ShowroomSellPage'),
-  '/app/showroom_point/new': lazyNamed(() => import('@/features/showroom/pages/ShowroomSellPage'), 'ShowroomSellPage'),
-  '/app/showroom_point/customers': lazyNamed(() => import('@/features/showroom/pages/ShowroomSellPage'), 'ShowroomSellPage'),
-  '/app/showroom_point/settings': lazyNamed(() => import('@/features/showroom/pages/ShowroomSellPage'), 'ShowroomSellPage'),
-  '/app/moto-customer-care': lazyNamed(() => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage'), 'MotoCustomerCareSalesFollowUpListPage'),
-  '/app/moto-customer-care/dashboard': lazyNamed(() => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage'), 'MotoCustomerCareSalesFollowUpListPage'),
-  '/app/moto-customer-care/sales': lazyNamed(() => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage'), 'MotoCustomerCareSalesFollowUpListPage'),
-  '/apps/moto-customer-care': lazyNamed(() => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage'), 'MotoCustomerCareSalesFollowUpListPage'),
-  '/apps/moto-customer-care/dashboard': lazyNamed(() => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage'), 'MotoCustomerCareSalesFollowUpListPage'),
-  '/apps/moto-customer-care/sales': lazyNamed(() => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage'), 'MotoCustomerCareSalesFollowUpListPage'),
-  '/app/receivables': lazyNamed(() => import('@/features/receivables/pages/ReceivablesPage'), 'ReceivablesPage'),
-  '/app/receivables/installments': lazyNamed(() => import('@/features/receivables/pages/ReceivablesPage'), 'ReceivablesPage'),
-  '/apps/receivables': lazyNamed(() => import('@/features/receivables/pages/ReceivablesPage'), 'ReceivablesPage'),
-  '/apps/receivables/installments': lazyNamed(() => import('@/features/receivables/pages/ReceivablesPage'), 'ReceivablesPage'),
-  '/app/contracts': lazyNamed(() => import('@/features/contracts/pages/ContractsPage'), 'ContractsPage'),
-  '/app/settings': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
-  '/app/settings/accounting/cash-locations': lazyNamed(
-    () => import('@/features/settings/pages/CashLocationsSettingsPage'),
-    'CashLocationsSettingsPage',
-  ),
-  '/app/settings/team': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
-  '/app/settings/permissions': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
-  '/app/team': lazyNamed(() => import('@/features/settings/pages/SettingsPage'), 'SettingsPage'),
-};
+export const MENU_COMPONENTS = routes;

@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, Banknote, CheckCircle2, Package, Printer, RotateCcw, Trash2, User } from 'lucide-react';
+import { AlertCircle, Banknote, CheckCircle2, MoreHorizontal, Package, Printer, RotateCcw, Trash2, User } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/core/ui/dropdown-menu';
 import { ShowroomContractPreview } from '@/features/showroom/components/ShowroomContractPreview';
 import { SaleCancellationDialog } from '@/features/showroom/components/SaleCancellationDialog';
+import { SaleReturnAction } from '@/features/showroom/components/sale-returns/SaleReturnAction';
+import { SaleReturnDialog } from '@/features/showroom/components/sale-returns/SaleReturnDialog';
+import { SaleReturnHistory } from '@/features/showroom/components/sale-returns/SaleReturnHistory';
+import { saleReturnService } from '@/features/showroom/services/saleReturn.service';
 import { useOptionalShowroomConfig } from '@/features/showroom/context/ShowroomConfigContext';
 import { showroomService } from '@/features/showroom/services/showroom.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
@@ -93,9 +98,11 @@ function SaleSheetContent({
   onSettleBalance,
   onDelete,
   onCancel,
+  onSaleReturn,
   onPaperworkRequestOpen,
   canDelete,
   canCancel,
+  canStartSaleReturn,
   canRecordPayment,
   canSettleBalance,
   isPayingRemaining,
@@ -103,23 +110,35 @@ function SaleSheetContent({
   advanceBalances = [],
   isAdvanceBalancesLoading = false,
   onUseAdvanceBalance,
+  saleReturnHistory = [],
+  returnHistoryStatus = 'idle',
+  returnHistoryError = '',
+  onLoadReturnHistory,
+  canViewSaleReturns = false,
 }) {
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
+  const hasAccountingMove = sale?.has_accounting_move === true
+    || (sale?.has_accounting_move == null && sale?.accounting_paid_amount != null && sale?.accounting_remaining_amount != null);
+  const isConfirmedWithoutAccounting = sale?.status === 'confirmed' && !hasAccountingMove;
   const payments = Array.isArray(sale?.payments) ? sale.payments : [];
   const paymentsTotal = payments.length
     ? payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : 0;
-  const paidAmount = paymentsTotal;
+  const paidAmount = hasAccountingMove ? paymentsTotal : null;
   // The payment history must only contain posted accounting moves loaded by
   // showroomService. Never manufacture a payment from the invoice total.
   const paymentEntries = payments;
-  const remainingAmount = Math.max(totalAmount - paidAmount, 0);
+  const remainingAmount = hasAccountingMove
+    ? Number(sale?.accounting_remaining_amount ?? Math.max(totalAmount - paymentsTotal, 0))
+    : null;
   const availableAdvanceTotal = advanceBalances.reduce((sum, balance) => sum + Number(balance?.availableAmount || 0), 0);
   const items = Array.isArray(sale?.items) && sale.items.length > 0
     ? sale.items
     : Array.isArray(sale?.lines)
       ? sale.lines
       : [];
+  const returnedByLine = saleReturnHistory.flatMap((operation) => operation.showroom_sale_return_lines || []).reduce((map, line) => map.set(line.original_sale_line_id, (map.get(line.original_sale_line_id) || 0) + Number(line.quantity || 0)), new Map());
+  const isFullyReturned = items.length > 0 && items.every((item) => (returnedByLine.get(item.id) || 0) >= Number(item.quantity || 0));
 
   return (
     <div className="h-full overflow-y-auto bg-white" dir="rtl">
@@ -131,6 +150,8 @@ function SaleSheetContent({
               <h2 className="truncate text-xl font-black text-slate-900">
                 {sale?.customer?.name || 'عميل غير محدد'}
               </h2>
+              {saleReturnHistory.some((operation) => operation.replacement_sale_id === sale?.id) ? <span className="shrink-0 rounded-full bg-blue-100 px-2 py-1 text-[10px] font-black text-blue-800">فاتورة ناتجة عن استبدال</span> : null}
+              {isFullyReturned ? <span className="shrink-0 rounded-full bg-red-100 px-2 py-1 text-[10px] font-black text-red-800">مرتجعة بالكامل</span> : null}
             </div>
             {sale?.customer?.phone && (
               <p className="mt-0.5 pr-7 text-sm font-bold text-slate-500">{sale.customer.phone}</p>
@@ -142,15 +163,18 @@ function SaleSheetContent({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {canCancel ? (
-              <button
-                type="button"
-                onClick={onCancel}
-                className="flex h-9 items-center gap-1.5 rounded-full bg-red-600 px-3 text-xs font-black text-white transition hover:bg-red-700 focus:outline-none focus:ring-4 focus:ring-red-100"
-              >
-                <RotateCcw className="h-4 w-4" />
-                إلغاء الفاتورة
-              </button>
+            {canCancel || canStartSaleReturn ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700" aria-label="إجراءات الفاتورة" title="إجراءات الفاتورة">
+                    <MoreHorizontal className="h-5 w-5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="z-[2147483643]">
+                  {canStartSaleReturn ? <SaleReturnAction onSelect={onSaleReturn} /> : null}
+                  {canCancel ? <DropdownMenuItem onSelect={onCancel} className="gap-2 font-bold text-red-700"><RotateCcw className="h-4 w-4" />إلغاء الفاتورة</DropdownMenuItem> : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
             {canDelete ? (
               <button
@@ -200,11 +224,17 @@ function SaleSheetContent({
                     const itemTotal = Number(item?.total ?? item?.line_total ?? itemPrice * itemQty);
                     const configuredAttributes = getLineConfiguredAttributes(item);
                     const paperworkInfo = getItemPaperworkInfo(item);
+                    const returnedLines = saleReturnHistory.flatMap((operation) => operation.showroom_sale_return_lines || []).filter((returnLine) => returnLine.original_sale_line_id === item?.id);
+                    const returnedQuantity = returnedLines.reduce((sum, returnLine) => sum + Number(returnLine.quantity || 0), 0);
+                    const wasReplaced = returnedLines.some((returnLine) => returnLine.line_action === 'exchange');
+                    const returnLabel = wasReplaced && returnedQuantity < itemQty ? 'مرتجع جزئيًا وتم استبداله'
+                      : wasReplaced ? 'مرتجع بالكامل وتم استبداله'
+                        : returnedQuantity >= itemQty ? 'مرتجع بالكامل' : returnedQuantity > 0 ? 'مرتجع جزئيًا' : '';
 
                     return (
                       <div key={item?.lineId || item?.lineUuid || item?.id || index} className="flex items-start justify-between gap-3 py-2.5">
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-bold text-slate-700">{itemName}</p>
+                          <div className="flex items-center gap-2"><p className="truncate text-xs font-bold text-slate-700">{itemName}</p>{returnLabel ? <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-800">{returnLabel}</span> : null}</div>
                           {itemQty > 1 && (
                             <p className="mt-0.5 text-[0.7rem] text-slate-400">
                               {itemQty} × {formatMoney(itemPrice)}
@@ -300,7 +330,7 @@ function SaleSheetContent({
             </section>
           )}
 
-          {remainingAmount > 0 && (isAdvanceBalancesLoading || availableAdvanceTotal > 0) ? (
+          {hasAccountingMove && remainingAmount > 0 && (isAdvanceBalancesLoading || availableAdvanceTotal > 0) ? (
             <button
               type="button"
               onClick={availableAdvanceTotal > 0 ? onUseAdvanceBalance : undefined}
@@ -321,7 +351,17 @@ function SaleSheetContent({
             </button>
           ) : null}
 
-          <div className={`flex items-center justify-between gap-3 px-5 py-4 ${
+          {!hasAccountingMove ? (
+            <div className="flex items-center justify-between gap-3 bg-violet-50 px-5 py-4 text-violet-800">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700"><AlertCircle className="h-4 w-4" /></span>
+                <div className="min-w-0">
+                  <p className="text-sm font-black">{isConfirmedWithoutAccounting ? 'غير مرحلة محاسبيًا' : 'بانتظار إتمام البيع'}</p>
+                  <p className="mt-0.5 text-[0.7rem] font-bold text-violet-700">{isConfirmedWithoutAccounting ? 'لا يمكن حساب المدفوع والمتبقي لهذه الفاتورة لعدم وجود قيد محاسبي مرحّل مرتبط بها.' : 'لم تكتمل عملية البيع بعد، لذلك لا يوجد رصيد محاسبي نهائي.'}</p>
+                </div>
+              </div>
+            </div>
+          ) : <div className={`flex items-center justify-between gap-3 px-5 py-4 ${
             remainingAmount > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
           }`}>
             <div className="flex min-w-0 items-center gap-2.5">
@@ -366,8 +406,9 @@ function SaleSheetContent({
                 مكتملة
               </span>
             )}
-          </div>
+          </div>}
         </div>
+        {canViewSaleReturns ? <SaleReturnHistory operations={saleReturnHistory} status={returnHistoryStatus} error={returnHistoryError} onLoad={onLoadReturnHistory} /> : null}
       </div>
     </div>
   );
@@ -638,10 +679,14 @@ export function ShowroomSaleViewSheet({
   const [isPayingRemaining, setIsPayingRemaining] = useState(false);
   const [isDeletingSale, setIsDeletingSale] = useState(false);
   const [isCancellationOpen, setIsCancellationOpen] = useState(false);
+  const [isSaleReturnOpen, setIsSaleReturnOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState('details');
   const [advanceBalances, setAdvanceBalances] = useState([]);
   const [isAdvanceBalancesLoading, setIsAdvanceBalancesLoading] = useState(false);
   const [initialPaymentSource, setInitialPaymentSource] = useState('cash');
+  const [saleReturnHistory, setSaleReturnHistory] = useState([]);
+  const [returnHistoryStatus, setReturnHistoryStatus] = useState('idle');
+  const [returnHistoryError, setReturnHistoryError] = useState('');
 
   const fetchDetails = useCallback(async () => {
     if (!sale?.id) return;
@@ -688,12 +733,20 @@ export function ShowroomSaleViewSheet({
       setIsPayingRemaining(false);
       setIsDeletingSale(false);
       setIsCancellationOpen(false);
+      setIsSaleReturnOpen(false);
+      setSaleReturnHistory([]);
+      setReturnHistoryStatus('idle');
+      setReturnHistoryError('');
       setSheetMode('details');
     }
   }, [isOpen, fetchDetails]);
 
   const activeSale = fullSale ?? sale;
   const activeStatus = activeSale?.status;
+  const activeHasAccountingMove = activeSale?.has_accounting_move === true
+    || (activeSale?.has_accounting_move == null && activeSale?.accounting_paid_amount != null && activeSale?.accounting_remaining_amount != null);
+  const activeLines = activeSale?.items?.length ? activeSale.items : activeSale?.lines || [];
+  const hasReturnableLine = activeLines.some((line) => Number(line?.quantity || 0) > 0);
   const activeCustomerId = activeSale?.customer?.id || activeSale?.customer_id || null;
 
   useEffect(() => {
@@ -860,11 +913,13 @@ export function ShowroomSaleViewSheet({
                 onSettleBalance={onSettleBalance}
                 onDelete={handleDeleteSale}
                 onCancel={() => setIsCancellationOpen(true)}
+                onSaleReturn={() => setIsSaleReturnOpen(true)}
                 onPaperworkRequestOpen={onPaperworkRequestOpen}
                 canDelete={!readOnly && canDeleteSale && activeStatus === 'pending_payment'}
                 canCancel={!readOnly && canDeleteSale && activeStatus === 'confirmed'}
-                canRecordPayment={!readOnly}
-                canSettleBalance={Boolean(onSettleBalance)}
+                canStartSaleReturn={!readOnly && canDeleteSale && activeStatus === 'confirmed' && hasReturnableLine}
+                canRecordPayment={!readOnly && activeHasAccountingMove}
+                canSettleBalance={Boolean(onSettleBalance) && activeHasAccountingMove}
                 isPayingRemaining={isPayingRemaining}
                 isDeleting={isDeletingSale}
                 advanceBalances={advanceBalances}
@@ -876,6 +931,15 @@ export function ShowroomSaleViewSheet({
                   }
                   handleOpenPaymentStep(advanceBalances.length ? 'open_credit' : 'cash');
                 }}
+                saleReturnHistory={saleReturnHistory}
+                returnHistoryStatus={returnHistoryStatus}
+                returnHistoryError={returnHistoryError}
+                onLoadReturnHistory={async () => {
+                  setReturnHistoryStatus('loading'); setReturnHistoryError('');
+                  try { setSaleReturnHistory(await saleReturnService.listSaleReturnHistory({ tenantId: tenant.id, saleId: activeSale.id })); setReturnHistoryStatus('ready'); }
+                  catch (historyError) { setReturnHistoryStatus('error'); setReturnHistoryError(historyError.message || 'تعذر تحميل Schema المرتجعات.'); }
+                }}
+                canViewSaleReturns={canDeleteSale}
               />
             )}
           </motion.div>
@@ -901,6 +965,24 @@ export function ShowroomSaleViewSheet({
               await fetchDetails();
             }}
           />
+          <SaleReturnDialog
+            open={isSaleReturnOpen}
+            onOpenChange={setIsSaleReturnOpen}
+            tenantId={tenant?.id}
+            sale={fullSale ?? sale}
+            onSuccess={async () => {
+              await fetchDetails();
+              setReturnHistoryStatus('loading');
+              try {
+                setSaleReturnHistory(await saleReturnService.listSaleReturnHistory({ tenantId: tenant.id, saleId: activeSale.id }));
+                setReturnHistoryStatus('ready');
+              } catch (historyError) {
+                setReturnHistoryStatus('error');
+                setReturnHistoryError(historyError.message || 'تعذر تحميل تاريخ المرتجعات.');
+              }
+              await onPaymentRecorded?.();
+            }}
+          />
         </>
       )}
     </AnimatePresence>,
@@ -914,11 +996,15 @@ function ShowroomContractWindow({ sale, isOpen, companyName, onClose }) {
   }
 
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
+  const hasAccountingMove = sale?.has_accounting_move === true
+    || (sale?.has_accounting_move == null && sale?.accounting_paid_amount != null && sale?.accounting_remaining_amount != null);
   const paymentsTotal = Array.isArray(sale?.payments)
     ? sale.payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
     : 0;
-  const paidAmount = paymentsTotal;
-  const remainingAmount = Math.max(totalAmount - paidAmount, 0);
+  const paidAmount = hasAccountingMove ? paymentsTotal : null;
+  const remainingAmount = hasAccountingMove
+    ? Number(sale?.accounting_remaining_amount ?? Math.max(totalAmount - paymentsTotal, 0))
+    : null;
   const items = Array.isArray(sale?.items) && sale.items.length > 0
     ? sale.items
     : Array.isArray(sale?.lines)
@@ -1012,6 +1098,7 @@ function ShowroomContractWindow({ sale, isOpen, companyName, onClose }) {
                 totalAmount={totalAmount}
                 paidAmount={paidAmount}
                 remainingAmount={remainingAmount}
+                accountingAvailable={hasAccountingMove}
                 paymentMethod={paymentMethod}
                 notes={sale.notes}
               />
