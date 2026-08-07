@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useReducedMotion } from 'framer-motion';
-import { AlertTriangle, ArrowRight, Building2, Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, Loader2, PackagePlus, PhoneCall, Search, UploadCloud, UserPlus } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Building2, Camera, Check, CircleAlert, CircleCheck, FileText, FolderOpen, ImagePlus, Loader2, PackagePlus, PhoneCall, Search, UploadCloud, UserPlus, X } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
@@ -23,12 +23,14 @@ import { CompleteTrackingUnitWizard } from '@/features/inventory/components/Comp
 import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
 import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
 import { VaultPaperworkDrawer } from '@/features/moto-customer-care/components/VaultPaperworkDrawer';
+import { PaperworkExceptionalActionDialog } from '@/features/moto-customer-care/components/paperwork/PaperworkExceptionalActionDialog';
 import {
   PaperworkDocumentsContent,
   PaperworkDocumentsToolbar,
 } from '@/features/moto-customer-care/components/paperwork/PaperworkDocumentsSection';
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
+import { PAPERWORK_EXCEPTIONAL_ACTIONS, PAPERWORK_EXCEPTIONAL_ACTION_IDS } from '@/features/moto-customer-care/config/paperworkExceptionalActions';
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('ar-EG-u-nu-latn', {
@@ -947,7 +949,7 @@ function getPaperworkCurrentStation(currentStage) {
   };
 }
 
-function PaperworkRequestCard({ request, onOpen }) {
+function PaperworkRequestCard({ request, onOpen, selectionMode = false, selected = false, onToggle }) {
   const processorName = request.processor?.name || '';
   const missingProcessor = request.license?.status === 'jawab' && !processorName;
   const licenseSummary = request.license?.status === 'jawab'
@@ -975,21 +977,46 @@ function PaperworkRequestCard({ request, onOpen }) {
     none: 'بدون وصاية',
   }[guardianshipCode] || guardianshipCode || '';
   const currentStation = getPaperworkCurrentStation(currentStage);
+  const needsProcessorCancellation = currentStage === 'pending_processor_cancellation';
 
   return (
     <article
       role="button"
       tabIndex={0}
-      onClick={() => onOpen?.(request)}
+      onClick={() => selectionMode ? onToggle?.(request.id) : onOpen?.(request)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          onOpen?.(request);
+          if (selectionMode) onToggle?.(request.id);
+          else onOpen?.(request);
         }
       }}
-      className="relative cursor-pointer bg-white px-4 py-5 outline-none transition before:absolute before:inset-x-4 before:top-0 before:h-[2px] before:bg-slate-300 first:before:hidden hover:bg-blue-50/55 focus-visible:bg-blue-50/55 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 lg:before:inset-x-5 lg:before:h-px lg:before:bg-slate-200"
-      aria-label={`عرض تفاصيل طلب أوراق ${request.productName || ''}`}
+      className={`relative cursor-pointer py-5 pl-4 outline-none transition before:absolute before:inset-x-4 before:top-0 before:h-[2px] before:bg-slate-300 first:before:hidden hover:bg-blue-50/55 focus-visible:bg-blue-50/55 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 lg:before:inset-x-5 lg:before:h-px lg:before:bg-slate-200 ${selectionMode ? 'pr-14' : 'pr-4'} ${selected ? 'bg-blue-50/70' : 'bg-white'}`}
+      aria-label={selectionMode ? `${selected ? 'إلغاء تحديد' : 'تحديد'} طلب أوراق ${request.productName || ''}` : `عرض تفاصيل طلب أوراق ${request.productName || ''}`}
+      aria-pressed={selectionMode ? selected : undefined}
     >
+      {needsProcessorCancellation ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-800">
+          <div className="min-w-0">
+            <p className="text-[11px] font-black">تنبيه عاجل: طلب يحتاج إلغاء لدى الجهة</p>
+            <p className="mt-0.5 text-[9px] font-bold text-red-600">
+              {request.customer?.name || 'عميل غير محدد'} · {request.productName || 'قطعة غير محددة'} · {identifiersText} · {processorName || 'جهة غير محددة'}
+            </p>
+            <p className="mt-0.5 text-[9px] font-bold text-red-500">
+              تاريخ العملية: {formatDate(request.processorCancellationRequestedAt)} · القطعة البديلة: {request.replacementContext?.new_tracking_number || request.replacementContext?.new_chassis || request.saleReturnOperationId?.slice(0, 8) || '--'}
+              {request.replacementContext?.new_engine ? ` · موتور ${request.replacementContext.new_engine}` : ''}
+            </p>
+          </div>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onOpen?.(request); }} className="rounded-lg bg-red-700 px-3 py-1.5 text-[10px] font-black text-white hover:bg-red-800">
+            فتح الطلب
+          </button>
+        </div>
+      ) : null}
+      {selectionMode ? (
+        <span className={`absolute right-4 top-4 z-10 flex h-7 w-7 items-center justify-center rounded-lg border transition ${selected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'}`} aria-hidden="true">
+          <Check className="h-4 w-4" />
+        </span>
+      ) : null}
       <div className="flex min-w-0 flex-col lg:min-h-[5.75rem] lg:flex-row lg:items-stretch lg:gap-5">
         <div className="min-w-0 lg:w-[18rem] lg:shrink-0">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -3360,15 +3387,30 @@ function isCompletedPaperworkRequest(request) {
   return request?.status === 'done' || COMPLETED_PAPERWORK_REQUEST_STAGES.has(currentStage);
 }
 
-function PaperworkRequestStatusFilters({ value, onChange, counts }) {
+function PaperworkRequestStatusFilters({ value, onChange, counts, canSelect = false, selectionMode = false, onToggleSelection }) {
   const filters = [
     { id: 'open', label: 'الطلبات المفتوحة', count: counts.open },
+    { id: 'processor_cancellation', label: 'طلبات تحتاج إلغاء لدى الجهة', count: counts.processorCancellation },
     { id: 'completed', label: 'الطلبات المكتملة', count: counts.completed },
   ];
 
   return (
     <div className="border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:px-6">
       <div className="flex max-w-full items-center gap-1.5 overflow-x-auto" role="group" aria-label="فلترة طلبات الأوراق">
+        {canSelect && value === 'open' ? (
+          <button
+            type="button"
+            onClick={onToggleSelection}
+            className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            aria-label={selectionMode ? 'إنهاء تحديد الطلبات' : 'تحديد عدة طلبات'}
+            title={selectionMode ? 'إنهاء التحديد' : 'تحديد عدة طلبات'}
+            aria-pressed={selectionMode}
+          >
+            <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${selectionMode ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}>
+              <Check className="h-3.5 w-3.5" />
+            </span>
+          </button>
+        ) : null}
         {filters.map((filter) => {
           const isActive = value === filter.id;
 
@@ -3422,6 +3464,13 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const [pendingProcessorPaperworkOpen, setPendingProcessorPaperworkOpen] = useState(false);
   const [vaultPaperworkOpen, setVaultPaperworkOpen] = useState(false);
   const [paperworkDocumentSheetOpen, setPaperworkDocumentSheetOpen] = useState(false);
+  const [paperworkBulkSelectionMode, setPaperworkBulkSelectionMode] = useState(false);
+  const [selectedPaperworkRequestIds, setSelectedPaperworkRequestIds] = useState(() => new Set());
+  const [paperworkBulkAction, setPaperworkBulkAction] = useState(null);
+  const [paperworkBulkReason, setPaperworkBulkReason] = useState('');
+  const [paperworkBulkNotes, setPaperworkBulkNotes] = useState('');
+  const [paperworkBulkError, setPaperworkBulkError] = useState('');
+  const [isExecutingPaperworkBulkAction, setIsExecutingPaperworkBulkAction] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const mobileCloseTimeoutRef = useRef(null);
   const reportFilterTimeoutRef = useRef(null);
@@ -3466,6 +3515,9 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const displayedPaperworkRequests = useMemo(() => paperworkRequests.filter((request) => {
     if (request.status === 'cancelled') return false;
     const isCompleted = isCompletedPaperworkRequest(request);
+    if (paperworkRequestStatusFilter === 'processor_cancellation') {
+      return request.currentStage === 'pending_processor_cancellation';
+    }
     return paperworkRequestStatusFilter === 'completed' ? isCompleted : !isCompleted;
   }), [paperworkRequestStatusFilter, paperworkRequests]);
   const paperworkRequestStatusCounts = useMemo(() => paperworkRequests.reduce((counts, request) => {
@@ -3474,9 +3526,13 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       counts.completed += 1;
     } else {
       counts.open += 1;
+      if (request.currentStage === 'pending_processor_cancellation') counts.processorCancellation += 1;
     }
     return counts;
-  }, { open: 0, completed: 0 }), [paperworkRequests]);
+  }, { open: 0, processorCancellation: 0, completed: 0 }), [paperworkRequests]);
+  const selectedPaperworkRequests = useMemo(() => displayedPaperworkRequests.filter((request) => (
+    selectedPaperworkRequestIds.has(request.id)
+  )), [displayedPaperworkRequests, selectedPaperworkRequestIds]);
   const hasOpenSheet = Boolean(
     trackingSheetItem
       || licenseSheetItem
@@ -3484,6 +3540,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       || stockUnitSheetItem
       || paperworkRequestItem
       || paperworkRequestDetails
+      || paperworkBulkAction
       || pendingProcessorPaperworkOpen
       || vaultPaperworkOpen
       || paperworkDocumentSheetOpen,
@@ -3525,6 +3582,10 @@ export function MotoCustomerCareSalesFollowUpListPage() {
 
     setIsMobileContentClosing(false);
     setActiveSection(sectionId);
+    if (sectionId !== 'requests') {
+      setPaperworkBulkSelectionMode(false);
+      setSelectedPaperworkRequestIds(new Set());
+    }
     setHasRequestedMobileData(true);
     setIsMobileContentOpen(true);
   };
@@ -3609,6 +3670,48 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     });
     setStockUnitSheetItem(null);
     await refresh();
+  };
+  const togglePaperworkRequestSelection = (requestId) => {
+    setSelectedPaperworkRequestIds((current) => {
+      const next = new Set(current);
+      if (next.has(requestId)) next.delete(requestId);
+      else next.add(requestId);
+      return next;
+    });
+  };
+  const closePaperworkBulkSelection = () => {
+    setPaperworkBulkSelectionMode(false);
+    setSelectedPaperworkRequestIds(new Set());
+  };
+  const openPreviousDeliveryBulkAction = () => {
+    if (!selectedPaperworkRequests.length) return;
+    setPaperworkBulkReason('');
+    setPaperworkBulkNotes('');
+    setPaperworkBulkError('');
+    setPaperworkBulkAction(PAPERWORK_EXCEPTIONAL_ACTIONS.find((action) => (
+      action.id === PAPERWORK_EXCEPTIONAL_ACTION_IDS.PREVIOUS_CUSTOMER_DELIVERY
+    )) || null);
+  };
+  const executePaperworkBulkAction = async () => {
+    if (!paperworkBulkAction || !selectedPaperworkRequests.length || isExecutingPaperworkBulkAction) return;
+    setIsExecutingPaperworkBulkAction(true);
+    setPaperworkBulkError('');
+    try {
+      await motoCustomerCareService.executePaperworkExceptionalActionBulk({
+        actionId: paperworkBulkAction.id,
+        tenantId,
+        requestIds: selectedPaperworkRequests.map((request) => request.id),
+        reason: paperworkBulkReason,
+        notes: paperworkBulkNotes,
+      });
+      setPaperworkBulkAction(null);
+      closePaperworkBulkSelection();
+      await refresh();
+    } catch (nextError) {
+      setPaperworkBulkError(nextError?.message || 'تعذر تنفيذ الإجراء المجمع. لم يتم إجراء أي تغيير.');
+    } finally {
+      setIsExecutingPaperworkBulkAction(false);
+    }
   };
   return (
     <section className="relative flex min-h-0 flex-1 flex-col items-stretch overflow-hidden bg-[#f8fafc] text-slate-950" dir="rtl">
@@ -3731,9 +3834,47 @@ export function MotoCustomerCareSalesFollowUpListPage() {
             {activeSection === 'requests' ? (
               <PaperworkRequestStatusFilters
                 value={paperworkRequestStatusFilter}
-                onChange={setPaperworkRequestStatusFilter}
+                onChange={(value) => {
+                  setPaperworkRequestStatusFilter(value);
+                  closePaperworkBulkSelection();
+                }}
                 counts={paperworkRequestStatusCounts}
+                canSelect={tenantUser?.role === 'owner'}
+                selectionMode={paperworkBulkSelectionMode}
+                onToggleSelection={() => {
+                  if (paperworkBulkSelectionMode) closePaperworkBulkSelection();
+                  else setPaperworkBulkSelectionMode(true);
+                }}
               />
+            ) : null}
+
+            {activeSection === 'requests' && paperworkBulkSelectionMode ? (
+              <div className="flex w-full items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allSelected = displayedPaperworkRequests.length > 0 && selectedPaperworkRequests.length === displayedPaperworkRequests.length;
+                    setSelectedPaperworkRequestIds(allSelected ? new Set() : new Set(displayedPaperworkRequests.map((request) => request.id)));
+                  }}
+                  className="flex min-w-0 items-center gap-3 text-right transition hover:opacity-75"
+                >
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition ${displayedPaperworkRequests.length > 0 && selectedPaperworkRequests.length === displayedPaperworkRequests.length ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}>
+                    <Check className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-black text-slate-700">تحديد جميع الطلبات الظاهرة</span>
+                    <span className="mt-0.5 block text-[10px] font-bold text-slate-400">{selectedPaperworkRequests.length} من {displayedPaperworkRequests.length} محددة</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedPaperworkRequests.length}
+                  onClick={openPreviousDeliveryBulkAction}
+                  className="flex h-9 shrink-0 items-center justify-center rounded-xl bg-amber-600 px-3 text-[11px] font-black text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                >
+                  تسجيل الاستلام سابقًا {selectedPaperworkRequests.length ? `(${selectedPaperworkRequests.length})` : ''}
+                </button>
+              </div>
             ) : null}
 
             <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100">
@@ -3747,6 +3888,9 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                     key={request.id}
                     request={request}
                     onOpen={setPaperworkRequestDetails}
+                    selectionMode={paperworkBulkSelectionMode}
+                    selected={selectedPaperworkRequestIds.has(request.id)}
+                    onToggle={togglePaperworkRequestSelection}
                   />
                 ))
               ) : activeSection === 'papers' ? (
@@ -3789,8 +3933,24 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                 </div>
               )}
             </div>
+
           </section>
       </div>
+
+      <PaperworkExceptionalActionDialog
+        action={paperworkBulkAction}
+        requests={selectedPaperworkRequests}
+        reason={paperworkBulkReason}
+        notes={paperworkBulkNotes}
+        error={paperworkBulkError}
+        isSubmitting={isExecutingPaperworkBulkAction}
+        onReasonChange={setPaperworkBulkReason}
+        onNotesChange={setPaperworkBulkNotes}
+        onClose={() => {
+          if (!isExecutingPaperworkBulkAction) setPaperworkBulkAction(null);
+        }}
+        onConfirm={executePaperworkBulkAction}
+      />
 
       <TrackingIdentifiersSheet
         item={trackingSheetItem}
@@ -3852,6 +4012,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         }}
         tenantId={tenantId}
         canManageProcessor={tenantUser?.role === 'owner'}
+        canConfirmProcessorCancellation={['owner', 'admin', 'staff'].includes(tenantUser?.role)}
         onCustomerConfirmed={(confirmation) => {
           if (!paperworkRequestDetails?.id || !confirmation) return;
 
@@ -3899,6 +4060,22 @@ export function MotoCustomerCareSalesFollowUpListPage() {
               }
               : current
           ));
+        }}
+        onExceptionalActionCompleted={(result) => {
+          if (paperworkRequestDetails?.id && result) {
+            updatePaperworkRequestLocally(paperworkRequestDetails.id, {
+              currentStage: result.currentStage,
+              status: result.status,
+              closedAt: result.closedAt,
+              updatedAt: result.updatedAt,
+              stage: {
+                code: result.currentStage,
+                name: result.currentStage === 'cancelled' ? 'ملغي' : 'تم التسليم للعميل',
+              },
+            });
+          }
+          setPaperworkRequestDetails(null);
+          refresh();
         }}
         onSaved={(processor) => {
           if (!paperworkRequestDetails?.id || !processor) return;

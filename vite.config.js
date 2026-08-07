@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 function createBuildVersion() {
   const now = new Date();
@@ -52,11 +53,15 @@ const useHttps = process.env.VITE_DEV_HTTPS === '1'
   && fs.existsSync(httpsKeyPath)
   && fs.existsSync(httpsCertPath);
 
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
   const appVersion = command === 'build' ? createBuildVersion() : readCurrentVersion();
 
   return {
-    plugins: [react(), appVersionPlugin(appVersion)],
+    plugins: [
+      react(),
+      appVersionPlugin(appVersion),
+      ...(mode === 'analyze' ? [visualizer({ filename: 'dist/bundle-report.html', gzipSize: true, brotliSize: true })] : []),
+    ],
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
     },
@@ -78,6 +83,21 @@ export default defineConfig(({ command }) => {
     },
     preview: {
       host: true,
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/react-router')) return 'vendor-react';
+            if (id.includes('/@supabase/')) return 'vendor-supabase';
+            if (id.includes('/@radix-ui/')) return 'vendor-radix';
+            if (id.includes('/framer-motion/')) return 'vendor-motion';
+            if (id.includes('/react-onesignal/') || id.includes('/onesignal/')) return 'vendor-onesignal';
+            return undefined;
+          },
+        },
+      },
     },
   };
 });

@@ -1,5 +1,6 @@
 import { lazy } from 'react';
 import { ROUTES } from '@/core/config/routes.config';
+import { routeLoaders } from '@/app/router/appRouteRegistry';
 
 function lazyNamed(loader, exportName) {
   const Component = lazy(() => loader().then((module) => ({ default: module[exportName] })));
@@ -7,42 +8,22 @@ function lazyNamed(loader, exportName) {
   return Component;
 }
 
-const loadPublicLayout = () => import('@/app/layouts/PublicLayout');
-const loadAuthLayout = () => import('@/app/layouts/AuthLayout');
-const loadAppLayout = () => import('@/app/layouts/AppLayout');
-const loadLandingPage = () => import('@/pages/public/LandingPage');
-const loadSignupPage = () => import('@/features/auth/pages/SignupPage');
-const loadForgotPasswordPage = () => import('@/features/auth/pages/ForgotPasswordPage');
-const loadNotFoundPage = () => import('@/pages/system/NotFoundPage');
-const loadOnboardingPage = () => import('@/features/workspace/pages/OnboardingPage');
-const loadDashboardPage = () => import('@/features/dashboard/pages/DashboardPage');
-const loadPartnersPage = () => import('@/features/partners/pages/PartnersPage');
-const loadProductsPage = () => import('@/features/products/pages/ProductsPage');
-const loadInventoryPage = () => import('@/features/inventory/pages/InventoryDashboard');
-const loadPosPage = () => import('@/features/pos/pages/PosPage');
-const loadInvoicesPage = () => import('@/features/invoices/pages/InvoicesPage');
-const loadPaymentsPage = () => import('@/features/payments/pages/PaymentsPage');
-const loadContractsPage = () => import('@/features/contracts/pages/ContractsPage');
-const loadSettingsPage = () => import('@/features/settings/pages/SettingsPage');
-const loadTeamManagementPage = () => import('@/features/team/pages/TeamManagementPage');
-const loadShowroomWorkspaceLayout = () => import('@/features/showroom/layouts/ShowroomWorkspaceLayout');
-const loadShowroomCockpitPage = () => import('@/features/showroom/pages/ShowroomCockpitPage');
-const loadShowroomSellPage = () => import('@/features/showroom/pages/ShowroomSellPage');
-const loadShowroomSaleDetailsPage = () => import('@/features/showroom/pages/ShowroomSaleDetailsPage');
-const loadMotoCustomerCareWorkspaceLayout = () => import('@/features/moto-customer-care/layouts/MotoCustomerCareWorkspaceLayout');
-const loadMotoCustomerCareSalesFollowUpListPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage');
-const loadMotoCustomerCareSaleFollowUpDetailsPage = () => import('@/features/moto-customer-care/pages/MotoCustomerCareSaleFollowUpDetailsPage');
-const loadReceivablesPage = () => import('@/features/receivables/pages/ReceivablesPage');
-const loadAccountantHomePage = () => import('@/features/accountant/pages/AccountantHomePage');
-const loadCrmWorkspaceLayout = () => import('@/features/crm/layouts/CrmWorkspaceLayout');
-const loadCrmHomePage = () => import('@/features/crm/pages/CrmHomePage');
-const loadCrmPlaceholderPage = () => import('@/features/crm/pages/CrmPlaceholderPage');
-const loadCrmLeadsPage = () => import('@/features/crm/pages/CrmLeadsPage');
-const loadCrmLeadDetailsPage = () => import('@/features/crm/pages/CrmLeadDetailsPage');
-const loadCrmSettingsPage = () => import('@/features/crm/pages/CrmSettingsPage');
-const loadCrmFollowupsPage = () => import('@/features/crm/pages/CrmFollowupsPage');
-const loadCrmInstallmentsPage = () => import('@/features/crm/pages/CrmInstallmentsPage');
-const loadCrmInstallmentDetailsPage = () => import('@/features/crm/pages/CrmInstallmentDetailsPage');
+const {
+  publicLayout: loadPublicLayout, authLayout: loadAuthLayout, appLayout: loadAppLayout,
+  landing: loadLandingPage, signup: loadSignupPage, forgotPassword: loadForgotPasswordPage,
+  notFound: loadNotFoundPage, onboarding: loadOnboardingPage, dashboard: loadDashboardPage,
+  partners: loadPartnersPage, products: loadProductsPage, inventory: loadInventoryPage,
+  pos: loadPosPage, invoices: loadInvoicesPage, payments: loadPaymentsPage,
+  contracts: loadContractsPage, settings: loadSettingsPage, team: loadTeamManagementPage,
+  showroomLayout: loadShowroomWorkspaceLayout, showroomCockpit: loadShowroomCockpitPage,
+  showroomSell: loadShowroomSellPage, showroomDetails: loadShowroomSaleDetailsPage,
+  customerCareLayout: loadMotoCustomerCareWorkspaceLayout, customerCareList: loadMotoCustomerCareSalesFollowUpListPage,
+  customerCareDetails: loadMotoCustomerCareSaleFollowUpDetailsPage, receivables: loadReceivablesPage,
+  accountant: loadAccountantHomePage, crmLayout: loadCrmWorkspaceLayout, crmHome: loadCrmHomePage,
+  crmPlaceholder: loadCrmPlaceholderPage, crmLeads: loadCrmLeadsPage, crmLeadDetails: loadCrmLeadDetailsPage,
+  crmSettings: loadCrmSettingsPage, crmFollowups: loadCrmFollowupsPage,
+  crmInstallments: loadCrmInstallmentsPage, crmInstallmentDetails: loadCrmInstallmentDetailsPage,
+} = routeLoaders;
 
 export const PublicLayout = lazyNamed(loadPublicLayout, 'PublicLayout');
 export const AuthLayout = lazyNamed(loadAuthLayout, 'AuthLayout');
@@ -96,8 +77,4 @@ const protectedRoutePreloaders = {
 
 export function preloadProtectedRoute(pathname) {
   return protectedRoutePreloaders[pathname]?.();
-}
-
-export function preloadAllProtectedRoutes() {
-  Object.values(protectedRoutePreloaders).forEach((preload) => preload());
 }

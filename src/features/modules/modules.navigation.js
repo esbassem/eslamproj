@@ -1,7 +1,20 @@
-import * as Icons from 'lucide-react';
+import {
+  ArrowDownToLine, BarChart3, BookOpen, Boxes, CalendarClock, Circle, ContactRound,
+  CreditCard, FilePlus2, FileSignature, FileText, Handshake, Hash, Image, Images,
+  Landmark, Layers3, LayoutDashboard, ListFilter, Package, PlusCircle, Receipt,
+  ReceiptText, Settings, ShoppingCart, Store, Truck, Users, Users2, WalletCards,
+  Warehouse,
+} from 'lucide-react';
 import { ROUTES } from '@/core/config/routes.config';
 
 const APP_ROUTE_VALUES = Object.values(ROUTES);
+const ICONS = {
+  ArrowDownToLine, BarChart3, BookOpen, Boxes, CalendarClock, Circle, ContactRound,
+  CreditCard, FilePlus2, FileSignature, FileText, Handshake, Hash, Image, Images,
+  Landmark, Layers3, LayoutDashboard, ListFilter, Package, PlusCircle, Receipt,
+  ReceiptText, Settings, ShoppingCart, Store, Truck, Users, Users2, WalletCards,
+  Warehouse,
+};
 
 function normalizePathValue(routePath) {
   if (!routePath) {
@@ -65,7 +78,7 @@ export function resolveModuleIcon(iconName) {
   }
 
   if (!iconName) {
-    return Icons.Circle;
+    return Circle;
   }
 
   const pascalIconName = String(iconName)
@@ -74,7 +87,7 @@ export function resolveModuleIcon(iconName) {
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join('');
 
-  return Icons[iconName] ?? Icons[pascalIconName] ?? Icons.Circle;
+  return ICONS[iconName] ?? ICONS[pascalIconName] ?? Circle;
 }
 
 function sortMenusBySequence(menus) {

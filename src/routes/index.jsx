@@ -1,14 +1,13 @@
 import { Navigate } from 'react-router-dom';
-import { AppLayout } from '@/app/layouts/AppLayout';
+import { AppLayout, DashboardPage } from '@/app/router/lazyRoutes';
 import { ROUTES } from '@/core/config/routes.config';
-import { Dashboard } from '@/pages/admin/Dashboard';
 
 export const modeRoutes = [
   {
     path: ROUTES.admin,
     element: <AppLayout />,
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <DashboardPage /> },
       { path: 'dashboard', element: <Navigate to={ROUTES.admin} replace /> },
       { path: 'partners', element: <Navigate to={ROUTES.partners} replace /> },
       { path: 'products', element: <Navigate to={ROUTES.products} replace /> },

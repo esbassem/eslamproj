@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Ban, Building2, Check, FileCheck2, FileDown, ImagePlus, ListRestart, MessageSquareText, MoreHorizontal, PauseCircle, Pencil, Phone, PlayCircle, RotateCcw, Search, Send, SendHorizontal, UserRound, X } from 'lucide-react';
+import { AlertCircle, Building2, Check, ImagePlus, MessageSquareText, MoreHorizontal, Pencil, Phone, Search, Send, UserRound, X } from 'lucide-react';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
+import { PaperworkExceptionalActionDialog } from '@/features/moto-customer-care/components/paperwork/PaperworkExceptionalActionDialog';
+import { PaperworkExceptionalActionsMenu } from '@/features/moto-customer-care/components/paperwork/PaperworkExceptionalActionsMenu';
+import { PAPERWORK_EXCEPTIONAL_ACTION_IDS } from '@/features/moto-customer-care/config/paperworkExceptionalActions';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
 const EVENT_LABELS = {
@@ -13,18 +16,11 @@ const EVENT_LABELS = {
   cancelled: 'تم إلغاء الطلب',
   note: 'ملاحظة',
   sent_to_supplier: 'تم إرسال الأوراق للجهة',
+  paperwork_request_cancelled_by_sale_replacement: 'تم إلغاء طلب الأوراق بسبب استبدال البيع',
+  processor_cancellation_required_by_sale_replacement: 'مطلوب إلغاء الطلب لدى جهة الإصدار',
+  processor_cancellation_confirmed: 'تم تأكيد الإلغاء لدى جهة الإصدار',
+  created_from_sale_replacement: 'تم إنشاء الطلب لقطعة بديلة',
 };
-
-const EXCEPTIONAL_ACTIONS = [
-  { id: 'previous_customer_delivery', label: 'تسجيل أن العميل استلم الأوراق سابقًا', icon: FileCheck2, disabled: false },
-  { id: 'direct_processor_receipt', label: 'تسجيل استلام الأوراق من جهة الإصدار مباشرة', icon: FileDown, disabled: false },
-  { id: 'previous_processor_send', label: 'تسجيل أن الطلب أُرسل إلى جهة الإصدار سابقًا', icon: SendHorizontal, disabled: false },
-  { id: 'move_stage', label: 'الانتقال إلى مرحلة أخرى...', icon: ListRestart, disabled: false, dividerAfter: true },
-  { id: 'cancel', label: 'إلغاء الطلب', icon: Ban, disabled: false, tone: 'danger', dividerAfter: true },
-  { id: 'reopen', label: 'إعادة فتح الطلب', icon: RotateCcw, disabled: false },
-  { id: 'pause', label: 'إيقاف الطلب مؤقتًا', icon: PauseCircle, disabled: false },
-  { id: 'resume', label: 'استئناف الطلب', icon: PlayCircle, disabled: false },
-];
 
 function formatDate(value) {
   if (!value) return '--';
@@ -317,11 +313,13 @@ export function PaperworkRequestDetailsDrawer({
   onOpenChange,
   tenantId,
   canManageProcessor = false,
+  canConfirmProcessorCancellation = false,
   onSaved,
   onCustomerConfirmed,
   onRequestSent,
   onCustomerNotified,
   onDelivered,
+  onExceptionalActionCompleted,
 }) {
   const { tenant } = useWorkspace();
   const [snapshot, setSnapshot] = useState(request);
@@ -331,6 +329,12 @@ export function PaperworkRequestDetailsDrawer({
   const [processorOpen, setProcessorOpen] = useState(false);
   const [processorDetailsOpen, setProcessorDetailsOpen] = useState(false);
   const [exceptionalActionsOpen, setExceptionalActionsOpen] = useState(false);
+  const [selectedExceptionalAction, setSelectedExceptionalAction] = useState(null);
+  const [exceptionalReason, setExceptionalReason] = useState('');
+  const [exceptionalNotes, setExceptionalNotes] = useState('');
+  const [exceptionalConfirmationChecked, setExceptionalConfirmationChecked] = useState(false);
+  const [exceptionalActionError, setExceptionalActionError] = useState('');
+  const [isExecutingExceptionalAction, setIsExecutingExceptionalAction] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [customerConfirmationOpen, setCustomerConfirmationOpen] = useState(false);
   const [isConfirmingCustomer, setIsConfirmingCustomer] = useState(false);
@@ -339,6 +343,8 @@ export function PaperworkRequestDetailsDrawer({
   const [isSendingToProcessor, setIsSendingToProcessor] = useState(false);
   const [sendToProcessorError, setSendToProcessorError] = useState('');
   const [sendToProcessorNote, setSendToProcessorNote] = useState('');
+  const [isConfirmingProcessorCancellation, setIsConfirmingProcessorCancellation] = useState(false);
+  const [processorCancellationError, setProcessorCancellationError] = useState('');
   const [customerNotificationOpen, setCustomerNotificationOpen] = useState(false);
   const [isNotifyingCustomer, setIsNotifyingCustomer] = useState(false);
   const [customerNotificationError, setCustomerNotificationError] = useState('');
@@ -355,10 +361,22 @@ export function PaperworkRequestDetailsDrawer({
   const contentTimerRef = useRef(null);
 
   useEffect(() => {
-    if (open && request) {
-      setSnapshot(request);
-    }
-  }, [open, request]);
+    let active = true;
+    if (!open || !request) return () => {};
+
+    setSnapshot(request);
+    motoCustomerCareService.getPaperworkRequestDetails({ tenantId, requestId: request.id })
+      .then((details) => {
+        if (active) setSnapshot(details);
+      })
+      .catch(() => {
+        // بيانات القائمة تكفي لعرض النافذة؛ لا نغلقها إذا تعذر إثراء التفاصيل.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [open, request, tenantId]);
 
   useEffect(() => {
     window.clearTimeout(closeTimerRef.current);
@@ -387,6 +405,12 @@ export function PaperworkRequestDetailsDrawer({
       setProcessorOpen(false);
       setProcessorDetailsOpen(false);
       setExceptionalActionsOpen(false);
+      setSelectedExceptionalAction(null);
+      setExceptionalReason('');
+      setExceptionalNotes('');
+      setExceptionalConfirmationChecked(false);
+      setExceptionalActionError('');
+      setIsExecutingExceptionalAction(false);
       setPreviewOpen(false);
       setCustomerConfirmationOpen(false);
       setCustomerConfirmationError('');
@@ -465,7 +489,8 @@ export function PaperworkRequestDetailsDrawer({
     if (!mounted) return undefined;
     const handleKeyDown = (event) => {
       if (event.key !== 'Escape') return;
-      if (previewOpen) setPreviewOpen(false);
+      if (selectedExceptionalAction && !isExecutingExceptionalAction) setSelectedExceptionalAction(null);
+      else if (previewOpen) setPreviewOpen(false);
       else if (processorOpen) setProcessorOpen(false);
       else if (processorDetailsOpen) setProcessorDetailsOpen(false);
       else if (exceptionalActionsOpen) setExceptionalActionsOpen(false);
@@ -479,7 +504,7 @@ export function PaperworkRequestDetailsDrawer({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [customerConfirmationOpen, customerNotificationOpen, deliveryOpen, exceptionalActionsOpen, isDelivering, mounted, onOpenChange, previewOpen, processorDetailsOpen, processorOpen, sendConfirmationOpen]);
+  }, [customerConfirmationOpen, customerNotificationOpen, deliveryOpen, exceptionalActionsOpen, isDelivering, isExecutingExceptionalAction, mounted, onOpenChange, previewOpen, processorDetailsOpen, processorOpen, selectedExceptionalAction, sendConfirmationOpen]);
 
   if (!mounted || !snapshot) return null;
 
@@ -680,6 +705,84 @@ export function PaperworkRequestDetailsDrawer({
       setIsSendingToProcessor(false);
     }
   };
+  const confirmProcessorCancellation = async () => {
+    if (isConfirmingProcessorCancellation || snapshot.currentStage !== 'pending_processor_cancellation') return;
+    const confirmed = window.confirm('هل تم التواصل مع جهة إصدار الأوراق والتأكد فعليًا من إلغاء الطلب السابق؟ لا يمكن التراجع عن هذا التأكيد.');
+    if (!confirmed) return;
+    const note = window.prompt('ملاحظة التأكيد (اختيارية):', '');
+    if (note === null) return;
+    setIsConfirmingProcessorCancellation(true);
+    setProcessorCancellationError('');
+    try {
+      const result = await motoCustomerCareService.confirmProcessorPaperworkCancellation({
+        tenantId,
+        requestId: snapshot.id,
+        notes: note,
+      });
+      const nextSnapshot = {
+        ...snapshot,
+        status: result.status,
+        currentStage: result.currentStage,
+        closedAt: result.confirmedAt,
+        processorCancellationConfirmedAt: result.confirmedAt,
+        processorCancellationConfirmedBy: result.confirmedBy,
+        stage: { code: 'cancelled', name: 'ملغي' },
+      };
+      setSnapshot(nextSnapshot);
+      onSaved?.(nextSnapshot);
+    } catch (error) {
+      setProcessorCancellationError(error?.message || 'تعذر تأكيد إلغاء الطلب لدى جهة الإصدار.');
+    } finally {
+      setIsConfirmingProcessorCancellation(false);
+    }
+  };
+  const openExceptionalAction = (action) => {
+    setExceptionalActionsOpen(false);
+    setExceptionalActionError('');
+    setExceptionalReason('');
+    setExceptionalNotes('');
+    setExceptionalConfirmationChecked(false);
+    setSelectedExceptionalAction(action);
+  };
+  const closeExceptionalAction = () => {
+    if (isExecutingExceptionalAction) return;
+    setSelectedExceptionalAction(null);
+    setExceptionalActionError('');
+  };
+  const executeExceptionalAction = async () => {
+    if (!selectedExceptionalAction || isExecutingExceptionalAction) return;
+
+    setIsExecutingExceptionalAction(true);
+    setExceptionalActionError('');
+    try {
+      const result = await motoCustomerCareService.executePaperworkExceptionalAction({
+        actionId: selectedExceptionalAction.id,
+        tenantId,
+        requestId: snapshot.id,
+        reason: exceptionalReason,
+        notes: exceptionalNotes,
+        processorCancellationConfirmed: exceptionalConfirmationChecked,
+      });
+      setSnapshot((current) => ({
+        ...current,
+        currentStage: result.currentStage,
+        status: result.status,
+        closedAt: result.closedAt,
+        updatedAt: result.updatedAt,
+        stage: {
+          code: result.currentStage,
+          name: result.currentStage === 'cancelled' ? 'ملغي' : 'تم التسليم للعميل',
+        },
+        events: result.event ? [...(current.events || []), result.event] : current.events,
+      }));
+      setSelectedExceptionalAction(null);
+      onExceptionalActionCompleted?.(result);
+    } catch (error) {
+      setExceptionalActionError(error?.message || 'تعذر تنفيذ الإجراء الاستثنائي. لم يتم إجراء أي تغيير.');
+    } finally {
+      setIsExecutingExceptionalAction(false);
+    }
+  };
 
   return createPortal(
     <div className={`fixed inset-0 z-[140] ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} dir="rtl">
@@ -861,7 +964,27 @@ export function PaperworkRequestDetailsDrawer({
             </button>
           ) : null}
 
-          {canSendToProcessor ? (
+          {snapshot.currentStage === 'pending_processor_cancellation' ? (
+            <div className="flex min-h-[5.25rem] items-center justify-between gap-3 border-t border-red-200 bg-red-50 px-4 py-3 pb-[calc(.75rem+env(safe-area-inset-bottom))]">
+              <div className="min-w-0">
+                <p className="text-xs font-black text-red-800">يجب إيقاف الطلب السابق لدى جهة الإصدار</p>
+                <p className="mt-1 text-[10px] font-bold leading-4 text-red-600">
+                  تم استبدال القطعة بعد إرسال طلب الأوراق. أكد الإلغاء بعد التواصل مع الجهة.
+                </p>
+                {processorCancellationError ? <p className="mt-1 text-[10px] font-black text-red-700">{processorCancellationError}</p> : null}
+              </div>
+              {canConfirmProcessorCancellation ? (
+                <button
+                  type="button"
+                  disabled={isConfirmingProcessorCancellation}
+                  onClick={confirmProcessorCancellation}
+                  className="shrink-0 rounded-xl bg-red-700 px-3 py-2.5 text-[11px] font-black text-white transition hover:bg-red-800 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isConfirmingProcessorCancellation ? 'جاري التأكيد...' : 'تأكيد إلغاء الطلب لدى جهة الإصدار'}
+                </button>
+              ) : null}
+            </div>
+          ) : canSendToProcessor ? (
             <div className="grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_9.5rem] pb-[env(safe-area-inset-bottom)]">
               <div className="flex min-w-0 flex-col justify-center px-4 py-2.5">
                 <p className="text-[10px] font-bold text-slate-400">ماذا يحدث عند الضغط؟</p>
@@ -1253,68 +1376,34 @@ export function PaperworkRequestDetailsDrawer({
           </div>
         ) : null}
 
-        {exceptionalActionsOpen ? (
-          <div className="absolute inset-0 z-40 flex items-end bg-slate-950/30 sm:block sm:bg-slate-950/10" dir="rtl">
-            <button
-              type="button"
-              className="absolute inset-0 cursor-default"
-              onClick={() => setExceptionalActionsOpen(false)}
-              aria-label="إغلاق قائمة الإجراءات الاستثنائية"
-            />
-            <section
-              className="relative max-h-[82dvh] w-full overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:absolute sm:left-4 sm:top-14 sm:w-[21rem] sm:rounded-2xl"
-              role="menu"
-              aria-label="الإجراءات الاستثنائية"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-                <div>
-                  <h3 className="text-sm font-black text-slate-950 dark:text-white">إجراءات استثنائية</h3>
-                  <p className="mt-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500">واجهة تجريبية — لا يتم تنفيذ أي تغيير</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setExceptionalActionsOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 active:scale-95 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                  aria-label="إغلاق"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+        <PaperworkExceptionalActionsMenu
+          open={exceptionalActionsOpen}
+          canExecute={canManageProcessor}
+          isActionAvailable={(action) => (
+            action.id !== PAPERWORK_EXCEPTIONAL_ACTION_IDS.CANCEL
+            || (
+              snapshot.status === 'open'
+              && ['preparation', 'owner_confirmation', 'sent_to_processor'].includes(snapshot.currentStage)
+            )
+          )}
+          onClose={() => setExceptionalActionsOpen(false)}
+          onSelect={openExceptionalAction}
+        />
 
-              <div className="max-h-[calc(82dvh-4rem)] overflow-y-auto p-2 sm:max-h-[calc(100dvh-8rem)]">
-                {EXCEPTIONAL_ACTIONS.map((action) => {
-                  const Icon = action.icon;
-                  const isDanger = action.tone === 'danger';
-
-                  return (
-                    <div key={action.id} className={action.dividerAfter ? 'border-b border-slate-100 pb-2 mb-2 dark:border-slate-800' : ''}>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={action.disabled}
-                        onClick={() => setExceptionalActionsOpen(false)}
-                        className={`group flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-40 ${
-                          isDanger
-                            ? 'text-red-700 hover:bg-red-50 active:bg-red-100 focus-visible:ring-red-200 dark:text-red-400 dark:hover:bg-red-950/40 dark:active:bg-red-950/60'
-                            : 'text-slate-700 hover:bg-blue-50 hover:text-blue-800 active:bg-blue-100 focus-visible:ring-blue-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-blue-300 dark:active:bg-slate-700'
-                        }`}
-                      >
-                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${
-                          isDanger
-                            ? 'bg-red-50 text-red-600 group-hover:bg-red-100 dark:bg-red-950/50 dark:text-red-400'
-                            : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:text-blue-300'
-                        }`}>
-                          <Icon className="h-4 w-4" />
-                        </span>
-                        <span className="min-w-0 flex-1 text-xs font-black leading-5">{action.label}</span>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-        ) : null}
+        <PaperworkExceptionalActionDialog
+          action={selectedExceptionalAction}
+          request={snapshot}
+          reason={exceptionalReason}
+          notes={exceptionalNotes}
+          confirmationChecked={exceptionalConfirmationChecked}
+          error={exceptionalActionError}
+          isSubmitting={isExecutingExceptionalAction}
+          onReasonChange={setExceptionalReason}
+          onNotesChange={setExceptionalNotes}
+          onConfirmationChange={setExceptionalConfirmationChecked}
+          onClose={closeExceptionalAction}
+          onConfirm={executeExceptionalAction}
+        />
 
         {processorDetailsOpen ? (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/30 p-4" dir="rtl">

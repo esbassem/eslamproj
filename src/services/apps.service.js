@@ -114,23 +114,36 @@ function normalizeMenu(menu, app) {
   }
 
   const appCode = normalizeAppCode(app?.code);
-  const routePath = toDynamicRoute(menu.route_path, appCode);
+  const routePath = toDynamicRoute(menu.route_path ?? menu.routePath, appCode);
 
   return {
     id: menu.id,
-    appId: app?.id ?? menu.module_id ?? null,
+    appId: app?.id ?? menu.module_id ?? menu.moduleId ?? null,
     appCode,
-    parentId: menu.parent_id ?? null,
+    parentId: menu.parent_id ?? menu.parentId ?? null,
     name: menu.name ?? '',
     code: menu.code ?? '',
     href: routePath,
     routePath,
     icon: menu.icon || app?.icon || '',
     permissionKey: '',
-    sortOrder: Number(menu.sequence ?? 10),
+    sortOrder: Number(menu.sequence ?? menu.sortOrder ?? 10),
     sequence: Number(menu.sequence ?? 10),
     active: menu.active ?? true,
   };
+}
+
+export function buildAppMenusFromWorkspace(appCode, apps, installedMenus) {
+  const normalizedAppCode = normalizeAppCode(appCode);
+  const app = (apps ?? []).find((item) => normalizeAppCode(item.code) === normalizedAppCode);
+  if (!app) return [];
+
+  const menus = (installedMenus ?? [])
+    .filter((menu) => menu.moduleId === app.id || normalizeAppCode(menu.moduleTechnicalName) === normalizedAppCode)
+    .map((menu) => normalizeMenu(menu, app))
+    .filter(Boolean);
+
+  return buildMenuTree(filterMenusByAppRules(menus, normalizedAppCode).sort(compareBySortOrder));
 }
 
 function filterMenusByAppRules(menus, appCode) {

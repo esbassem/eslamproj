@@ -52,6 +52,9 @@ export function getAppBasePath(appCode) {
   if (normalizedAppCode === 'accountant_app') {
     return '/apps/accountant';
   }
+  if (normalizedAppCode === 'moto_customer_care') {
+    return '/app/moto-customer-care/sales';
+  }
   if (normalizedAppCode === 'old_cashbox') {
     return '/apps/old-cashbox';
   }

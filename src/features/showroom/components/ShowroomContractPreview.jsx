@@ -94,7 +94,7 @@ function getProductPaperworkInfo(item) {
   };
 }
 
-export function ShowroomContractPreview({ companyName, customer, items, totalAmount, paidAmount, remainingAmount, paymentMethod, notes }) {
+export function ShowroomContractPreview({ companyName, customer, items, totalAmount, paidAmount, remainingAmount, paymentMethod, notes, accountingAvailable = true }) {
   const safeItems = Array.isArray(items) ? items : [];
   const safePaidAmount = Number(paidAmount) || 0;
   const safeRemainingAmount = Math.max(Number(remainingAmount) || 0, 0);
@@ -242,7 +242,12 @@ export function ShowroomContractPreview({ companyName, customer, items, totalAmo
           </div>
         </section>
 
-        {safeRemainingAmount > 0 ? (
+        {!accountingAvailable ? (
+          <section className="mb-5 rounded-xl border border-violet-200 bg-violet-50 px-5 py-4 text-violet-800">
+            <p className="text-sm font-extrabold">غير مرحلة محاسبيًا</p>
+            <p className="mt-1 text-sm">لا يمكن حساب المدفوع والمتبقي لهذه الفاتورة لعدم وجود قيد محاسبي مرحّل مرتبط بها.</p>
+          </section>
+        ) : safeRemainingAmount > 0 ? (
           <section className="pb-5">
             <p className="text-sm text-slate-800">
               وبذلك يتبقى بذمة الطرف الثاني مبلغ قدره{' '}
@@ -257,15 +262,15 @@ export function ShowroomContractPreview({ companyName, customer, items, totalAmo
           <p className="mt-2 text-sm leading-8 text-slate-700">
             أقر أنا / <span className="font-bold text-slate-900">{customer?.name || '--'}</span>
             بأنني وافقت على شراء المنتجات الموضحة أعلاه، واستلمت أو قبلت بيانات البيع والسداد كما هي مثبتة بهذا العقد،
-            وقد سددت مبلغًا قدره <span className="font-bold text-slate-900">{formatContractMoney(safePaidAmount)}</span>،
-            {safeRemainingAmount > 0 ? (
+            {accountingAvailable ? <>وقد سددت مبلغًا قدره <span className="font-bold text-slate-900">{formatContractMoney(safePaidAmount)}</span>،</> : <>ولا تتوفر بيانات محاسبية مثبتة للمدفوع والمتبقي،</>}
+            {accountingAvailable && safeRemainingAmount > 0 ? (
               <>
                 والمتبقي بذمتي مبلغ <span className="font-bold text-slate-900">{formatContractMoney(safeRemainingAmount)}</span>،
                 وألتزم بسداده وفق الاتفاق المبرم بيني وبين الطرف الأول.
               </>
-            ) : (
+            ) : accountingAvailable ? (
               <>ولا يوجد بذمتي أي مبلغ متبقٍ وقت تحرير هذا العقد.</>
-            )}
+            ) : null}
           </p>
 
           {notes?.trim() ? (

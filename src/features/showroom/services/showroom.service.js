@@ -1,4 +1,5 @@
 import { requireSupabase } from "@/core/lib/supabase";
+import { buildShowroomAccountingSnapshot } from "@/features/showroom/services/showroomAccounting";
 import { invokePaperworkNotification } from "@/core/notifications/paperworkNotifications";
 import { resolveCurrentTenantUserId } from "@/features/workspace/api/currentTenantUser.api";
 
@@ -1257,19 +1258,13 @@ async function attachSaleAccountingStatus(client, tenantId, sales) {
 
   const normalized = saleRows.map((sale) => {
     const move = moveBySaleId.get(sale.id) || null;
-    const paidAmount =
-      Math.round(toMoney(paidByMoveId.get(move?.id)) * 100) / 100;
-    const invoiceReceivableAmount = move
-      ? toMoney(originalByMoveId.get(move.id))
-      : toMoney(sale.total_amount ?? sale.totalAmount);
-    const remainingAmount = Math.max(
-      Math.round((invoiceReceivableAmount - paidAmount) * 100) / 100,
-      0,
-    );
     return {
       ...sale,
-      accounting_paid_amount: paidAmount,
-      accounting_remaining_amount: remainingAmount,
+      ...buildShowroomAccountingSnapshot({
+        move,
+        receivableAmount: move ? toMoney(originalByMoveId.get(move.id)) : null,
+        paidAmount: move ? toMoney(paidByMoveId.get(move.id)) : null,
+      }),
     };
   });
 

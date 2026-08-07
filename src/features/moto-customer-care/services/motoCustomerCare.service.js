@@ -143,6 +143,7 @@ const PAPERWORK_STAGE_LABELS = {
   owner_confirmation: 'تحديد صاحب الورق',
   sent_to_processor: 'تم الإرسال للجهة',
   processor_ready: 'الورق جاهز عند الجهة',
+  pending_processor_cancellation: 'بانتظار الإلغاء لدى الجهة',
   received_from_processor: 'تم استلام الورق من الجهة',
   client_notified: 'تم إبلاغ العميل',
   delivered: 'تم التسليم للعميل',
@@ -1506,6 +1507,15 @@ function normalizePaperworkRequest(record, maps = {}) {
   const trackingDetails = maps.trackingDetailsMap?.get(record.tracking_unit_id) || {};
   const productName = saleLine?.description || product?.displayName || product?.sku || 'طلب أوراق';
   const events = maps.eventsMap?.get(record.id) || [];
+  const replacementCancellationEvent = events.find((event) => ['processor_cancellation_required_by_sale_return', 'processor_cancellation_required_by_sale_replacement'].includes(event.eventType)) || null;
+  let replacementContext = null;
+  if (replacementCancellationEvent?.notes) {
+    try {
+      replacementContext = JSON.parse(replacementCancellationEvent.notes);
+    } catch {
+      replacementContext = null;
+    }
+  }
   const deliveryEvent = events.find((event) => event.eventType === 'done' || event.newStatus === 'done') || null;
   const trackingUnitDetails = trackingDetails.trackingUnit || (trackingUnit ? {
     id: trackingUnit.id,
@@ -1543,6 +1553,14 @@ function normalizePaperworkRequest(record, maps = {}) {
     blockedReason: record.blocked_reason || '',
     deferredReason: record.deferred_reason || '',
     cancelReason: record.cancel_reason || '',
+    saleReturnOperationId: record.sale_return_operation_id || null,
+    replacedPaperworkRequestId: record.replaced_paperwork_request_id || null,
+    processorCancellationBlockingRequestId: record.processor_cancellation_blocking_request_id || null,
+    processorCancellationRequestedAt: record.processor_cancellation_requested_at || null,
+    processorCancellationConfirmedAt: record.processor_cancellation_confirmed_at || null,
+    processorCancellationConfirmedBy: record.processor_cancellation_confirmed_by || null,
+    processorCancellationConfirmationNotes: record.processor_cancellation_confirmation_notes || '',
+    replacementContext,
     notes: record.notes || '',
     createdBy: record.created_by,
     createdByName: maps.usersMap?.get(record.created_by)?.name || '',
@@ -1706,20 +1724,25 @@ export const motoCustomerCareService = {
     return sales.map((sale) => normalizeSale(sale, customerMap, linesMap, paymentsMap, accountingMap));
   },
 
-  async listPaperworkRequests({ tenantId, limit = 150 } = {}) {
+  async listPaperworkRequests({ tenantId, limit = 150, requestId = null, includeDetails = true } = {}) {
     requireTenantId(tenantId);
     const client = requireSupabase();
     let requests = [];
+    const buildRequestQuery = () => {
+      let query = client
+        .from('paperwork_requests')
+        .select(PAPERWORK_REQUEST_COLUMNS)
+        .eq('tenant_id', tenantId);
+      if (requestId) query = query.eq('id', requestId);
+      return query;
+    };
 
     if (limit == null) {
       const pageSize = 500;
       let pageStart = 0;
 
       while (true) {
-        const { data, error } = await client
-          .from('paperwork_requests')
-          .select(PAPERWORK_REQUEST_COLUMNS)
-          .eq('tenant_id', tenantId)
+        const { data, error } = await buildRequestQuery()
           .order('created_at', { ascending: false })
           .range(pageStart, pageStart + pageSize - 1);
 
@@ -1731,10 +1754,7 @@ export const motoCustomerCareService = {
         pageStart += pageSize;
       }
     } else {
-      const { data, error } = await client
-        .from('paperwork_requests')
-        .select(PAPERWORK_REQUEST_COLUMNS)
-        .eq('tenant_id', tenantId)
+      const { data, error } = await buildRequestQuery()
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -1745,13 +1765,17 @@ export const motoCustomerCareService = {
       loadPaperworkPartnersMap(client, tenantId, requests),
       loadPaperworkSaleLinesMap(client, tenantId, requests),
       loadPaperworkTrackingUnitsMap(client, tenantId, requests),
-      loadPaperworkRequestEventsMap(client, tenantId, requests),
-      loadPaperworkRequestOwnerAttachmentsMap(client, tenantId, requests.map((request) => request.id)),
-      loadTenantUsersByIdsMap(
-        client,
-        tenantId,
-        requests.flatMap((request) => [request.customer_confirmed_by, request.created_by]).filter(Boolean),
-      ),
+      includeDetails
+        ? loadPaperworkRequestEventsMap(client, tenantId, requests)
+        : loadPaperworkRequestEventsMap(client, tenantId, requests.filter((request) => request.current_stage === 'pending_processor_cancellation')),
+      includeDetails ? loadPaperworkRequestOwnerAttachmentsMap(client, tenantId, requests.map((request) => request.id)) : Promise.resolve(new Map()),
+      includeDetails
+        ? loadTenantUsersByIdsMap(
+          client,
+          tenantId,
+          requests.flatMap((request) => [request.customer_confirmed_by, request.created_by]).filter(Boolean),
+        )
+        : Promise.resolve(new Map()),
     ]);
 
     const contextLines = requests.map((request) => {
@@ -1782,6 +1806,19 @@ export const motoCustomerCareService = {
       ownerAttachmentsMap,
       usersMap,
     }));
+  },
+
+  async getPaperworkRequestDetails({ tenantId, requestId } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) throw new Error('تعذر تحديد طلب الأوراق.');
+    const requests = await this.listPaperworkRequests({
+      tenantId,
+      requestId,
+      limit: 1,
+      includeDetails: true,
+    });
+    if (!requests[0]) throw new Error('طلب الأوراق غير موجود.');
+    return requests[0];
   },
 
   async findOpenPaperworkRequestsForTrackingUnit({ tenantId, trackingUnitId } = {}) {
@@ -3012,7 +3049,8 @@ export const motoCustomerCareService = {
         customer_confirmed,
         current_stage,
         status,
-        blocked_reason
+        blocked_reason,
+        processor_cancellation_blocking_request_id
       `)
       .eq('tenant_id', tenantId)
       .eq('id', requestId)
@@ -3041,6 +3079,20 @@ export const motoCustomerCareService = {
 
     if (!request.customer_confirmed) throw new Error('يجب التأكيد مع العميل أولًا.');
     if (!request.processor_partner_id) throw new Error('يجب تحديد جهة إصدار الأوراق.');
+    if (request.processor_cancellation_blocking_request_id) {
+      const { data: blockingRequest, error: blockingError } = await client
+        .from('paperwork_requests')
+        .select('id, status, current_stage, processor_partner_id')
+        .eq('tenant_id', tenantId)
+        .eq('id', request.processor_cancellation_blocking_request_id)
+        .maybeSingle();
+      if (blockingError) throw blockingError;
+      if (blockingRequest
+        && blockingRequest.processor_partner_id === request.processor_partner_id
+        && !(blockingRequest.status === 'cancelled' && blockingRequest.current_stage === 'cancelled')) {
+        throw new Error('يوجد طلب سابق لدى جهة الإصدار ينتظر تأكيد الإلغاء بسبب استبدال القطعة. أكد إلغاء الطلب السابق أولًا.');
+      }
+    }
     if (!ownerIsReady) throw new Error('بيانات صاحب الورق أو صورة البطاقة غير مكتملة.');
     if (request.blocked_reason) throw new Error(request.blocked_reason);
     if (request.current_stage !== 'preparation') throw new Error('الطلب ليس في مرحلة التجهيز.');
@@ -3120,6 +3172,25 @@ export const motoCustomerCareService = {
         createdByName: employeeName,
         createdAt: event.created_at,
       },
+    };
+  },
+
+  async confirmProcessorPaperworkCancellation({ tenantId, requestId, notes = '' } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) throw new Error('تعذر تحديد طلب الأوراق.');
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('confirm_processor_paperwork_cancellation', {
+      p_tenant_id: tenantId,
+      p_request_id: requestId,
+      p_notes: String(notes || '').trim() || null,
+    });
+    if (error) throw error;
+    return {
+      requestId: data?.request_id || requestId,
+      status: data?.status || 'cancelled',
+      currentStage: data?.current_stage || 'cancelled',
+      confirmedAt: data?.confirmed_at || null,
+      confirmedBy: data?.confirmed_by || null,
     };
   },
 
@@ -3304,6 +3375,145 @@ export const motoCustomerCareService = {
       status: data?.status || 'done',
       updatedAt: data?.updated_at || new Date().toISOString(),
       imageUploadError,
+    };
+  },
+
+  // نقطة التنفيذ المركزية للإجراءات الاستثنائية. يضاف معالج كل actionId هنا
+  // عند اعتماد قواعده، وتظل الخيارات غير المنفذة disabled في ملف الإعدادات.
+  async executePaperworkExceptionalAction({ actionId, ...payload } = {}) {
+    if (!actionId) throw new Error('تعذر تحديد الإجراء الاستثنائي.');
+
+    const handlers = {
+      previous_customer_delivery: () => this.recordPreviousCustomerDelivery(payload),
+      // direct_processor_receipt: () => this.recordDirectProcessorReceipt(payload),
+      // previous_processor_send: () => this.recordPreviousProcessorSend(payload),
+      // move_stage: () => this.movePaperworkRequestStage(payload),
+      cancel: () => this.cancelPaperworkRequest(payload),
+      // reopen: () => this.reopenPaperworkRequest(payload),
+      // pause: () => this.pausePaperworkRequest(payload),
+      // resume: () => this.resumePaperworkRequest(payload),
+    };
+
+    const handler = handlers[actionId];
+    if (!handler) throw new Error('هذا الإجراء الاستثنائي لم يتم تنفيذه بعد.');
+    return handler();
+  },
+
+  async recordPreviousCustomerDelivery({ tenantId, requestId, reason, notes = '' } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) throw new Error('تعذر تحديد طلب الأوراق.');
+    if (!reason) throw new Error('سبب التسجيل المتأخر إلزامي.');
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('record_previous_customer_paperwork_delivery', {
+      p_tenant_id: tenantId,
+      p_request_id: requestId,
+      p_reason: reason,
+      p_notes: String(notes || '').trim() || null,
+    });
+
+    if (error) throw error;
+
+    return {
+      requestId: data?.request_id || requestId,
+      documentId: data?.document_id || null,
+      documentMoveId: data?.document_move_id || null,
+      currentStage: data?.current_stage || 'delivered',
+      oldStage: data?.old_stage || null,
+      status: data?.status || 'done',
+      deliveredAt: data?.delivered_at || data?.updated_at || null,
+      closedAt: data?.closed_at || null,
+      updatedAt: data?.updated_at || new Date().toISOString(),
+      reason: data?.reason || reason,
+      notes: data?.notes || String(notes || '').trim(),
+      event: data?.event_id ? {
+        id: data.event_id,
+        eventType: 'done',
+        oldStage: data?.old_stage || null,
+        newStage: data?.current_stage || 'delivered',
+        newStatus: data?.status || 'done',
+        notes: String(notes || '').trim() || 'تم تسجيل أن العميل استلم الأوراق سابقًا.',
+        createdAt: data?.updated_at || new Date().toISOString(),
+      } : null,
+    };
+  },
+
+  async cancelPaperworkRequest({
+    tenantId,
+    requestId,
+    reason,
+    notes = '',
+    processorCancellationConfirmed = false,
+  } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) throw new Error('تعذر تحديد طلب الأوراق.');
+    if (!reason) throw new Error('سبب الإلغاء إلزامي.');
+    if (!processorCancellationConfirmed) {
+      throw new Error('يجب تأكيد أن الأوراق لم تُنجز لدى جهة الإصدار.');
+    }
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('cancel_paperwork_request', {
+      p_tenant_id: tenantId,
+      p_request_id: requestId,
+      p_reason: reason,
+      p_notes: String(notes || '').trim() || null,
+      p_processor_cancellation_confirmed: true,
+    });
+    if (error) throw error;
+
+    return {
+      requestId: data?.request_id || requestId,
+      oldStage: data?.old_stage || null,
+      currentStage: data?.current_stage || 'cancelled',
+      status: data?.status || 'cancelled',
+      closedAt: data?.closed_at || null,
+      updatedAt: data?.updated_at || new Date().toISOString(),
+      reason: data?.reason || reason,
+      notes: data?.notes || String(notes || '').trim(),
+      event: data?.event_id ? {
+        id: data.event_id,
+        eventType: 'cancelled',
+        oldStage: data?.old_stage || null,
+        newStage: 'cancelled',
+        newStatus: 'cancelled',
+        notes: String(notes || '').trim() || 'تم إلغاء طلب الأوراق.',
+        createdAt: data?.updated_at || new Date().toISOString(),
+      } : null,
+    };
+  },
+
+  async executePaperworkExceptionalActionBulk({ actionId, ...payload } = {}) {
+    if (!actionId) throw new Error('تعذر تحديد الإجراء الاستثنائي.');
+
+    const handlers = {
+      previous_customer_delivery: () => this.recordPreviousCustomerDeliveryBulk(payload),
+    };
+
+    const handler = handlers[actionId];
+    if (!handler) throw new Error('هذا الإجراء الاستثنائي غير متاح للتنفيذ المجمع.');
+    return handler();
+  },
+
+  async recordPreviousCustomerDeliveryBulk({ tenantId, requestIds = [], reason, notes = '' } = {}) {
+    requireTenantId(tenantId);
+    const uniqueRequestIds = [...new Set((Array.isArray(requestIds) ? requestIds : []).filter(Boolean))];
+    if (!uniqueRequestIds.length) throw new Error('حدد طلبًا واحدًا على الأقل.');
+    if (!reason) throw new Error('سبب التسجيل المتأخر إلزامي.');
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('record_previous_customer_paperwork_delivery_bulk', {
+      p_tenant_id: tenantId,
+      p_request_ids: uniqueRequestIds,
+      p_reason: reason,
+      p_notes: String(notes || '').trim() || null,
+    });
+
+    if (error) throw error;
+    return {
+      count: Number(data?.count || uniqueRequestIds.length),
+      requestIds: data?.request_ids || uniqueRequestIds,
+      results: Array.isArray(data?.results) ? data.results : [],
     };
   },
 
