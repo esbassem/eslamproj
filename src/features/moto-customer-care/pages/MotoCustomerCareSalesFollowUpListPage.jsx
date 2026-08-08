@@ -353,7 +353,7 @@ function FollowUpSectionsPanel({
         onOpenPaperworkRequest={onOpenPaperworkRequest}
         onViewAll={() => {
           onReportFilterChange?.(null);
-          onSectionChange('requests');
+          onSectionChange('requests', { showAllRequests: true });
         }}
       />
 
@@ -3397,6 +3397,7 @@ function isCompletedPaperworkRequest(request) {
 
 function PaperworkRequestStatusFilters({ value, onChange, counts, canSelect = false, selectionMode = false, onToggleSelection }) {
   const filters = [
+    { id: 'all', label: 'كل الطلبات', count: counts.total },
     { id: 'open', label: 'الطلبات المفتوحة', count: counts.open },
     { id: 'processor_cancellation', label: 'طلبات تحتاج إلغاء لدى الجهة', count: counts.processorCancellation },
     { id: 'completed', label: 'الطلبات المكتملة', count: counts.completed },
@@ -3486,6 +3487,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const reportFilterTimeoutRef = useRef(null);
   const { tenant_user: tenantUser } = useAuth();
   const salesLimit = isMobileViewport && !hasRequestedMobileData ? 10 : 250;
+  const paperworkRequestsLimit = isMobileViewport && !hasRequestedMobileData ? 10 : null;
   const {
     tenantId,
     sales,
@@ -3500,7 +3502,12 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     updatePaperworkRequestLocally,
     ensurePaperworkLoaded,
     sectionStatus,
-  } = useMotoCustomerCareSales({ limit: salesLimit, enabled: true, activeSection });
+  } = useMotoCustomerCareSales({
+    limit: salesLimit,
+    paperworkRequestsLimit,
+    enabled: true,
+    activeSection,
+  });
   const displayedSales = useMemo(() => {
     if (activeSection !== 'sales') {
       return [];
@@ -3523,6 +3530,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     cancelled: sales.filter((sale) => sale.status === 'cancelled').length,
   }), [sales]);
   const displayedPaperworkRequests = useMemo(() => paperworkRequests.filter((request) => {
+    if (paperworkRequestStatusFilter === 'all') return true;
     if (request.status === 'cancelled') return false;
     const isCompleted = isCompletedPaperworkRequest(request);
     if (paperworkRequestStatusFilter === 'processor_cancellation') {
@@ -3539,7 +3547,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       if (request.currentStage === 'pending_processor_cancellation') counts.processorCancellation += 1;
     }
     return counts;
-  }, { open: 0, processorCancellation: 0, completed: 0 }), [paperworkRequests]);
+  }, { total: paperworkRequests.length, open: 0, processorCancellation: 0, completed: 0 }), [paperworkRequests]);
   const selectedPaperworkRequests = useMemo(() => displayedPaperworkRequests.filter((request) => (
     selectedPaperworkRequestIds.has(request.id)
   )), [displayedPaperworkRequests, selectedPaperworkRequestIds]);
@@ -3586,7 +3594,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     };
   }, [hasOpenSheet, isMobileContentClosing, isMobileContentOpen, isMobileViewport]);
 
-  const handleSectionChange = (sectionId) => {
+  const handleSectionChange = (sectionId, options = {}) => {
     if (mobileCloseTimeoutRef.current) {
       window.clearTimeout(mobileCloseTimeoutRef.current);
       mobileCloseTimeoutRef.current = null;
@@ -3594,6 +3602,9 @@ export function MotoCustomerCareSalesFollowUpListPage() {
 
     setIsMobileContentClosing(false);
     setActiveSection(sectionId);
+    if (sectionId === 'requests' && options.showAllRequests) {
+      setPaperworkRequestStatusFilter('all');
+    }
     if (sectionId !== 'requests') {
       setPaperworkBulkSelectionMode(false);
       setSelectedPaperworkRequestIds(new Set());
@@ -3791,6 +3802,14 @@ export function MotoCustomerCareSalesFollowUpListPage() {
             <p className="mt-2 max-w-md text-xs font-semibold leading-5 text-slate-600 sm:text-sm sm:leading-6">
               متابعة البيع، الأوراق، وحالة القطع بعد التسليم.
             </p>
+            <Button
+              type="button"
+              onClick={() => setPaperworkDocumentSheetOpen(true)}
+              className="mt-4 h-10 rounded-xl px-4 text-xs font-black shadow-sm"
+            >
+              <PackagePlus className="ml-2 h-4 w-4" />
+              استلام ورق جديد
+            </Button>
           </div>
           <div className="relative mt-6 min-h-0">
             <FollowUpSectionsPanel
