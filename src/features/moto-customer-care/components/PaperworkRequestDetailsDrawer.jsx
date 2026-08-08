@@ -1029,14 +1029,14 @@ export function PaperworkRequestDetailsDrawer({
                 <span className="text-xs font-black">إرسال للجهة</span>
               </button>
             </div>
-          ) : snapshot.currentStage === 'sent_to_processor' ? (
+          ) : ['sent_to_processor', 'processor_ready'].includes(snapshot.currentStage) ? (
             <div className="flex min-h-[4.25rem] items-center justify-between gap-3 px-4 pb-[env(safe-area-inset-bottom)]">
               <div className="min-w-0">
-                <p className="text-[10px] font-bold text-slate-400">الإجراء التالي</p>
-                <p className="mt-0.5 text-xs font-black text-slate-800">تم استلام الورق من الجهة</p>
+                <p className="text-[10px] font-bold text-slate-400">الحالة الحالية</p>
+                <p className="mt-0.5 text-xs font-black text-slate-800">بانتظار استلام الأوراق من الجهة</p>
               </div>
               <span className="shrink-0 rounded-lg bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700">
-                بانتظار الاستلام
+                قيد الانتظار
               </span>
             </div>
           ) : snapshot.currentStage === 'received_from_processor' ? (

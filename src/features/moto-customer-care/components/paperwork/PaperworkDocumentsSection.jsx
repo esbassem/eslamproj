@@ -83,7 +83,7 @@ export function PaperworkDocumentsToolbar({ activeFilter, onFilterChange, onCrea
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button type="button" onClick={onCreate} className="h-9 rounded-full px-4 text-xs font-black">
-        تسجيل جواب
+        استلام ورق جديد
       </Button>
       {FILTERS.map((filter) => (
         <button

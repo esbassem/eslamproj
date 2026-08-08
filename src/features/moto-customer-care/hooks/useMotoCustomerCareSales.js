@@ -38,6 +38,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
   const [sectionError, setSectionError] = useState({ sales: '', requests: '', papers: '' });
   const requestsReadyRef = useRef(false);
   const requestsTenantIdRef = useRef(null);
+  const requestsLimitRef = useRef(undefined);
 
   const setLoadStatus = useCallback((sectionId, nextStatus) => {
     setSectionStatus((current) => ({ ...current, [sectionId]: nextStatus }));
@@ -59,6 +60,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     setSectionError({ sales: '', requests: '', papers: '' });
     requestsReadyRef.current = false;
     requestsTenantIdRef.current = null;
+    requestsLimitRef.current = undefined;
   }, []);
 
   const loadReports = useCallback(() => {
@@ -159,7 +161,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
       setLoadError('requests', '');
       return () => {};
     }
-    if (!force && requestsReadyRef.current) {
+    if (!force && requestsReadyRef.current && requestsLimitRef.current === paperworkRequestsLimit) {
       return () => {};
     }
 
@@ -176,6 +178,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
         setPaperworkRequests(requests);
         requestsReadyRef.current = true;
         requestsTenantIdRef.current = tenant.id;
+        requestsLimitRef.current = paperworkRequestsLimit;
         setLoadStatus('requests', 'ready');
       })
       .catch((nextError) => {
