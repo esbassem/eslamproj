@@ -3621,7 +3621,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     setIsMobileContentClosing(false);
     setActiveSection(sectionId);
     if (sectionId === 'requests' && options.showAllRequests) {
-      setPaperworkRequestStatusFilter('all');
+      setPaperworkRequestStatusFilter('open');
     }
     if (sectionId !== 'requests') {
       setPaperworkBulkSelectionMode(false);
