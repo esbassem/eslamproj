@@ -1093,6 +1093,57 @@ async function loadSaleAccountingMap(client, tenantId, sales) {
   }, new Map());
 }
 
+async function loadPaperworkDocumentInvoiceMap(client, tenantId, documents) {
+  const requestIds = [...new Set((documents || []).map((document) => document.paperwork_request_id).filter(Boolean))];
+  if (!requestIds.length) return new Map();
+
+  const chunks = Array.from(
+    { length: Math.ceil(requestIds.length / 100) },
+    (_, index) => requestIds.slice(index * 100, (index + 1) * 100),
+  );
+  const requestResults = await Promise.all(chunks.map((ids) => client
+    .from('paperwork_requests')
+    .select('id, sale_id')
+    .eq('tenant_id', tenantId)
+    .in('id', ids)));
+  const failedRequestResult = requestResults.find((result) => result.error);
+  if (failedRequestResult?.error) throw failedRequestResult.error;
+
+  const requests = requestResults.flatMap((result) => result.data || []);
+  const saleIds = [...new Set(requests.map((request) => request.sale_id).filter(Boolean))];
+  if (!saleIds.length) return new Map();
+
+  const saleChunks = Array.from(
+    { length: Math.ceil(saleIds.length / 100) },
+    (_, index) => saleIds.slice(index * 100, (index + 1) * 100),
+  );
+  const saleResults = await Promise.all(saleChunks.map((ids) => client
+    .from('showroom_sales')
+    .select('id, sale_number, total_amount, account_move_id')
+    .eq('tenant_id', tenantId)
+    .in('id', ids)));
+  const failedSaleResult = saleResults.find((result) => result.error);
+  if (failedSaleResult?.error) throw failedSaleResult.error;
+
+  const sales = saleResults.flatMap((result) => result.data || []);
+  const salesMap = new Map(sales.map((sale) => [sale.id, sale]));
+  const accountingMap = await loadSaleAccountingMap(client, tenantId, sales);
+
+  return requests.reduce((map, request) => {
+    const sale = salesMap.get(request.sale_id);
+    if (!sale) return map;
+    const accounting = accountingMap.get(sale.id) || {};
+    map.set(request.id, {
+      saleId: sale.id,
+      saleNumber: sale.sale_number || '',
+      totalAmount: toNumber(sale.total_amount),
+      paidAmount: toNumber(accounting.paidAmount),
+      remainingAmount: toNumber(accounting.remainingAmount),
+    });
+    return map;
+  }, new Map());
+}
+
 async function loadPaperworkPartnersMap(client, tenantId, requests) {
   const partnerIds = Array.from(new Set(
     (Array.isArray(requests) ? requests : [])
@@ -2040,6 +2091,12 @@ export const motoCustomerCareService = {
       })),
       moves: normalizedMoves,
     };
+  },
+
+  async listPaperworkDocumentInvoiceBalances({ tenantId, documents = [] } = {}) {
+    requireTenantId(tenantId);
+    const client = requireSupabase();
+    return loadPaperworkDocumentInvoiceMap(client, tenantId, documents);
   },
 
   async getPaperworkDocumentDetails({ tenantId, documentId } = {}) {

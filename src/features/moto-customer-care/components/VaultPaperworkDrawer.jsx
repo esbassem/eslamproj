@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, ShieldCheck, X } from 'lucide-react';
+import { CircleAlert, FileText, ShieldCheck, X } from 'lucide-react';
 
 import { PaperworkDocumentDetailsDialog } from '@/features/moto-customer-care/components/paperwork/PaperworkDocumentDetailsDialog';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
@@ -15,16 +15,27 @@ function getTrackingText(document) {
     .join(' · ');
 }
 
+function formatMoney(value) {
+  return `${Number(value || 0).toLocaleString('ar-EG-u-nu-latn', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })} ج.م`;
+}
+
 export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenantId, isOwner = false }) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [invoiceBalances, setInvoiceBalances] = useState(() => new Map());
+  const [balancesLoading, setBalancesLoading] = useState(false);
+  const [balancesError, setBalancesError] = useState('');
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [isDocumentDetailsOpen, setIsDocumentDetailsOpen] = useState(false);
   const timerRef = useRef(null);
   const frameRef = useRef(null);
+  const balancesRequestRef = useRef(0);
   const vaultDocuments = useMemo(
     () => documents.filter((document) => document.status === 'in_custody'),
     [documents],
@@ -40,11 +51,38 @@ export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenant
         limit: null,
         status: 'in_custody',
       });
-      setDocuments(result.documents || []);
+      const nextDocuments = result.documents || [];
+      setDocuments(nextDocuments);
+      void loadInvoiceBalances(nextDocuments);
     } catch (error) {
       setLoadError(error.message || 'تعذر تحميل أوراق الخزنة.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadInvoiceBalances = async (nextDocuments) => {
+    const requestId = balancesRequestRef.current + 1;
+    balancesRequestRef.current = requestId;
+    const linkedDocuments = nextDocuments.filter((document) => document.ownerPartnerId && document.paperworkRequestId);
+    setInvoiceBalances(new Map());
+    setBalancesError('');
+    if (!linkedDocuments.length) {
+      setBalancesLoading(false);
+      return;
+    }
+
+    setBalancesLoading(true);
+    try {
+      const balances = await motoCustomerCareService.listPaperworkDocumentInvoiceBalances({
+        tenantId,
+        documents: linkedDocuments.map((document) => ({ paperwork_request_id: document.paperworkRequestId })),
+      });
+      if (balancesRequestRef.current === requestId) setInvoiceBalances(balances);
+    } catch (error) {
+      if (balancesRequestRef.current === requestId) setBalancesError(error?.message || 'تعذر تحميل أرصدة الفواتير.');
+    } finally {
+      if (balancesRequestRef.current === requestId) setBalancesLoading(false);
     }
   };
 
@@ -127,6 +165,8 @@ export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenant
             <div className="divide-y divide-slate-400">
               {vaultDocuments.map((document) => {
                 const trackingText = getTrackingText(document);
+                const linkedInvoice = invoiceBalances.get(document.paperworkRequestId);
+                const shouldShowBalance = Boolean(document.owner?.name && document.paperworkRequestId);
                 return (
                   <article
                     key={document.id}
@@ -147,24 +187,48 @@ export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenant
                       <FileText className="h-4 w-4" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="min-w-0">
-                        <h3 className="min-w-0 truncate text-sm font-black text-slate-950">
-                          {document.productName || 'منتج مجهول'}
-                        </h3>
-                        <p className="mt-0.5 max-w-full truncate text-[10px] font-bold text-slate-400">
-                          باسم: <span className="font-black text-slate-600">{document.documentOwnerName ?? document.ownerName ?? 'غير مسجل'}</span>
-                        </p>
-                      </div>
-                      {trackingText ? <p className="mt-1 truncate text-[10px] font-bold text-slate-400">{trackingText}</p> : null}
-                      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-                        {document.hasActiveReleaseAuthorization ? (
-                          <p className="inline-flex min-w-0 max-w-full rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80">
-                            <span className="truncate">متاح للصرف: {document.releaseAuthorizedToName}</span>
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="min-w-0 truncate text-sm font-black text-slate-950">
+                            {document.productName || 'منتج مجهول'}
+                          </h3>
+                          <p className="mt-0.5 max-w-full truncate text-[10px] font-bold text-slate-400">
+                            باسم: <span className="font-black text-slate-600">{document.documentOwnerName ?? document.ownerName ?? 'غير مسجل'}</span>
                           </p>
-                        ) : null}
+                          {trackingText ? <p className="mt-1 truncate text-[10px] font-bold text-slate-400">{trackingText}</p> : null}
+                        </div>
+                        <div className="flex max-w-44 shrink-0 flex-col items-start gap-1.5">
+                          {document.hasActiveReleaseAuthorization ? (
+                            <p className="inline-flex max-w-full items-center gap-1 text-[10px] font-black text-emerald-600">
+                              <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              <span className="truncate">مسموح بالصرف لـ {document.releaseAuthorizedToName}</span>
+                            </p>
+                          ) : (
+                            <p className="inline-flex items-center gap-1 text-[10px] font-black text-red-600">
+                              <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />
+                              غير مسموح بالصرف
+                            </p>
+                          )}
+                          {shouldShowBalance ? (
+                            <p className={`inline-flex max-w-full items-center gap-1 text-[10px] font-black ${balancesLoading ? 'text-slate-400' : balancesError ? 'text-amber-600' : linkedInvoice?.remainingAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`} title={balancesError || undefined}>
+                              {balancesLoading
+                                ? 'جاري مراجعة الفاتورة...'
+                                : balancesError
+                                  ? 'تعذر مراجعة الفاتورة'
+                                  : linkedInvoice?.remainingAmount > 0
+                                    ? `عليه ${formatMoney(linkedInvoice.remainingAmount)}`
+                                    : linkedInvoice
+                                      ? 'الفاتورة مسددة'
+                                      : 'لا توجد فاتورة مرتبطة'}
+                              {!balancesLoading && !balancesError && linkedInvoice?.saleNumber ? <span className="font-mono text-[9px] opacity-70" dir="ltr">#{linkedInvoice.saleNumber}</span> : null}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
                         {document.owner?.name ? (
-                          <p className="inline-flex min-w-0 max-w-full rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
-                            <span className="truncate">Partner: <span className="font-black">{document.owner.name}</span></span>
+                          <p className="inline-flex min-w-0 max-w-full text-[10px] font-bold text-slate-600">
+                            <span className="truncate">Partner: {document.owner.name}</span>
                           </p>
                         ) : (
                           <p className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 ring-1 ring-amber-200/80">
@@ -179,13 +243,13 @@ export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenant
                               onOpenRequest?.(document.paperworkRequestId);
                             }}
                             onKeyDown={(event) => event.stopPropagation()}
-                            className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80 transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            className="inline-flex text-[10px] font-bold text-slate-600 transition hover:text-slate-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                             aria-label="فتح طلب الأوراق المرتبط"
                           >
                             عن طريق طلب أوراق
                           </button>
                         ) : (
-                          <p className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80">
+                          <p className="inline-flex text-[10px] font-bold text-slate-600">
                             تسجيل يدوي
                           </p>
                         )}

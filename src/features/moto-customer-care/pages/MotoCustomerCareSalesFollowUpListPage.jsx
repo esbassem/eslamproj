@@ -24,6 +24,7 @@ import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/com
 import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
 import { PendingCustomerNotificationDrawer } from '@/features/moto-customer-care/components/PendingCustomerNotificationDrawer';
 import { CustomerNotificationDialog } from '@/features/moto-customer-care/components/CustomerNotificationDialog';
+import { FollowUpSearchBar } from '@/features/moto-customer-care/components/FollowUpSearchBar';
 import { VaultPaperworkDrawer } from '@/features/moto-customer-care/components/VaultPaperworkDrawer';
 import { PaperworkExceptionalActionDialog } from '@/features/moto-customer-care/components/paperwork/PaperworkExceptionalActionDialog';
 import {
@@ -33,6 +34,10 @@ import {
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
 import { PAPERWORK_EXCEPTIONAL_ACTIONS, PAPERWORK_EXCEPTIONAL_ACTION_IDS } from '@/features/moto-customer-care/config/paperworkExceptionalActions';
+import {
+  paperworkRequestMatchesFollowUpSearch,
+  saleMatchesFollowUpSearch,
+} from '@/features/moto-customer-care/utils/followUpSearch';
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('ar-EG-u-nu-latn', {
@@ -3348,15 +3353,16 @@ function SalesFollowUpCard({
   );
 }
 
-function SalesStatusFilters({ value, onChange, counts }) {
+function SalesStatusFilters({ value, onChange, counts, searchValue, onSearchChange }) {
   const filters = [
     { id: 'active', label: 'الفواتير النشطة', count: counts.active },
     { id: 'cancelled', label: 'الفواتير الملغاة', count: counts.cancelled },
   ];
 
   return (
-    <div className="border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:px-6">
-      <div className="flex max-w-full items-center gap-1.5 overflow-x-auto" role="group" aria-label="فلترة فواتير المبيعات">
+    <div className="relative z-20 border-b border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_7px_16px_-12px_rgba(15,23,42,0.55)] backdrop-blur-md sm:px-6">
+      <div className="flex max-w-full items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto" role="group" aria-label="فلترة فواتير المبيعات">
         {filters.map((filter) => {
           const isActive = value === filter.id;
 
@@ -3379,6 +3385,8 @@ function SalesStatusFilters({ value, onChange, counts }) {
             </button>
           );
         })}
+        </div>
+        <FollowUpSearchBar section="sales" value={searchValue} onChange={onSearchChange} />
       </div>
     </div>
   );
@@ -3395,17 +3403,17 @@ function isCompletedPaperworkRequest(request) {
   return request?.status === 'done' || COMPLETED_PAPERWORK_REQUEST_STAGES.has(currentStage);
 }
 
-function PaperworkRequestStatusFilters({ value, onChange, counts, canSelect = false, selectionMode = false, onToggleSelection }) {
+function PaperworkRequestStatusFilters({ value, onChange, counts, searchValue, onSearchChange, canSelect = false, selectionMode = false, onToggleSelection }) {
   const filters = [
-    { id: 'all', label: 'كل الطلبات', count: counts.total },
     { id: 'open', label: 'الطلبات المفتوحة', count: counts.open },
     { id: 'processor_cancellation', label: 'طلبات تحتاج إلغاء لدى الجهة', count: counts.processorCancellation },
     { id: 'completed', label: 'الطلبات المكتملة', count: counts.completed },
   ];
 
   return (
-    <div className="border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:px-6">
-      <div className="flex max-w-full items-center gap-1.5 overflow-x-auto" role="group" aria-label="فلترة طلبات الأوراق">
+    <div className="relative z-20 border-b border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_7px_16px_-12px_rgba(15,23,42,0.55)] backdrop-blur-md sm:px-6">
+      <div className="flex max-w-full items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto" role="group" aria-label="فلترة طلبات الأوراق">
         {canSelect && value === 'open' ? (
           <button
             type="button"
@@ -3442,6 +3450,8 @@ function PaperworkRequestStatusFilters({ value, onChange, counts, canSelect = fa
             </button>
           );
         })}
+        </div>
+        <FollowUpSearchBar section="requests" value={searchValue} onChange={onSearchChange} />
       </div>
     </div>
   );
@@ -3462,6 +3472,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const [paperworkFilter, setPaperworkFilter] = useState('all');
   const [salesStatusFilter, setSalesStatusFilter] = useState('active');
   const [paperworkRequestStatusFilter, setPaperworkRequestStatusFilter] = useState('open');
+  const [salesSearch, setSalesSearch] = useState('');
+  const [paperworkRequestSearch, setPaperworkRequestSearch] = useState('');
   const [activeReportFilter, setActiveReportFilter] = useState(null);
   const [isReportFilterLoading, setIsReportFilterLoading] = useState(false);
   const [trackingSheetItem, setTrackingSheetItem] = useState(null);
@@ -3516,28 +3528,34 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     const reportFilteredSales = filterSalesByPaperworkReport(sales, paperworkRequests, activeReportFilter);
 
     if (salesStatusFilter === 'cancelled') {
-      return reportFilteredSales.filter((sale) => sale.status === 'cancelled');
+      return reportFilteredSales
+        .filter((sale) => sale.status === 'cancelled')
+        .filter((sale) => saleMatchesFollowUpSearch(sale, salesSearch));
     }
 
     if (salesStatusFilter === 'active') {
-      return reportFilteredSales.filter((sale) => sale.status !== 'cancelled');
+      return reportFilteredSales
+        .filter((sale) => sale.status !== 'cancelled')
+        .filter((sale) => saleMatchesFollowUpSearch(sale, salesSearch));
     }
 
-    return reportFilteredSales;
-  }, [activeReportFilter, activeSection, paperworkRequests, sales, salesStatusFilter]);
+    return reportFilteredSales.filter((sale) => saleMatchesFollowUpSearch(sale, salesSearch));
+  }, [activeReportFilter, activeSection, paperworkRequests, sales, salesSearch, salesStatusFilter]);
   const salesStatusCounts = useMemo(() => ({
     active: sales.filter((sale) => sale.status !== 'cancelled').length,
     cancelled: sales.filter((sale) => sale.status === 'cancelled').length,
   }), [sales]);
-  const displayedPaperworkRequests = useMemo(() => paperworkRequests.filter((request) => {
-    if (paperworkRequestStatusFilter === 'all') return true;
-    if (request.status === 'cancelled') return false;
-    const isCompleted = isCompletedPaperworkRequest(request);
-    if (paperworkRequestStatusFilter === 'processor_cancellation') {
-      return request.currentStage === 'pending_processor_cancellation';
-    }
-    return paperworkRequestStatusFilter === 'completed' ? isCompleted : !isCompleted;
-  }), [paperworkRequestStatusFilter, paperworkRequests]);
+  const displayedPaperworkRequests = useMemo(() => paperworkRequests
+    .filter((request) => {
+      if (paperworkRequestStatusFilter === 'all') return true;
+      if (request.status === 'cancelled') return false;
+      const isCompleted = isCompletedPaperworkRequest(request);
+      if (paperworkRequestStatusFilter === 'processor_cancellation') {
+        return request.currentStage === 'pending_processor_cancellation';
+      }
+      return paperworkRequestStatusFilter === 'completed' ? isCompleted : !isCompleted;
+    })
+    .filter((request) => paperworkRequestMatchesFollowUpSearch(request, paperworkRequestSearch)), [paperworkRequestSearch, paperworkRequestStatusFilter, paperworkRequests]);
   const paperworkRequestStatusCounts = useMemo(() => paperworkRequests.reduce((counts, request) => {
     if (request.status === 'cancelled') return counts;
     if (isCompletedPaperworkRequest(request)) {
@@ -3547,7 +3565,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       if (request.currentStage === 'pending_processor_cancellation') counts.processorCancellation += 1;
     }
     return counts;
-  }, { total: paperworkRequests.length, open: 0, processorCancellation: 0, completed: 0 }), [paperworkRequests]);
+  }, { open: 0, processorCancellation: 0, completed: 0 }), [paperworkRequests]);
   const selectedPaperworkRequests = useMemo(() => displayedPaperworkRequests.filter((request) => (
     selectedPaperworkRequestIds.has(request.id)
   )), [displayedPaperworkRequests, selectedPaperworkRequestIds]);
@@ -3833,7 +3851,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         </div>
 
           <section className={`${isMobileContentOpen || isMobileContentClosing ? `fixed inset-0 z-[120] flex h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none ${isMobileContentClosing ? 'customer-care-mobile-page-out' : 'customer-care-mobile-page-in'}` : 'hidden'} customer-care-operations-window customer-care-fade-up min-h-0 flex-col overflow-hidden bg-slate-100 lg:relative lg:z-[80] lg:m-0 lg:flex lg:h-full lg:w-full lg:max-w-none lg:justify-self-stretch lg:rounded-none lg:border-0 lg:bg-slate-100 lg:animate-none`} style={{ animationDelay: '0.06s' }}>
-            <div className="relative z-10 flex min-h-[4.25rem] items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] text-slate-950 sm:px-6 sm:py-3.5">
+            <div className={`relative z-10 flex min-h-[4.25rem] items-center justify-between gap-3 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] text-slate-950 sm:px-6 sm:py-3.5 ${['sales', 'requests'].includes(activeSection) ? '' : 'border-b border-slate-200'}`}>
               <div className="flex min-w-0 items-center gap-4">
                 <button
                   type="button"
@@ -3865,6 +3883,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                 value={salesStatusFilter}
                 onChange={setSalesStatusFilter}
                 counts={salesStatusCounts}
+                searchValue={salesSearch}
+                onSearchChange={setSalesSearch}
               />
             ) : null}
 
@@ -3876,6 +3896,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
                   closePaperworkBulkSelection();
                 }}
                 counts={paperworkRequestStatusCounts}
+                searchValue={paperworkRequestSearch}
+                onSearchChange={setPaperworkRequestSearch}
                 canSelect={tenantUser?.role === 'owner'}
                 selectionMode={paperworkBulkSelectionMode}
                 onToggleSelection={() => {
