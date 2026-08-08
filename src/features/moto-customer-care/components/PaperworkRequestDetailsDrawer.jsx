@@ -333,6 +333,9 @@ export function PaperworkRequestDetailsDrawer({
   const [exceptionalReason, setExceptionalReason] = useState('');
   const [exceptionalNotes, setExceptionalNotes] = useState('');
   const [exceptionalConfirmationChecked, setExceptionalConfirmationChecked] = useState(false);
+  const [exceptionalVaultDocuments, setExceptionalVaultDocuments] = useState([]);
+  const [exceptionalVaultDocumentsLoading, setExceptionalVaultDocumentsLoading] = useState(false);
+  const [exceptionalDocumentId, setExceptionalDocumentId] = useState('');
   const [exceptionalActionError, setExceptionalActionError] = useState('');
   const [isExecutingExceptionalAction, setIsExecutingExceptionalAction] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -742,7 +745,23 @@ export function PaperworkRequestDetailsDrawer({
     setExceptionalReason('');
     setExceptionalNotes('');
     setExceptionalConfirmationChecked(false);
+    setExceptionalVaultDocuments([]);
+    setExceptionalDocumentId('');
     setSelectedExceptionalAction(action);
+    if (action.id === PAPERWORK_EXCEPTIONAL_ACTION_IDS.LINK_EXISTING_VAULT_DOCUMENT) {
+      setExceptionalVaultDocumentsLoading(true);
+      motoCustomerCareService.listVaultDocumentsForPaperworkRequest({
+        tenantId,
+        requestId: snapshot.id,
+        trackingUnitId: snapshot.trackingUnitId,
+      }).then((documents) => {
+        setExceptionalVaultDocuments(documents);
+        const selectableDocuments = documents.filter((document) => !document.paperworkRequestId || document.paperworkRequestId === snapshot.id);
+        if (selectableDocuments.length === 1) setExceptionalDocumentId(selectableDocuments[0].id);
+      }).catch((error) => {
+        setExceptionalActionError(error?.message || 'تعذر تحميل الأوراق الموجودة بالخزنة.');
+      }).finally(() => setExceptionalVaultDocumentsLoading(false));
+    }
   };
   const closeExceptionalAction = () => {
     if (isExecutingExceptionalAction) return;
@@ -761,6 +780,7 @@ export function PaperworkRequestDetailsDrawer({
         requestId: snapshot.id,
         reason: exceptionalReason,
         notes: exceptionalNotes,
+        documentId: exceptionalDocumentId || null,
         processorCancellationConfirmed: exceptionalConfirmationChecked,
       });
       setSnapshot((current) => ({
@@ -771,7 +791,9 @@ export function PaperworkRequestDetailsDrawer({
         updatedAt: result.updatedAt,
         stage: {
           code: result.currentStage,
-          name: result.currentStage === 'cancelled' ? 'ملغي' : 'تم التسليم للعميل',
+          name: result.currentStage === 'cancelled'
+            ? 'ملغي'
+            : result.currentStage === 'received_from_processor' ? 'تم استلام الورق من الجهة' : 'تم التسليم للعميل',
         },
         events: result.event ? [...(current.events || []), result.event] : current.events,
       }));
@@ -1380,11 +1402,13 @@ export function PaperworkRequestDetailsDrawer({
           open={exceptionalActionsOpen}
           canExecute={canManageProcessor}
           isActionAvailable={(action) => (
-            action.id !== PAPERWORK_EXCEPTIONAL_ACTION_IDS.CANCEL
-            || (
+            action.id === PAPERWORK_EXCEPTIONAL_ACTION_IDS.LINK_EXISTING_VAULT_DOCUMENT
+              ? snapshot.status === 'open' && !['received_from_processor', 'client_notified', 'delivered'].includes(snapshot.currentStage)
+              : action.id !== PAPERWORK_EXCEPTIONAL_ACTION_IDS.CANCEL
+                || (
               snapshot.status === 'open'
               && ['preparation', 'owner_confirmation', 'sent_to_processor'].includes(snapshot.currentStage)
-            )
+                )
           )}
           onClose={() => setExceptionalActionsOpen(false)}
           onSelect={openExceptionalAction}
@@ -1396,11 +1420,15 @@ export function PaperworkRequestDetailsDrawer({
           reason={exceptionalReason}
           notes={exceptionalNotes}
           confirmationChecked={exceptionalConfirmationChecked}
+          vaultDocuments={exceptionalVaultDocuments}
+          vaultDocumentsLoading={exceptionalVaultDocumentsLoading}
+          selectedDocumentId={exceptionalDocumentId}
           error={exceptionalActionError}
           isSubmitting={isExecutingExceptionalAction}
           onReasonChange={setExceptionalReason}
           onNotesChange={setExceptionalNotes}
           onConfirmationChange={setExceptionalConfirmationChecked}
+          onDocumentSelect={setExceptionalDocumentId}
           onClose={closeExceptionalAction}
           onConfirm={executeExceptionalAction}
         />

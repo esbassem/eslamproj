@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Building2, FileText, X } from 'lucide-react';
+import { Building2, ExternalLink, FileText, X } from 'lucide-react';
 import { ProcessorPaperworkReceiptDrawer } from '@/features/moto-customer-care/components/ProcessorPaperworkReceiptDrawer';
 
 function formatSentAt(value) {
@@ -98,6 +98,7 @@ export function PendingProcessorPaperworkDrawer({
   requests = [],
   tenantId,
   onReceived,
+  onOpenRequest,
 }) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
@@ -213,13 +214,11 @@ export function PendingProcessorPaperworkDrawer({
           {groupedRequests.length ? (
             <div>
               {groupedRequests.map((group) => (
-                <button
+                <div
                   key={group.id}
-                  type="button"
-                  onClick={() => setSelectedProcessor(group)}
                   className="block w-full border-b border-slate-200 text-right transition hover:bg-blue-50/30 last:border-b-0"
                 >
-                  <span className="flex items-center justify-between gap-3 px-4 pb-2 pt-3.5">
+                  <button type="button" onClick={() => setSelectedProcessor(group)} className="flex w-full items-center justify-between gap-3 px-4 pb-2 pt-3.5 text-right">
                     <span className="flex min-w-0 items-center gap-2.5">
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center text-blue-600">
                         <Building2 className="h-4 w-4" />
@@ -229,7 +228,7 @@ export function PendingProcessorPaperworkDrawer({
                     <span className="shrink-0 text-[10px] font-black text-slate-400">
                       {group.requests.length} طلب
                     </span>
-                  </span>
+                  </button>
 
                   <span className="mr-8 block divide-y divide-slate-100 px-4">
                     {group.requests.map((request) => {
@@ -291,12 +290,20 @@ export function PendingProcessorPaperworkDrawer({
                                 {sentAgeMeta.label}
                               </span>
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => onOpenRequest?.(request)}
+                              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[10px] font-black text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              عرض طلب الأوراق
+                            </button>
                           </span>
                         </span>
                       );
                     })}
                   </span>
-                </button>
+                </div>
               ))}
             </div>
           ) : (

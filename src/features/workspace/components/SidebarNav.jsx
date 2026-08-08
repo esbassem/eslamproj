@@ -33,31 +33,38 @@ function normalizeActivePath(path = '') {
   return pathname || '/';
 }
 
-function SidebarLink({ item, depth = 0, appColor, hasChildren = false, isExpanded = false, onToggle }) {
+function SidebarLink({ item, depth = 0, hasChildren = false, isExpanded = false, onToggle }) {
   const { t } = useI18n();
   const location = useLocation();
   const Icon = item.icon;
   const label = item.title || (item.titleKey ? t(item.titleKey) : '');
   const isActive = normalizeActivePath(location.pathname) === normalizeActivePath(item.href);
   const isDisabled = item.active === false;
+  const description = hasChildren
+    ? `${item.children.length.toLocaleString('ar-EG')} ${item.children.length === 1 ? 'قسم فرعي' : 'أقسام فرعية'}`
+    : depth > 0 ? 'فتح الصفحة' : 'قائمة وإجراءات التطبيق';
   const content = (
     <>
       <span className="flex min-w-0 flex-1 items-center gap-3">
         <span
           className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-md',
-            depth > 0 && 'h-6 w-6 rounded-[5px]',
-            isActive ? 'bg-white text-white' : 'bg-white/10 text-white',
-            isDisabled && 'bg-white/6 text-white/55',
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition',
+            depth > 0 && 'h-8 w-8',
+            isActive ? 'border border-slate-200 bg-white text-slate-700' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200/70',
+            isDisabled && 'bg-slate-100 text-slate-400 group-hover:bg-slate-100',
           )}
-          style={isActive && !isDisabled ? { backgroundColor: appColor, color: 'white' } : {}}
         >
-          <Icon className={cn('h-4 w-4', depth > 0 && 'h-3.5 w-3.5')} />
+          <Icon className="h-4 w-4" />
         </span>
-        <span className="min-w-0 truncate">{label}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-black">{label}</span>
+          <span className="mt-0.5 block truncate text-[10px] font-bold text-slate-500">
+            {description}
+          </span>
+        </span>
       </span>
       {isDisabled ? (
-        <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[0.68rem] font-black text-white/70">
+        <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-[0.68rem] font-black text-slate-500">
           قريبًا
         </span>
       ) : null}
@@ -75,8 +82,8 @@ function SidebarLink({ item, depth = 0, appColor, hasChildren = false, isExpande
       <div
         data-permission-key={item.permissionKey || undefined}
         className={cn(
-          'flex w-full cursor-not-allowed items-center gap-3 rounded-lg bg-white/6 px-3 py-3 text-right text-sm font-bold text-white/60 opacity-55',
-          depth > 0 && 'gap-2.5 rounded-md px-2.5 py-2 text-xs',
+          'group flex w-full cursor-not-allowed items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-right text-slate-500 opacity-55',
+          depth > 0 && 'py-2',
         )}
         aria-disabled="true"
         dir="rtl"
@@ -93,8 +100,9 @@ function SidebarLink({ item, depth = 0, appColor, hasChildren = false, isExpande
         data-permission-key={item.permissionKey || undefined}
         onClick={onToggle}
         className={cn(
-          'flex w-full items-center gap-3 rounded-lg bg-white/6 px-3 py-3 text-right text-sm font-bold text-white/86 transition hover:bg-white/10',
-          depth > 0 && 'gap-2.5 rounded-md bg-white/[0.035] px-2.5 py-2 text-xs',
+          'group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-right transition active:scale-[0.99]',
+          depth > 0 && 'py-2',
+          isActive ? 'border-slate-200 bg-slate-100 text-slate-950' : 'border-transparent bg-transparent text-slate-700 hover:bg-slate-100',
         )}
         aria-expanded={isExpanded}
         dir="rtl"
@@ -113,12 +121,11 @@ function SidebarLink({ item, depth = 0, appColor, hasChildren = false, isExpande
       onFocus={() => preloadProtectedRoute(item.href)}
       onTouchStart={() => preloadProtectedRoute(item.href)}
       className={cn(
-        'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-right text-sm font-bold transition',
-        depth > 0 && 'gap-2.5 rounded-md px-2.5 py-2 text-xs',
-        isActive && 'bg-white text-white',
-        !isActive && 'bg-white/6 text-white/86 hover:bg-white/10',
+        'group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-right transition active:scale-[0.99]',
+        depth > 0 && 'py-2',
+        isActive && 'border-slate-200 bg-slate-100 text-slate-950',
+        !isActive && 'border-transparent bg-transparent text-slate-700 hover:bg-slate-100',
       )}
-      style={isActive ? { color: appColor } : {}}
       dir="rtl"
     >
       {content}
@@ -126,7 +133,7 @@ function SidebarLink({ item, depth = 0, appColor, hasChildren = false, isExpande
   );
 }
 
-function SidebarMenuItem({ item, depth, appColor }) {
+function SidebarMenuItem({ item, depth }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const hasChildren = item.children.length > 0;
 
@@ -135,7 +142,6 @@ function SidebarMenuItem({ item, depth, appColor }) {
       <SidebarLink
         item={item}
         depth={depth}
-        appColor={appColor}
         hasChildren={hasChildren}
         isExpanded={isExpanded}
         onToggle={() => setIsExpanded((expanded) => !expanded)}
@@ -150,7 +156,7 @@ function SidebarMenuItem({ item, depth, appColor }) {
           inert={!isExpanded}
         >
           <div className="min-h-0 overflow-hidden">
-            <SidebarMenuItems items={item.children} depth={depth + 1} appColor={appColor} />
+            <SidebarMenuItems items={item.children} depth={depth + 1} />
           </div>
         </div>
       ) : null}
@@ -158,48 +164,52 @@ function SidebarMenuItem({ item, depth, appColor }) {
   );
 }
 
-function SidebarMenuItems({ items, depth = 0, appColor }) {
+function SidebarMenuItems({ items, depth = 0 }) {
   return (
-    <div className={cn('space-y-1', depth > 0 && 'mr-4 border-r border-white/15 pr-3 pt-1')}>
+    <div className={cn('grid gap-1', depth > 0 && 'mr-4 border-r border-slate-200 pr-3 pt-1')}>
       {items.map((item) => (
-        <SidebarMenuItem key={item.id || item.href} item={item} depth={depth} appColor={appColor} />
+        <SidebarMenuItem key={item.id || item.href} item={item} depth={depth} />
       ))}
     </div>
   );
 }
 
-export function SidebarNav({ appColor = 'rgb(2 27 76)' }) {
+export function SidebarNav() {
   const { activeMenus, menusStatus } = useAppContext();
   const visibleMenus = activeMenus.length === 1 && activeMenus[0]?.children?.length ? activeMenus[0].children : activeMenus;
   const navigationItems = visibleMenus.map(getMenuNavigationItem).filter(Boolean);
 
   if (menusStatus === 'loading' || menusStatus === 'idle') {
     return (
-      <nav className="space-y-2">
-        <div className="rounded-lg bg-white/6 px-3 py-3 text-sm font-bold text-white/70">جاري تحميل القوائم...</div>
+      <nav className="mt-7 border-t border-slate-200 pt-5">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-500">جاري تحميل القوائم...</div>
       </nav>
     );
   }
 
   if (menusStatus === 'error') {
     return (
-      <nav className="space-y-2">
-        <div className="rounded-lg bg-red-500/12 px-3 py-3 text-sm font-bold text-red-100">تعذر تحميل القوائم</div>
+      <nav className="mt-7 border-t border-slate-200 pt-5">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm font-bold text-red-700">تعذر تحميل القوائم</div>
       </nav>
     );
   }
 
   if (!navigationItems.length) {
     return (
-      <nav className="space-y-2">
-        <div className="rounded-lg bg-white/6 px-3 py-3 text-sm font-bold text-white/70">لا توجد قوائم مثبتة</div>
+      <nav className="mt-7 border-t border-slate-200 pt-5">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-500">لا توجد قوائم مثبتة</div>
       </nav>
     );
   }
 
   return (
-    <nav className="mt-5 space-y-2">
-      <SidebarMenuItems items={navigationItems} appColor={appColor} />
+    <nav className="mt-7 min-h-0 flex-1 overflow-y-auto border-t border-slate-200 pt-5 [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.45)_transparent]">
+      <div className="mb-2 flex items-center gap-2 px-2 text-[10px] font-black tracking-wide text-slate-600">
+        <span className="h-1.5 w-1.5 rounded-full bg-slate-400" aria-hidden="true" />
+        التنقل الرئيسي
+      </div>
+      <SidebarMenuItems items={navigationItems} />
     </nav>
   );
 }

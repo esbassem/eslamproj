@@ -23,23 +23,30 @@ export function PaperworkExceptionalActionDialog({
   reason,
   notes,
   confirmationChecked = false,
+  vaultDocuments = [],
+  vaultDocumentsLoading = false,
+  selectedDocumentId = '',
   error,
   isSubmitting,
   onReasonChange,
   onNotesChange,
   onConfirmationChange,
+  onDocumentSelect,
   onClose,
   onConfirm,
 }) {
   if (!action || ![
     PAPERWORK_EXCEPTIONAL_ACTION_IDS.PREVIOUS_CUSTOMER_DELIVERY,
+    PAPERWORK_EXCEPTIONAL_ACTION_IDS.LINK_EXISTING_VAULT_DOCUMENT,
     PAPERWORK_EXCEPTIONAL_ACTION_IDS.CANCEL,
   ].includes(action.id)) return null;
 
   const isCancellation = action.id === PAPERWORK_EXCEPTIONAL_ACTION_IDS.CANCEL;
-  const requiresNotes = reason === 'other';
+  const isVaultLink = action.id === PAPERWORK_EXCEPTIONAL_ACTION_IDS.LINK_EXISTING_VAULT_DOCUMENT;
+  const requiresNotes = isVaultLink || reason === 'other';
   const canSubmit = Boolean(
-    reason
+    (isVaultLink || reason)
+    && (!isVaultLink || selectedDocumentId)
     && (!requiresNotes || notes.trim())
     && (!isCancellation || confirmationChecked),
   ) && !isSubmitting;
@@ -54,7 +61,7 @@ export function PaperworkExceptionalActionDialog({
           <div>
             <p className={`text-[10px] font-black ${isCancellation ? 'text-red-600' : 'text-amber-600'}`}>إجراء استثنائي</p>
             <h3 id="previous-delivery-title" className="mt-1 text-base font-black text-slate-950">
-              {isCancellation ? 'إلغاء طلب الأوراق' : 'تسجيل استلام العميل للأوراق سابقًا'}
+              {isCancellation ? 'إلغاء طلب الأوراق' : isVaultLink ? 'ربط ورق موجود حاليًا بالخزنة' : 'تسجيل استلام العميل للأوراق سابقًا'}
             </h3>
             <p className="mt-1 text-xs font-bold text-slate-500">
               {isBulk ? `${affectedRequests.length} طلبات محددة` : `${request?.customer?.name || 'عميل غير محدد'} · ${request?.productName || 'منتج غير محدد'}`}
@@ -69,7 +76,9 @@ export function PaperworkExceptionalActionDialog({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{isCancellation
             ? 'لا يمكن التراجع عن الإلغاء. يجب أن تكون الأوراق لم تُنجز لدى جهة الإصدار ولم يتم استلامها منها.'
-            : 'سيُغلق الطلب باعتبار الأوراق سُلّمت للعميل. وإذا كان له مستند داخل العهدة فسيُسجل خروجه في نفس العملية.'}</p>
+            : isVaultLink
+              ? 'سيتم ربط الورقة الموجودة بالفعل بهذا الطلب وتحديث مرحلته، دون إنشاء ورقة أو حركة دخول جديدة.'
+              : 'سيُغلق الطلب باعتبار الأوراق سُلّمت للعميل. وإذا كان له مستند داخل العهدة فسيُسجل خروجه في نفس العملية.'}</p>
         </div>
 
         {isBulk ? (
@@ -84,6 +93,33 @@ export function PaperworkExceptionalActionDialog({
         ) : null}
 
         <form className="mt-4 space-y-4" onSubmit={(event) => { event.preventDefault(); if (canSubmit) onConfirm(); }}>
+          {isVaultLink ? (
+            <div>
+              <p className="text-xs font-black text-slate-700">اختر الورقة المطابقة</p>
+              {vaultDocumentsLoading ? (
+                <p className="mt-1.5 rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-slate-500">جاري البحث في الخزنة...</p>
+              ) : vaultDocuments.length ? (
+                <div className="mt-1.5 max-h-56 space-y-2 overflow-y-auto">
+                  {vaultDocuments.map((document) => {
+                    const identifiers = (document.trackingIdentifiers || []).filter((item) => item.value).map((item) => `${item.label}: ${item.value}`).join(' · ');
+                    const selected = selectedDocumentId === document.id;
+                    const linkedToAnotherRequest = Boolean(document.paperworkRequestId && document.paperworkRequestId !== request?.id);
+                    return (
+                      <button key={document.id} type="button" disabled={isSubmitting || linkedToAnotherRequest} onClick={() => onDocumentSelect?.(document.id)} className={`w-full rounded-xl border p-3 text-right transition disabled:cursor-not-allowed disabled:opacity-55 ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
+                        <span className="block text-xs font-black text-slate-900">{document.displayTitle || document.documentTitle || 'جواب'}</span>
+                        <span className="mt-1 block text-[11px] font-bold text-slate-600">باسم: {document.documentOwnerName || 'غير مسجل'}</span>
+                        {identifiers ? <span className="mt-1 block text-[10px] font-bold text-slate-500" dir="rtl">{identifiers}</span> : null}
+                        <span className="mt-1 block text-[10px] font-bold text-slate-400">تاريخ الدخول: {document.createdAt ? new Date(document.createdAt).toLocaleString('ar-EG') : 'غير مسجل'}</span>
+                        {linkedToAnotherRequest ? <span className="mt-1 block text-[10px] font-black text-red-600">مرتبطة بطلب أوراق آخر ولا يمكن اختيارها</span> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs font-bold leading-5 text-amber-800">لا توجد ورقة حالية في الخزنة مرتبطة بنفس أرقام تتبع هذه القطعة.</p>
+              )}
+            </div>
+          ) : (
           <label className="block">
             <span className="text-xs font-black text-slate-700">{isCancellation ? 'سبب الإلغاء' : 'سبب التسجيل المتأخر'}</span>
             <select required value={reason} disabled={isSubmitting} onChange={(event) => onReasonChange(event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-60">
@@ -91,6 +127,7 @@ export function PaperworkExceptionalActionDialog({
               {(isCancellation ? CANCELLATION_REASONS : PREVIOUS_DELIVERY_REASONS).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
+          )}
 
           {isCancellation ? (
             <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-xs font-black leading-5 text-red-900">
@@ -115,7 +152,7 @@ export function PaperworkExceptionalActionDialog({
           <div className="grid grid-cols-2 gap-2 pt-1">
             <button type="button" disabled={isSubmitting} onClick={onClose} className="h-10 rounded-xl bg-slate-100 text-xs font-black text-slate-700 disabled:opacity-50">إلغاء</button>
             <button type="submit" disabled={!canSubmit} className={`h-10 rounded-xl text-xs font-black text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${isCancellation ? 'bg-red-700 hover:bg-red-800' : 'bg-amber-600 hover:bg-amber-700'}`}>
-              {isSubmitting ? (isCancellation ? 'جاري الإلغاء...' : 'جاري التسجيل...') : (isCancellation ? 'تأكيد إلغاء الطلب' : 'تأكيد وإغلاق الطلب')}
+              {isSubmitting ? (isCancellation ? 'جاري الإلغاء...' : 'جاري التسجيل...') : (isCancellation ? 'تأكيد إلغاء الطلب' : isVaultLink ? 'تأكيد الربط والتسوية' : 'تأكيد وإغلاق الطلب')}
             </button>
           </div>
         </form>

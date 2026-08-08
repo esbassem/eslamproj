@@ -217,6 +217,11 @@ export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenant
             document.id === authorizedDocument.id ? { ...document, ...authorizedDocument } : document
           )));
         }}
+        onOwnerPartnerChanged={(updatedDocument) => {
+          setDocuments((current) => current.map((document) => (
+            document.id === updatedDocument.id ? { ...document, ...updatedDocument } : document
+          )));
+        }}
         onOpenRequest={onOpenRequest}
       />
     </div>,

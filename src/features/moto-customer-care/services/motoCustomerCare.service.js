@@ -2148,6 +2148,22 @@ export const motoCustomerCareService = {
     };
   },
 
+  async setPaperworkDocumentOwnerPartner({ tenantId, documentId, partnerId } = {}) {
+    requireTenantId(tenantId);
+    if (!documentId) throw new Error('تعذر تحديد المستند.');
+    if (!partnerId) throw new Error('اختر الـPartner أولًا.');
+
+    const client = requireSupabase();
+    const { error } = await client.rpc('set_paperwork_document_owner_partner', {
+      p_tenant_id: tenantId,
+      p_document_id: documentId,
+      p_partner_id: partnerId,
+    });
+    if (error) throw error;
+
+    return this.getPaperworkDocumentDetails({ tenantId, documentId });
+  },
+
   async cancelPaperworkDocument({ tenantId, documentId, reason, notes = null } = {}) {
     requireTenantId(tenantId);
     if (!documentId) throw new Error('تعذر تحديد المستند.');
@@ -3385,6 +3401,7 @@ export const motoCustomerCareService = {
 
     const handlers = {
       previous_customer_delivery: () => this.recordPreviousCustomerDelivery(payload),
+      link_existing_vault_document: () => this.linkExistingVaultDocumentToRequest(payload),
       // direct_processor_receipt: () => this.recordDirectProcessorReceipt(payload),
       // previous_processor_send: () => this.recordPreviousProcessorSend(payload),
       // move_stage: () => this.movePaperworkRequestStage(payload),
@@ -3397,6 +3414,49 @@ export const motoCustomerCareService = {
     const handler = handlers[actionId];
     if (!handler) throw new Error('هذا الإجراء الاستثنائي لم يتم تنفيذه بعد.');
     return handler();
+  },
+
+  async listVaultDocumentsForPaperworkRequest({ tenantId, requestId, trackingUnitId } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId || !trackingUnitId) return [];
+
+    const client = requireSupabase();
+    const { documents } = await this.listPaperworkDocuments({ tenantId, limit: null, status: 'in_custody' });
+    return documents.filter((document) => document.trackingUnitId === trackingUnitId);
+  },
+
+  async linkExistingVaultDocumentToRequest({ tenantId, requestId, documentId, notes = '' } = {}) {
+    requireTenantId(tenantId);
+    if (!requestId) throw new Error('تعذر تحديد طلب الأوراق.');
+    if (!documentId) throw new Error('اختر الورقة الموجودة بالخزنة أولًا.');
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('link_existing_vault_document_to_request', {
+      p_tenant_id: tenantId,
+      p_request_id: requestId,
+      p_document_id: documentId,
+      p_notes: String(notes || '').trim() || null,
+    });
+    if (error) throw error;
+
+    return {
+      requestId: data?.request_id || requestId,
+      documentId: data?.document_id || documentId,
+      currentStage: data?.current_stage || 'received_from_processor',
+      oldStage: data?.old_stage || null,
+      status: data?.status || 'open',
+      closedAt: null,
+      updatedAt: data?.updated_at || new Date().toISOString(),
+      event: data?.event_id ? {
+        id: data.event_id,
+        eventType: 'stage_changed',
+        oldStage: data?.old_stage || null,
+        newStage: data?.current_stage || 'received_from_processor',
+        newStatus: data?.status || 'open',
+        notes: String(notes || '').trim() || 'تم ربط ورقة موجودة سابقًا بالخزنة بطلب الأوراق.',
+        createdAt: data?.updated_at || new Date().toISOString(),
+      } : null,
+    };
   },
 
   async recordPreviousCustomerDelivery({ tenantId, requestId, reason, notes = '' } = {}) {

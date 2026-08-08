@@ -3,6 +3,7 @@ import { UploadCloud, X } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
+import { cn } from '@/core/utils/cn';
 import {
   Sheet,
   SheetBody,
@@ -260,6 +261,8 @@ export function PartnerFormSheet({
   submitInHeader = false,
   hideDismissButton = false,
   inlineSubmit = false,
+  contentClassName,
+  overlayClassName,
   parentPartner = null,
   childContactMode = false,
 }) {
@@ -352,7 +355,7 @@ export function PartnerFormSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side={side} className={side === 'bottom' ? 'max-h-[88vh]' : 'max-w-md'}>
+      <SheetContent overlayClassName={overlayClassName} side={side} className={cn(side === 'bottom' ? 'max-h-[88vh]' : 'max-w-md', contentClassName)}>
         <SheetHeader className={accentHeader ? 'border-b-0 bg-[linear-gradient(135deg,#0f172a_0%,#155e75_100%)] px-7 py-6 text-white shadow-[0_20px_42px_-34px_rgba(15,23,42,0.9)]' : undefined}>
           <SheetTitle className={accentHeader ? 'text-2xl font-black tracking-tight text-white' : undefined}>
             {isChildContactMode ? (isEditMode ? 'تعديل جهة اتصال تابعة' : 'إضافة جهة اتصال تابعة') : isEditMode ? 'تعديل جهة الاتصال' : 'إضافة جهة اتصال'}

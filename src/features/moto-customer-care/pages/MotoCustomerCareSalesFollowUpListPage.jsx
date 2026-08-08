@@ -22,6 +22,8 @@ import { inventoryService, normalizeTrackingIdentifierValue } from '@/features/i
 import { CompleteTrackingUnitWizard } from '@/features/inventory/components/CompleteTrackingUnitWizard';
 import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
 import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
+import { PendingCustomerNotificationDrawer } from '@/features/moto-customer-care/components/PendingCustomerNotificationDrawer';
+import { CustomerNotificationDialog } from '@/features/moto-customer-care/components/CustomerNotificationDialog';
 import { VaultPaperworkDrawer } from '@/features/moto-customer-care/components/VaultPaperworkDrawer';
 import { PaperworkExceptionalActionDialog } from '@/features/moto-customer-care/components/paperwork/PaperworkExceptionalActionDialog';
 import {
@@ -294,6 +296,12 @@ function FollowUpSectionsPanel({
       label: 'أوراق بانتظار استلامها من الجهات',
       value: resolvedPaperworkReports.sentPendingReceipt,
       color: '#3b82f6',
+    },
+    {
+      id: 'pending_notification',
+      label: 'عملاء بانتظار الإبلاغ',
+      value: paperworkRequests.filter((request) => request.currentStage === 'received_from_processor').length,
+      color: '#f59e0b',
     },
   ];
 
@@ -3462,6 +3470,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const [paperworkRequestItem, setPaperworkRequestItem] = useState(null);
   const [paperworkRequestDetails, setPaperworkRequestDetails] = useState(null);
   const [pendingProcessorPaperworkOpen, setPendingProcessorPaperworkOpen] = useState(false);
+  const [pendingCustomerNotificationsOpen, setPendingCustomerNotificationsOpen] = useState(false);
+  const [customerNotificationRequest, setCustomerNotificationRequest] = useState(null);
   const [vaultPaperworkOpen, setVaultPaperworkOpen] = useState(false);
   const [paperworkDocumentSheetOpen, setPaperworkDocumentSheetOpen] = useState(false);
   const [paperworkBulkSelectionMode, setPaperworkBulkSelectionMode] = useState(false);
@@ -3542,6 +3552,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
       || paperworkRequestDetails
       || paperworkBulkAction
       || pendingProcessorPaperworkOpen
+      || pendingCustomerNotificationsOpen
+      || customerNotificationRequest
       || vaultPaperworkOpen
       || paperworkDocumentSheetOpen,
   );
@@ -3590,6 +3602,12 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     setIsMobileContentOpen(true);
   };
   const handleReportFilterChange = (filterId) => {
+    if (filterId === 'pending_notification') {
+      setPendingCustomerNotificationsOpen(true);
+      ensurePaperworkLoaded();
+      return;
+    }
+
     if (filterId === 'sent_pending_receipt') {
       setPendingProcessorPaperworkOpen(true);
       ensurePaperworkLoaded();
@@ -4061,6 +4079,20 @@ export function MotoCustomerCareSalesFollowUpListPage() {
               : current
           ));
         }}
+        onCustomerNotified={(result) => {
+          if (!paperworkRequestDetails?.id || !result) return;
+          const notifiedPatch = {
+            currentStage: result.currentStage,
+            stageEnteredAt: result.updatedAt,
+            stage: { code: result.currentStage, name: 'تم إبلاغ العميل' },
+            updatedAt: result.updatedAt,
+          };
+          updatePaperworkRequestLocally(paperworkRequestDetails.id, notifiedPatch);
+          setPaperworkRequestDetails((current) => current?.id === paperworkRequestDetails.id
+            ? { ...current, ...notifiedPatch }
+            : current);
+          refresh();
+        }}
         onExceptionalActionCompleted={(result) => {
           if (paperworkRequestDetails?.id && result) {
             updatePaperworkRequestLocally(paperworkRequestDetails.id, {
@@ -4105,11 +4137,36 @@ export function MotoCustomerCareSalesFollowUpListPage() {
           ));
         }}
       />
+      <PendingCustomerNotificationDrawer
+        open={pendingCustomerNotificationsOpen}
+        onOpenChange={setPendingCustomerNotificationsOpen}
+        requests={paperworkRequests}
+        onOpenRequest={(request) => setCustomerNotificationRequest(request)}
+      />
+      <CustomerNotificationDialog
+        request={customerNotificationRequest}
+        open={Boolean(customerNotificationRequest)}
+        tenantId={tenantId}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setCustomerNotificationRequest(null);
+        }}
+        onNotified={(result) => {
+          updatePaperworkRequestLocally(result.requestId, {
+            currentStage: result.currentStage,
+            stageEnteredAt: result.updatedAt,
+            stage: { code: result.currentStage, name: 'تم إبلاغ العميل' },
+            updatedAt: result.updatedAt,
+          });
+          setCustomerNotificationRequest(null);
+          refresh();
+        }}
+      />
       <PendingProcessorPaperworkDrawer
         open={pendingProcessorPaperworkOpen}
         onOpenChange={setPendingProcessorPaperworkOpen}
         requests={paperworkRequests}
         tenantId={tenantId}
+        onOpenRequest={(request) => setPaperworkRequestDetails(request)}
         onReceived={(receivedItems) => {
           receivedItems.forEach((item) => {
             updatePaperworkRequestLocally(item.requestId, {

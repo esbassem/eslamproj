@@ -420,7 +420,7 @@ export function DashboardPage() {
                             onFocus={() => preloadApp(item.code)?.catch(() => {})}
                             onPointerDown={() => preloadApp(item.code)?.catch(() => {})}
                             onTouchStart={() => preloadApp(item.code)?.catch(() => {})}
-                            className={`relative flex aspect-square min-h-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[1.65rem] p-3 text-white shadow-lg ring-1 ring-white/10 transition-all duration-150 ease-out hover:shadow-[0_12px_24px_rgba(15,23,42,0.14)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 sm:aspect-auto sm:min-h-28 sm:items-stretch sm:justify-between sm:gap-0 sm:rounded-2xl sm:p-4 ${isLaunching ? 'app-launching z-20 ring-2 ring-white/60' : ''}`}
+                            className={`relative flex aspect-square min-h-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[1.65rem] p-3 text-white shadow-lg ring-1 ring-white/10 transition-all duration-100 ease-out hover:shadow-[0_12px_24px_rgba(15,23,42,0.14)] active:scale-[0.985] active:brightness-[1.04] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 sm:aspect-auto sm:min-h-28 sm:items-stretch sm:justify-between sm:gap-0 sm:rounded-2xl sm:p-4 ${isLaunching ? 'app-launching z-20 ring-2 ring-white/60' : ''}`}
                             style={{ backgroundColor: item.iconColor || DEFAULT_APP_ICON_COLOR }}
                           >
                             <span className={`pointer-events-none absolute inset-0 bg-white/14 transition-opacity duration-200 ${isLaunching ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
