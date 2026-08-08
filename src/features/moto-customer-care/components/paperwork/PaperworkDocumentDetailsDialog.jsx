@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Ban, Clock3, ExternalLink, FileClock, FileImage, FileText, MapPin, ShieldCheck, TriangleAlert, UserRound, X } from 'lucide-react';
+import { Ban, Clock3, ExternalLink, FileClock, FileImage, FileText, Loader2, MapPin, Search, ShieldCheck, TriangleAlert, UserPlus, UserRound, X } from 'lucide-react';
 
 import {
   Sheet,
@@ -13,6 +13,8 @@ import {
   getPaperworkDocumentStatusLabel,
   motoCustomerCareService,
 } from '@/features/moto-customer-care/services/motoCustomerCare.service';
+import { partnersService } from '@/features/contacts/services/partners.service';
+import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
 
 const DOCUMENT_TYPE_LABELS = {
   jawab: 'جواب',
@@ -159,7 +161,7 @@ function DocumentAttachments({ attachments = [] }) {
   );
 }
 
-function DocumentOverviewPanel({ document }) {
+function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissingOwnerPartnerClick }) {
   const attachments = document.attachments || (document.jawabPhoto ? [document.jawabPhoto] : []);
   const ownerName = document.documentOwnerName ?? document.ownerName ?? EMPTY_VALUE;
   const title = document.documentTitle || document.displayTitle || DOCUMENT_TYPE_LABELS[document.documentType] || 'مستند';
@@ -200,9 +202,9 @@ function DocumentOverviewPanel({ document }) {
                   <span className="truncate">Partner: <span className="font-black">{document.owner.name}</span></span>
                 </p>
               ) : (
-                <p className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 ring-1 ring-amber-200/80">
+                <button type="button" disabled={!canEditOwnerPartner} onClick={onMissingOwnerPartnerClick} className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 ring-1 ring-amber-200/80 transition enabled:cursor-pointer enabled:hover:bg-amber-100 enabled:focus:outline-none enabled:focus:ring-2 enabled:focus:ring-amber-300 disabled:cursor-default">
                   لا يوجد Partner مرتبط
-                </p>
+                </button>
               )}
               <p className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80">
                 {document.paperworkRequestId ? 'عن طريق طلب أوراق' : 'تسجيل يدوي'}
@@ -269,6 +271,122 @@ function DocumentOverviewPanel({ document }) {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function OwnerPartnerSelectionDialog({ open, tenantId, onClose, onConfirm }) {
+  const [search, setSearch] = useState('');
+  const [partners, setPartners] = useState([]);
+  const [selectedPartnerId, setSelectedPartnerId] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isCreatePartnerOpen, setIsCreatePartnerOpen] = useState(false);
+  const [isCreatingPartner, setIsCreatingPartner] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return undefined;
+    setSelectedPartnerId('');
+    setError('');
+    setIsLoading(true);
+    const timeoutId = window.setTimeout(() => {
+      partnersService.getPartners({ tenantId, filterType: 'all', search, status: 'active' })
+        .then(setPartners)
+        .catch((loadError) => setError(loadError?.message || 'تعذر تحميل الـPartners.'))
+        .finally(() => setIsLoading(false));
+    }, 220);
+    return () => window.clearTimeout(timeoutId);
+  }, [open, search, tenantId]);
+
+  useEffect(() => {
+    if (!open) setSearch('');
+  }, [open]);
+
+  if (!open) return null;
+
+  const save = async () => {
+    if (!selectedPartnerId || isSaving) return;
+    setIsSaving(true);
+    setError('');
+    try {
+      await onConfirm(selectedPartnerId);
+    } catch (saveError) {
+      setError(saveError?.message || 'تعذر ربط الـPartner بالمستند.');
+      setIsSaving(false);
+    }
+  };
+
+  const createPartner = async (payload) => {
+    try {
+      setIsCreatingPartner(true);
+      const createdPartner = await partnersService.createPartner({
+        tenantId,
+        ...payload,
+        isCustomer: true,
+        customerRank: 1,
+      });
+      setPartners((current) => [createdPartner, ...current.filter((partner) => partner.id !== createdPartner.id)]);
+      setSelectedPartnerId(createdPartner.id);
+      setIsCreatePartnerOpen(false);
+      return { ok: true };
+    } catch (createError) {
+      return { ok: false, error: createError?.message || 'تعذر إضافة الـPartner.' };
+    } finally {
+      setIsCreatingPartner(false);
+    }
+  };
+
+  return (
+    <>
+    <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-[2px]" dir="rtl" role="dialog" aria-modal="true" aria-labelledby="owner-partner-heading">
+      <section className="flex max-h-[82dvh] w-full max-w-lg flex-col rounded-[26px] border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 id="owner-partner-heading" className="text-lg font-black text-slate-950">تحديد Partner المستند</h2><p className="mt-1 text-xs font-bold text-slate-500">اختر صاحب المستند ليتم ربطه بسجل الخزنة.</p></div>
+          <button type="button" disabled={isSaving} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="mt-4 flex items-stretch gap-2">
+          <label className="relative block min-w-0 flex-1">
+            <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} disabled={isSaving} placeholder="ابحث بالاسم أو رقم الهاتف" className="h-11 w-full rounded-xl border border-slate-200 bg-white pr-10 pl-3 text-sm font-bold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+          </label>
+          <button type="button" disabled={isSaving} onClick={() => setIsCreatePartnerOpen(true)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200" aria-label="إضافة Partner جديد" title="إضافة Partner جديد">
+            <UserPlus className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mt-3 min-h-32 flex-1 space-y-2 overflow-y-auto">
+          {isLoading ? <div className="flex items-center justify-center gap-2 py-8 text-xs font-bold text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> جاري البحث...</div> : partners.length ? partners.map((partner) => (
+            <button key={partner.id} type="button" disabled={isSaving} onClick={() => setSelectedPartnerId(partner.id)} className={`w-full rounded-xl border p-3 text-right transition ${selectedPartnerId === partner.id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-300'}`}>
+              <span className="block text-sm font-black text-slate-900">{partner.name || 'Partner بدون اسم'}</span>
+              <span className="mt-1 block text-[11px] font-bold text-slate-500">{partner.phone || partner.phone1 || partner.phone2 || 'لا يوجد رقم هاتف'}</span>
+            </button>
+          )) : <p className="py-8 text-center text-xs font-bold text-slate-500">لا توجد نتائج.</p>}
+        </div>
+        {error ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</p> : null}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button type="button" disabled={isSaving} onClick={onClose} className="h-10 rounded-xl bg-slate-100 text-xs font-black text-slate-700">إلغاء</button>
+          <button type="button" disabled={!selectedPartnerId || isSaving} onClick={save} className="h-10 rounded-xl bg-blue-600 text-xs font-black text-white disabled:opacity-50">{isSaving ? 'جاري الحفظ...' : 'تأكيد الربط'}</button>
+        </div>
+      </section>
+    </div>
+    <PartnerFormSheet
+      open={isCreatePartnerOpen}
+      onOpenChange={setIsCreatePartnerOpen}
+      initialValues={{ isCustomer: true, isSupplier: false }}
+      onSubmit={createPartner}
+      isSubmitting={isCreatingPartner}
+      side="right"
+      hideTypeFields
+      hideCompanyFields
+      hideAccountingFields
+      hideFooterNote
+      hideCancelButton
+      accentHeader
+      hideDismissButton
+      inlineSubmit
+      overlayClassName="z-[230]"
+      contentClassName="z-[240]"
+    />
+    </>
   );
 }
 
@@ -573,6 +691,7 @@ export function PaperworkDocumentDetailsDialog({
   onCancelled,
   onPreviousDeliveryRecorded,
   onReleaseAuthorized,
+  onOwnerPartnerChanged,
 }) {
   const { details, error, isLoading, reset, setDetails } = usePaperworkDocumentDetails({
     open,
@@ -585,6 +704,7 @@ export function PaperworkDocumentDetailsDialog({
   const [isCancellationOpen, setIsCancellationOpen] = useState(false);
   const [isPreviousDeliveryOpen, setIsPreviousDeliveryOpen] = useState(false);
   const [isReleaseAuthorizationOpen, setIsReleaseAuthorizationOpen] = useState(false);
+  const [isOwnerPartnerSelectionOpen, setIsOwnerPartnerSelectionOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
   const handleOpenChange = (nextOpen) => {
@@ -593,6 +713,7 @@ export function PaperworkDocumentDetailsDialog({
       setIsCancellationOpen(false);
       setIsPreviousDeliveryOpen(false);
       setIsReleaseAuthorizationOpen(false);
+      setIsOwnerPartnerSelectionOpen(false);
       setSuccessMessage('');
     }
     onOpenChange(nextOpen);
@@ -641,6 +762,18 @@ export function PaperworkDocumentDetailsDialog({
     await onReleaseAuthorized?.(updatedDocument);
   };
 
+  const handleOwnerPartnerSelection = async (partnerId) => {
+    const updatedDocument = await motoCustomerCareService.setPaperworkDocumentOwnerPartner({
+      tenantId,
+      documentId: displayedDocument.id,
+      partnerId,
+    });
+    setDetails(updatedDocument);
+    setIsOwnerPartnerSelectionOpen(false);
+    setSuccessMessage('تم ربط الـPartner بالمستند بنجاح.');
+    await onOwnerPartnerChanged?.(updatedDocument);
+  };
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
@@ -666,7 +799,11 @@ export function PaperworkDocumentDetailsDialog({
             <DetailsSkeleton />
           ) : (
             <div className="mx-auto grid w-full max-w-[1020px] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
-              <DocumentOverviewPanel document={displayedDocument} />
+              <DocumentOverviewPanel
+                document={displayedDocument}
+                canEditOwnerPartner={isOwner}
+                onMissingOwnerPartnerClick={() => setIsOwnerPartnerSelectionOpen(true)}
+              />
               <section aria-labelledby="document-moves-heading" className="min-w-0 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.28)] sm:p-6 lg:overflow-y-auto">
               <div className="mb-5 flex items-center justify-between gap-3">
                 <div>
@@ -715,6 +852,12 @@ export function PaperworkDocumentDetailsDialog({
           document={displayedDocument}
           onClose={() => setIsReleaseAuthorizationOpen(false)}
           onConfirm={handleReleaseAuthorization}
+        />
+        <OwnerPartnerSelectionDialog
+          open={isOwnerPartnerSelectionOpen}
+          tenantId={tenantId}
+          onClose={() => setIsOwnerPartnerSelectionOpen(false)}
+          onConfirm={handleOwnerPartnerSelection}
         />
       </SheetContent>
     </Sheet>

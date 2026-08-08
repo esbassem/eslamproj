@@ -1,6 +1,8 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { useLocation, useOutlet } from 'react-router-dom';
+import { ArrowRight, Menu } from 'lucide-react';
+import { Link, useLocation, useOutlet } from 'react-router-dom';
 import { uiExperiments } from '@/core/config/app.config';
+import { ROUTES } from '@/core/config/routes.config';
 import { AppContentFallback } from '@/core/ui/app-content-fallback';
 import { PageTransition } from '@/core/ui/page-transition';
 import { useAppContext } from '@/contexts/AppContext';
@@ -91,6 +93,10 @@ export function AppLayout() {
   }, [location.pathname]);
 
   useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
     const hasNavigationMeasurement = markAppShellVisible();
     try {
       sessionStorage.removeItem(`businesshub:chunk-retry:${location.pathname}`);
@@ -125,7 +131,7 @@ export function AppLayout() {
   const isLauncherHome = uiExperiments.homeLauncherNavigation && currentAppCode === 'dashboard';
   const shouldAnimateAppOpen = uiExperiments.homeLauncherNavigation && currentAppCode && currentAppCode !== 'dashboard';
   const isFullBleedApp = currentAppCode === 'old_cashbox';
-  const shouldShowTopbar = !isFullBleedApp;
+  const shouldShowTopbar = !isFullBleedApp && isLauncherHome;
   const shouldShowSidebar = showSidebar && !isFullBleedApp;
 
   const rootStyle = {
@@ -135,38 +141,66 @@ export function AppLayout() {
 
   return (
     <div
-      className={`min-h-screen transition-colors duration-150 ease-out ${isFullBleedApp ? 'bg-transparent px-0 py-0' : isLauncherHome ? 'bg-[radial-gradient(circle_at_50%_36%,#ffffff_0%,#f7f7f8_42%,#eceef1_100%)] px-0 py-0' : 'bg-white px-9 py-1 lg:px-14 xl:px-20 2xl:px-28'}`}
+      className={`transition-colors duration-150 ease-out ${isFullBleedApp ? 'min-h-screen bg-transparent' : isLauncherHome ? 'min-h-screen bg-[radial-gradient(circle_at_50%_36%,#ffffff_0%,#f7f7f8_42%,#eceef1_100%)]' : 'h-screen overflow-hidden bg-[#f8fafc]'}`}
       style={rootStyle}
     >
       <style>{`
-        @keyframes appShellOpen {
+        @keyframes platformAppSidebarIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes platformAppContentIn {
           from { opacity: 0; }
           to { opacity: 1; }
         }
-        @keyframes appSidebarOpen {
-          from { opacity: 0; }
-          to { opacity: 1; }
+        .platform-app-sidebar-in {
+          animation: platformAppSidebarIn 0.24s ease both;
         }
-        .app-shell-open {
-          animation: appShellOpen 0.14s cubic-bezier(0.2, 0, 0, 1) both;
-        }
-        .app-sidebar-open {
-          animation: appSidebarOpen 0.12s cubic-bezier(0.16, 1, 0.3, 1) both;
+        .platform-app-content-in {
+          animation: platformAppContentIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.04s both;
         }
         @media (prefers-reduced-motion: reduce) {
-          .app-shell-open, .app-sidebar-open { animation: none !important; }
+          .platform-app-sidebar-in, .platform-app-content-in { animation: none !important; }
         }
       `}</style>
       {shouldShowTopbar ? <AppTopbar onMenuClick={handleOpenSidebar} /> : null}
-      <div className={`${isFullBleedApp ? 'min-h-screen pt-0' : isLauncherHome ? 'min-h-0 pt-0' : 'min-h-[calc(100vh-5rem)] pt-4'} gap-4 lg:gap-6 ${shouldShowSidebar ? 'grid app-shell-grid' : 'block'}`}>
+      {shouldShowSidebar ? (
+        <header
+          className="fixed inset-x-0 top-0 z-30 border-b border-slate-200/90 bg-white/92 pt-[env(safe-area-inset-top)] shadow-[0_4px_18px_rgba(15,23,42,0.05)] backdrop-blur-xl lg:hidden"
+          dir="rtl"
+        >
+          <div className="grid h-14 grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center gap-3 px-4 sm:px-6">
+            <Link
+              to={ROUTES.dashboard}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition duration-100 hover:bg-slate-100 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200"
+              aria-label="العودة للوحة التحكم"
+            >
+              <ArrowRight className="h-5 w-5" />
+            </Link>
+            <div className="min-w-0 text-center">
+              <p className="truncate text-sm font-black text-slate-950">{activeApp?.name || 'التطبيق'}</p>
+              <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">مساحة التطبيق</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenSidebar}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition duration-100 hover:bg-slate-100 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200"
+              aria-label="فتح قائمة التطبيق"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
+        </header>
+      ) : null}
+      <div className={`${isFullBleedApp ? 'min-h-screen' : isLauncherHome ? 'min-h-0' : 'h-full min-h-0'} ${shouldShowSidebar ? 'grid gap-0 lg:grid-cols-[28rem_minmax(0,1fr)] xl:grid-cols-[30rem_minmax(0,1fr)]' : 'block'}`}>
         {shouldShowSidebar ? (
-          <div className={shouldAnimateAppOpen ? 'app-sidebar-open' : ''}>
+          <div className={shouldAnimateAppOpen ? 'platform-app-sidebar-in' : ''}>
             <AppSidebar />
           </div>
         ) : null}
-        <div className={`relative min-w-0 transition-colors duration-150 ease-out ${shouldAnimateAppOpen && !isFullBleedApp ? 'app-shell-open' : ''} ${isFullBleedApp ? 'min-h-screen' : isLauncherHome ? 'min-h-0' : 'min-h-[calc(100vh-4rem)]'}`}>
-          <main className={`relative overflow-x-clip ${isFullBleedApp || isLauncherHome ? 'py-0' : 'py-1'} ${shouldShowSidebar ? 'pl-2 lg:pl-4' : ''}`}>
-            <div className={`mx-auto flex min-h-full w-full flex-col bg-transparent ${isFullBleedApp ? 'max-w-none gap-0' : isLauncherHome ? 'max-w-none gap-6' : 'max-w-7xl gap-6'}`}>
+        <div className={`relative min-w-0 transition-colors duration-150 ease-out ${shouldAnimateAppOpen && !isFullBleedApp ? 'platform-app-content-in' : ''} ${isFullBleedApp ? 'min-h-screen' : isLauncherHome ? 'min-h-0' : 'h-full min-h-0 overflow-hidden'}`}>
+          <main className={`relative overflow-x-clip ${isFullBleedApp || isLauncherHome ? 'py-0' : 'h-full overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-[calc(env(safe-area-inset-top)+4.5rem)] sm:px-6 sm:pb-[calc(env(safe-area-inset-bottom)+1.5rem)] lg:px-8 lg:py-7 xl:px-10'}`}>
+            <div className={`flex min-h-full w-full flex-col bg-transparent ${isFullBleedApp ? 'max-w-none gap-0' : isLauncherHome ? 'mx-auto max-w-none gap-6' : 'max-w-none gap-6'}`}>
               <AppRouteErrorBoundary resetKey={location.pathname}>
               <PageTransition pathname={location.pathname}>
                 {isCheckingAppAccess && currentAppCode !== 'dashboard' ? (
