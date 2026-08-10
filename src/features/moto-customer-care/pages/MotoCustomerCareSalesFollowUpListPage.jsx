@@ -33,6 +33,7 @@ import {
 } from '@/features/moto-customer-care/components/paperwork/PaperworkDocumentsSection';
 import { useMotoCustomerCareSales } from '@/features/moto-customer-care/hooks/useMotoCustomerCareSales';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
+import { loadVaultPaperworkFirstPage } from '@/features/moto-customer-care/services/vaultPaperworkCache';
 import { PAPERWORK_EXCEPTIONAL_ACTIONS, PAPERWORK_EXCEPTIONAL_ACTION_IDS } from '@/features/moto-customer-care/config/paperworkExceptionalActions';
 import {
   paperworkRequestMatchesFollowUpSearch,
@@ -287,6 +288,7 @@ function FollowUpSectionsPanel({
   onRegisterTrackingUnit,
   onCreatePaperworkRequest,
   onOpenPaperworkRequest,
+  onPrefetchVault,
 }) {
   const resolvedPaperworkReports = paperworkReports || buildPaperworkSidebarReports(sales, paperworkRequests);
   const filteredMobileSales = useMemo(
@@ -321,6 +323,9 @@ function FollowUpSectionsPanel({
               type="button"
               key={report.id}
               onClick={() => onReportFilterChange?.(isActiveReport ? null : report.id)}
+              onPointerEnter={report.id === 'vault' ? onPrefetchVault : undefined}
+              onFocus={report.id === 'vault' ? onPrefetchVault : undefined}
+              onPointerDown={report.id === 'vault' ? onPrefetchVault : undefined}
               className={`group inline-flex h-9 w-auto flex-none items-center gap-2 rounded-xl border px-2.5 text-right shadow-[0_2px_7px_rgba(15,23,42,0.05)] backdrop-blur-md transition duration-200 hover:-translate-y-px hover:border-blue-200 hover:shadow-[0_4px_10px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 active:translate-y-0 ${
                 isActiveReport
                   ? 'border-blue-300/70 bg-blue-50/55 text-blue-950 shadow-[0_3px_10px_rgba(37,99,235,0.10)] ring-1 ring-blue-100/70'
@@ -3047,7 +3052,7 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
                               <span>الجهة: <b className="text-slate-800">{request.processorName || '—'}</b></span>
                               <span>المسؤول: <b className="text-slate-800">{request.assignedToName || '—'}</b></span>
                               <span>الفرع: <b className="text-slate-800">{request.branchName || '—'}</b></span>
-                              <span>الفاتورة: <b className="text-slate-800">{request.saleNumber || request.saleId?.slice(0, 8) || '—'}</b></span>
+                              <span>الفاتورة: <b className="text-slate-800">{request.saleNumber || 'رقم الفاتورة غير متوفر'}</b></span>
                               <span>المصدر: <b className="text-slate-800">{request.requestSource === 'sale' ? 'بيع' : request.requestSource}</b></span>
                               <span>النوع: <b className="text-slate-800">{request.requestType === 'new_document' ? 'استخراج ورق جديد' : request.requestType}</b></span>
                               <span className="col-span-2">تاريخ الطلب: <b className="text-slate-800">{formatDate(request.createdAt)}</b></span>
@@ -3630,6 +3635,20 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     setHasRequestedMobileData(true);
     setIsMobileContentOpen(true);
   };
+  const prefetchVaultPaperwork = useCallback(() => {
+    if (!tenantId) return;
+    void loadVaultPaperworkFirstPage({
+      tenantId,
+      userId: tenantUser?.id,
+      filter: 'in_custody',
+      pageSize: 30,
+      fetchPage: ({ pageSize, cursor }) => motoCustomerCareService.listVaultPaperworkSummary({
+        tenantId,
+        pageSize,
+        cursor,
+      }),
+    }).catch(() => {});
+  }, [tenantId, tenantUser?.id]);
   const handleReportFilterChange = (filterId) => {
     if (filterId === 'pending_notification') {
       setPendingCustomerNotificationsOpen(true);
@@ -3645,7 +3664,6 @@ export function MotoCustomerCareSalesFollowUpListPage() {
 
     if (filterId === 'vault') {
       setVaultPaperworkOpen(true);
-      ensurePaperworkLoaded();
       return;
     }
 
@@ -3846,6 +3864,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
               onRegisterTrackingUnit={setTrackingUnitPickerItem}
               onCreatePaperworkRequest={handleOpenPaperworkStatus}
               onOpenPaperworkRequest={setPaperworkRequestDetails}
+              onPrefetchVault={prefetchVaultPaperwork}
             />
           </div>
         </div>
@@ -4226,6 +4245,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         open={vaultPaperworkOpen}
         onOpenChange={setVaultPaperworkOpen}
         tenantId={tenantId}
+        userId={tenantUser?.id}
         isOwner={tenantUser?.role === 'owner'}
         onOpenRequest={(requestId) => {
           const request = paperworkRequests.find((item) => item.id === requestId);

@@ -153,6 +153,9 @@ function SaleSheetContent({
               {saleReturnHistory.some((operation) => operation.replacement_sale_id === sale?.id) ? <span className="shrink-0 rounded-full bg-blue-100 px-2 py-1 text-[10px] font-black text-blue-800">فاتورة ناتجة عن استبدال</span> : null}
               {isFullyReturned ? <span className="shrink-0 rounded-full bg-red-100 px-2 py-1 text-[10px] font-black text-red-800">مرتجعة بالكامل</span> : null}
             </div>
+            <p className="mt-1 pr-7 text-xs font-black text-slate-500" dir="ltr">
+              {sale?.sale_number ? `#${sale.sale_number}` : 'رقم الفاتورة غير متوفر'}
+            </p>
             {sale?.customer?.phone && (
               <p className="mt-0.5 pr-7 text-sm font-bold text-slate-500">{sale.customer.phone}</p>
             )}

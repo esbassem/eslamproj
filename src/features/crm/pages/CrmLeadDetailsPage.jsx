@@ -340,7 +340,7 @@ export function CrmLeadDetailsPage() {
         <Card className="mb-5 border-emerald-200 bg-emerald-50 p-4 shadow-none">
           <h3 className="font-black text-emerald-950">عملية البيع</h3>
           <div className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
-            <p>المرجع: {lead.sale.sale_number || lead.sale.id}</p>
+            <p>رقم الفاتورة: {lead.sale.sale_number || 'رقم الفاتورة غير متوفر'}</p>
             <p>
               التاريخ:{" "}
               {lead.sold_at
