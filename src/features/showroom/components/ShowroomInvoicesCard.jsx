@@ -189,6 +189,9 @@ export function ShowroomInvoicesCard({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-black text-slate-900">{invoice.customer?.name || 'عميل'}</p>
+                      <p className="mt-0.5 text-[11px] font-black text-slate-500" dir="ltr">
+                        {invoice.sale_number ? `#${invoice.sale_number}` : 'رقم الفاتورة غير متوفر'}
+                      </p>
                       {getInvoiceProductsText(invoice) ? (
                         <p className="mt-1 max-w-[13rem] truncate text-xs font-bold text-slate-500">
                           {getInvoiceProductsText(invoice)}
@@ -248,6 +251,9 @@ export function ShowroomInvoicesCard({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-black text-slate-900">{invoice.customer?.name || 'عميل'}</p>
+                      <p className="mt-0.5 text-[11px] font-black text-slate-500" dir="ltr">
+                        {invoice.sale_number ? `#${invoice.sale_number}` : 'رقم الفاتورة غير متوفر'}
+                      </p>
                       {getInvoiceProductsText(invoice) ? (
                         <p className="mt-1 max-w-[13rem] truncate text-xs font-bold text-slate-500">
                           {getInvoiceProductsText(invoice)}

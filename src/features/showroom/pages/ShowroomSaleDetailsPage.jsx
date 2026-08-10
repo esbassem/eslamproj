@@ -119,7 +119,7 @@ export function ShowroomSaleDetailsPage() {
     );
   }
 
-  const saleNumber = sale?.sale_number || sale?.invoice_number || sale?.id?.slice(0, 8).toUpperCase();
+  const saleNumber = sale?.sale_number || 'رقم الفاتورة غير متوفر';
   const totalAmount = Number(sale?.total_amount ?? sale?.totalAmount ?? 0);
   const status = sale?.status;
   const hasAccountingMove = sale?.has_accounting_move === true

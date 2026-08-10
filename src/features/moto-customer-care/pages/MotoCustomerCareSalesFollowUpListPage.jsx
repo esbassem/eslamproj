@@ -3052,7 +3052,7 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
                               <span>الجهة: <b className="text-slate-800">{request.processorName || '—'}</b></span>
                               <span>المسؤول: <b className="text-slate-800">{request.assignedToName || '—'}</b></span>
                               <span>الفرع: <b className="text-slate-800">{request.branchName || '—'}</b></span>
-                              <span>الفاتورة: <b className="text-slate-800">{request.saleNumber || request.saleId?.slice(0, 8) || '—'}</b></span>
+                              <span>الفاتورة: <b className="text-slate-800">{request.saleNumber || 'رقم الفاتورة غير متوفر'}</b></span>
                               <span>المصدر: <b className="text-slate-800">{request.requestSource === 'sale' ? 'بيع' : request.requestSource}</b></span>
                               <span>النوع: <b className="text-slate-800">{request.requestType === 'new_document' ? 'استخراج ورق جديد' : request.requestType}</b></span>
                               <span className="col-span-2">تاريخ الطلب: <b className="text-slate-800">{formatDate(request.createdAt)}</b></span>

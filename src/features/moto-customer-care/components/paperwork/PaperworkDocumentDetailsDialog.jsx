@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Ban, Clock3, ExternalLink, FileClock, FileImage, FileText, Loader2, MapPin, Search, ShieldCheck, TriangleAlert, UserPlus, UserRound, X } from 'lucide-react';
+import { Ban, ChevronDown, Clock3, ExternalLink, FileClock, FileImage, FileText, Loader2, MapPin, Search, ShieldCheck, TriangleAlert, UserPlus, UserRound, X } from 'lucide-react';
 
 import {
   Sheet,
@@ -161,35 +161,36 @@ function DocumentAttachments({ attachments = [] }) {
   );
 }
 
-function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissingOwnerPartnerClick }) {
+function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissingOwnerPartnerClick, showAttachments = true }) {
   const attachments = document.attachments || (document.jawabPhoto ? [document.jawabPhoto] : []);
   const ownerName = document.documentOwnerName ?? document.ownerName ?? EMPTY_VALUE;
   const title = document.documentTitle || document.displayTitle || DOCUMENT_TYPE_LABELS[document.documentType] || 'مستند';
   const trackingIdentifiersText = formatTrackingIdentifiers(document.trackingIdentifiers);
 
   return (
-    <section aria-labelledby="document-overview-heading" className="min-w-0 lg:overflow-y-auto lg:pl-5">
-      <div className="px-1 pb-2 sm:px-2">
+    <section aria-labelledby="document-overview-heading" className={`min-w-0 lg:overflow-y-auto ${showAttachments ? 'rounded-xl border border-slate-200 bg-white' : ''}`}>
+      {showAttachments ? <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
+        <p className="mb-4 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">بيانات المستند الأساسية</p>
         <div className="flex items-start gap-4">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#e8eef8] text-[#173b70] ring-1 ring-inset ring-[#cfdaeb]">
             <FileText className="h-6 w-6" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <SheetTitle id="document-overview-heading" className="min-w-0 truncate text-2xl font-black text-slate-950">
+              <SheetTitle id="document-overview-heading" className="min-w-0 truncate text-xl font-black tracking-tight text-[#0b1930] sm:text-2xl">
                 {title}
               </SheetTitle>
-              <span className={`inline-flex shrink-0 rounded-full px-3 py-1 text-[11px] font-black ring-1 ring-inset ${document.status === 'cancelled' ? 'bg-red-100 text-red-700 ring-red-200' : 'bg-emerald-100 text-emerald-700 ring-emerald-200'}`}>
+              <span className={`inline-flex shrink-0 rounded-md px-2.5 py-1 text-[10px] font-black ring-1 ring-inset ${document.status === 'cancelled' ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
                 {getPaperworkDocumentStatusLabel(document.status)}
               </span>
               {document.hasActiveReleaseAuthorization ? (
-                <span className="inline-flex shrink-0 rounded-full bg-blue-100 px-3 py-1 text-[11px] font-black text-blue-700 ring-1 ring-inset ring-blue-200">متاح للصرف</span>
+                <span className="inline-flex shrink-0 rounded-md bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-700 ring-1 ring-inset ring-blue-200">مصرح بالصرف</span>
               ) : null}
             </div>
-            <p className="mt-1 truncate text-base font-black text-slate-700">
+            <p className="mt-1 truncate text-sm font-bold text-slate-600">
               {document.productName || document.manualItemDescription || 'منتج غير مسجل'}
             </p>
-            <div className="mt-4 flex items-center gap-2 text-sm font-bold text-slate-500">
+            <div className="mt-4 flex items-center gap-2 text-xs font-bold text-slate-500">
               <UserRound className="h-4 w-4 shrink-0" />
               <p className="truncate">باسم: <span className="font-black text-slate-800">{ownerName}</span></p>
             </div>
@@ -198,33 +199,51 @@ function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissin
             ) : null}
             <div className="mt-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
               {document.owner?.name ? (
-                <p className="inline-flex min-w-0 max-w-full rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
-                  <span className="truncate">Partner: <span className="font-black">{document.owner.name}</span></span>
+                <p className="inline-flex min-w-0 max-w-full text-[10px] font-bold text-slate-600">
+                  <span className="truncate">Partner: {document.owner.name}</span>
                 </p>
               ) : (
                 <button type="button" disabled={!canEditOwnerPartner} onClick={onMissingOwnerPartnerClick} className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 ring-1 ring-amber-200/80 transition enabled:cursor-pointer enabled:hover:bg-amber-100 enabled:focus:outline-none enabled:focus:ring-2 enabled:focus:ring-amber-300 disabled:cursor-default">
                   لا يوجد Partner مرتبط
                 </button>
               )}
-              <p className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 ring-1 ring-blue-200/80">
+              <p className="inline-flex text-[10px] font-bold text-slate-600">
                 {document.paperworkRequestId ? 'عن طريق طلب أوراق' : 'تسجيل يدوي'}
               </p>
             </div>
           </div>
         </div>
-      </div>
+      </div> : null}
 
-      <div className="mt-6">
-        <div className="mb-3 flex items-center gap-2">
+      {!showAttachments ? (
+        <div>
+          <div className="mb-5 border-b border-slate-200 pb-4">
+            <h2 id="document-overview-heading" className="text-sm font-black text-[#0b1930]">بيانات الحفظ والربط</h2>
+            <p className="mt-1 text-[11px] font-bold text-slate-400">البيانات التشغيلية غير المعروضة في ملخص المستند</p>
+          </div>
+          <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div><dt className="text-[10px] font-bold text-slate-400">نوع المستند</dt><dd className="mt-1 text-xs font-black text-slate-800">{DOCUMENT_TYPE_LABELS[document.documentType] || document.documentType || EMPTY_VALUE}</dd></div>
+            <div><dt className="text-[10px] font-bold text-slate-400">مصدر التسجيل</dt><dd className="mt-1 text-xs font-black text-slate-800">{document.paperworkRequestId ? 'طلب أوراق' : 'تسجيل يدوي'}</dd></div>
+            <div><dt className="text-[10px] font-bold text-slate-400">Partner المرتبط</dt><dd className="mt-1 text-xs font-black text-slate-800">{document.owner?.name || (canEditOwnerPartner ? <button type="button" onClick={onMissingOwnerPartnerClick} className="text-blue-700 hover:underline">تحديد Partner</button> : EMPTY_VALUE)}</dd></div>
+            <div><dt className="text-[10px] font-bold text-slate-400">تاريخ إنشاء السجل</dt><dd className="mt-1 text-xs font-black text-slate-800">{formatDateTime(document.createdAt)}</dd></div>
+            <div><dt className="text-[10px] font-bold text-slate-400">آخر تحديث</dt><dd className="mt-1 text-xs font-black text-slate-800">{formatDateTime(document.updatedAt)}</dd></div>
+            <div><dt className="text-[10px] font-bold text-slate-400">عدد الحركات</dt><dd className="mt-1 text-xs font-black text-slate-800">{document.moves?.length || 0}</dd></div>
+            <div className="sm:col-span-2 lg:col-span-3"><dt className="text-[10px] font-bold text-slate-400">ملاحظات السجل</dt><dd className="mt-1 whitespace-pre-wrap text-xs font-bold leading-6 text-slate-700">{document.notes || EMPTY_VALUE}</dd></div>
+          </dl>
+        </div>
+      ) : null}
+
+      {showAttachments ? <div className="px-5 py-5 sm:px-6">
+        <div className="mb-4 flex items-center gap-2">
           <FileImage className="h-4 w-4 text-slate-400" />
-          <h3 className="text-sm font-black text-slate-900">الصور والمرفقات</h3>
+          <h3 className="text-xs font-black text-[#0b1930]">المرفقات المؤيدة</h3>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">{attachments.length}</span>
         </div>
         <DocumentAttachments attachments={attachments} />
-      </div>
+      </div> : null}
 
       {document.hasActiveReleaseAuthorization ? (
-        <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+        <div className="mx-5 mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:mx-6">
           <div className="flex items-center gap-2 text-blue-700">
             <ShieldCheck className="h-4 w-4" />
             <h3 className="text-sm font-black">إتاحة الصرف</h3>
@@ -241,7 +260,7 @@ function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissin
       ) : null}
 
       {document.status === 'cancelled' ? (
-        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4">
+        <div className="mx-5 mb-5 rounded-xl border border-red-200 bg-red-50 p-4 sm:mx-6">
           <div className="flex items-center gap-2 text-red-700">
             <Ban className="h-4 w-4" />
             <h3 className="text-sm font-black">بيانات إلغاء الصلاحية</h3>
@@ -256,7 +275,7 @@ function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissin
       ) : null}
 
       {document.latestMove?.sourceType === 'retrospective_delivery' ? (
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <div className="mx-5 mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:mx-6">
           <div className="flex items-center gap-2 text-amber-700">
             <FileClock className="h-4 w-4" />
             <h3 className="text-sm font-black">بيانات الصرف السابق</h3>
@@ -270,6 +289,55 @@ function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissin
           </dl>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function DocumentExecutiveSummary({ document }) {
+  const ownerName = document.documentOwnerName ?? document.ownerName ?? EMPTY_VALUE;
+  const tracking = formatTrackingIdentifiers(document.trackingIdentifiers) || EMPTY_VALUE;
+  const reference = document.id ? document.id.slice(0, 8).toUpperCase() : EMPTY_VALUE;
+
+  return (
+    <section className="flex min-w-0 flex-col justify-between gap-5 py-5 sm:flex-row sm:items-center sm:py-7">
+      <div className="flex min-w-0 items-center gap-5">
+        <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm ring-1 ring-slate-200 sm:h-24 sm:w-24"><FileText className="h-9 w-9" /></span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-2xl font-black tracking-tight text-slate-950">{document.documentTitle || document.displayTitle || 'مستند'}</h1>
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${document.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{getPaperworkDocumentStatusLabel(document.status)}</span>
+          </div>
+          <p className="mt-1 truncate text-sm font-bold text-slate-700">{document.productName || document.manualItemDescription || 'منتج غير مسجل'}</p>
+          <p className="mt-1 truncate text-xs font-bold text-slate-500">باسم: {ownerName}</p>
+          <p className="mt-2 truncate text-[10px] font-bold text-slate-400">{tracking}</p>
+        </div>
+      </div>
+      <div className="shrink-0 text-right sm:text-left">
+        <p className="text-[10px] font-bold text-slate-400">مرجع المستند</p>
+        <p className="mt-1 font-mono text-sm font-black text-slate-700" dir="ltr">{reference}</p>
+        <p className={`mt-2 text-[11px] font-black ${document.hasActiveReleaseAuthorization ? 'text-emerald-700' : 'text-red-600'}`}>{document.hasActiveReleaseAuthorization ? `مسموح بالصرف لـ ${document.releaseAuthorizedToName}` : 'غير مسموح بالصرف'}</p>
+      </div>
+    </section>
+  );
+}
+
+function SettingsDetailsSection({ title, description, children, defaultOpen = false }) {
+  return (
+    <details open={defaultOpen} className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 marker:hidden sm:px-6">
+        <div className="min-w-0"><h2 className="text-sm font-black text-slate-900">{title}</h2>{description ? <p className="mt-1 truncate text-[11px] font-bold text-slate-500">{description}</p> : null}</div>
+        <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-slate-200 p-5 sm:p-6">{children}</div>
+    </details>
+  );
+}
+
+function DocumentAttachmentsPanel({ document }) {
+  const attachments = document.attachments || (document.jawabPhoto ? [document.jawabPhoto] : []);
+  return (
+    <section>
+      <DocumentAttachments attachments={attachments} />
     </section>
   );
 }
@@ -619,7 +687,7 @@ function DocumentMovesPanel({ moves = [] }) {
           <span className={`relative z-10 mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-4 ring-white ${move.moveDirection === 'out' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
             <MapPin className="h-4 w-4" />
           </span>
-          <div className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_20px_-18px_rgba(15,23,42,0.35)]">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-black text-slate-900">{getPaperworkDocumentMoveDirectionLabel(move.moveDirection)}</p>
@@ -780,17 +848,21 @@ export function PaperworkDocumentDetailsDialog({
         side="center"
         dir="rtl"
         overlayClassName="z-[140] bg-slate-950/45 backdrop-blur-[2px]"
-        className="inset-0 z-[150] h-[100dvh] w-full max-w-none border-0 bg-[#fafafa] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:h-[min(88vh,900px)] sm:w-[min(94vw,1100px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[30px] sm:border sm:border-slate-200"
+        className="inset-0 z-[150] h-[100dvh] w-full max-w-none overflow-hidden border-0 bg-[#f6f7fb] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:h-[min(92vh,940px)] sm:w-[min(95vw,1040px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:border sm:border-slate-300"
         aria-describedby={undefined}
       >
+        <SheetTitle className="sr-only">تفاصيل الورقة</SheetTitle>
+        <div className="absolute inset-x-0 top-0 z-10 flex h-14 items-center border-b border-slate-200 bg-[#f6f7fb] px-5 sm:px-7">
+          <p className="text-sm font-black text-slate-800">تفاصيل الورقة</p>
+        </div>
         <SheetClose
-          className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-500 shadow-sm ring-1 ring-slate-200 backdrop-blur transition hover:bg-white hover:text-slate-900 sm:left-5 sm:top-5"
+          className="absolute left-4 top-2.5 z-20 flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-200 sm:left-5"
           aria-label="إغلاق تفاصيل المستند"
         >
           <X className="h-5 w-5" />
         </SheetClose>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(4.5rem,calc(env(safe-area-inset-top)+4rem))] sm:p-6 lg:overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(4.5rem,calc(env(safe-area-inset-top)+4rem))] sm:px-8">
           {error ? (
             <div role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">{error}</div>
           ) : null}
@@ -798,39 +870,41 @@ export function PaperworkDocumentDetailsDialog({
           {isLoading && !details ? (
             <DetailsSkeleton />
           ) : (
-            <div className="mx-auto grid w-full max-w-[1020px] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
-              <DocumentOverviewPanel
-                document={displayedDocument}
-                canEditOwnerPartner={isOwner}
-                onMissingOwnerPartnerClick={() => setIsOwnerPartnerSelectionOpen(true)}
-              />
-              <section aria-labelledby="document-moves-heading" className="min-w-0 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.28)] sm:p-6 lg:overflow-y-auto">
-              <div className="mb-5 flex items-center justify-between gap-3">
-                <div>
-                  <h2 id="document-moves-heading" className="text-base font-black text-slate-950">سجل الحركات</h2>
-                  <p className="mt-0.5 text-[11px] font-bold text-slate-400">جميع حركات المستند من الأحدث للأقدم</p>
-                </div>
-                <Clock3 className="h-5 w-5 text-slate-300" />
+            <div className="mx-auto w-full max-w-[900px]">
+              <DocumentExecutiveSummary document={displayedDocument} />
+              <div className="space-y-3 pb-2">
+                <SettingsDetailsSection title="بيانات الحفظ والربط" description="المصدر، الـPartner، التواريخ والملاحظات" defaultOpen>
+                  <DocumentOverviewPanel
+                    document={displayedDocument}
+                    canEditOwnerPartner={isOwner}
+                    onMissingOwnerPartnerClick={() => setIsOwnerPartnerSelectionOpen(true)}
+                    showAttachments={false}
+                  />
+                </SettingsDetailsSection>
+                <SettingsDetailsSection title="الصور والمرفقات" description={`${displayedDocument.attachments?.length || (displayedDocument.jawabPhoto ? 1 : 0)} ملف محفوظ`}>
+                  <DocumentAttachmentsPanel document={displayedDocument} />
+                </SettingsDetailsSection>
+                <SettingsDetailsSection title="سجل الحركات" description={`${displayedDocument.moves?.length || 0} حركة مسجلة`}>
+                    <DocumentMovesPanel moves={displayedDocument.moves || []} />
+                </SettingsDetailsSection>
               </div>
-                <DocumentMovesPanel moves={displayedDocument.moves || []} />
-              </section>
             </div>
           )}
           {isOwner && displayedDocument.status === 'in_custody' && !isLoading ? (
-            <div className="mx-auto mt-5 grid w-full max-w-[1020px] gap-2 border-t border-slate-200 pt-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mx-auto mt-4 grid w-full max-w-[1120px] gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-26px_rgba(15,23,42,0.5)] sm:grid-cols-2 lg:grid-cols-3">
               {!displayedDocument.hasActiveReleaseAuthorization ? (
-                <button type="button" onClick={() => setIsReleaseAuthorizationOpen(true)} className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-right transition hover:bg-blue-50">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><ShieldCheck className="h-5 w-5" /></span>
-                  <span className="min-w-0"><span className="block text-sm font-black text-blue-700">إتاحة الصرف</span><span className="mt-0.5 block text-[11px] font-bold text-slate-500">تحديد مستلم معتمد والسماح بصرف المستند لمرة واحدة</span></span>
+                <button type="button" onClick={() => setIsReleaseAuthorizationOpen(true)} className="flex w-full items-center gap-3 rounded-xl border border-[#cfdaeb] bg-[#f7f9fc] px-3 py-3 text-right transition hover:border-[#8da5c8] hover:bg-[#eef3fa]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#173b70] text-white"><ShieldCheck className="h-4 w-4" /></span>
+                  <span className="min-w-0"><span className="block text-xs font-black text-[#173b70]">اعتماد إذن صرف</span><span className="mt-0.5 block text-[10px] font-bold text-slate-500">تصريح لمرة واحدة لمستلم محدد</span></span>
                 </button>
               ) : null}
-              <button type="button" onClick={() => setIsPreviousDeliveryOpen(true)} className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-right transition hover:bg-amber-50">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><FileClock className="h-5 w-5" /></span>
-                <span className="min-w-0"><span className="block text-sm font-black text-amber-700">تسجيل صرف سابق</span><span className="mt-0.5 block text-[11px] font-bold text-slate-500">تسجيل خروج حدث فعليًا ولم يُسجل على النظام</span></span>
+              <button type="button" onClick={() => setIsPreviousDeliveryOpen(true)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-right transition hover:bg-amber-50">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700"><FileClock className="h-4 w-4" /></span>
+                <span className="min-w-0"><span className="block text-xs font-black text-slate-800">تسجيل صرف سابق</span><span className="mt-0.5 block text-[10px] font-bold text-slate-500">تسوية حركة خروج لم تسجل في وقتها</span></span>
               </button>
-              <button type="button" onClick={() => setIsCancellationOpen(true)} className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-right transition hover:bg-red-50">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600"><Ban className="h-5 w-5" /></span>
-                <span className="min-w-0"><span className="block text-sm font-black text-red-700">إلغاء صلاحية المستند</span><span className="mt-0.5 block text-[11px] font-bold text-slate-500">إخراج المستند من الأوراق النشطة مع الاحتفاظ بسجله</span></span>
+              <button type="button" onClick={() => setIsCancellationOpen(true)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-right transition hover:border-red-200 hover:bg-red-50">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-700"><Ban className="h-4 w-4" /></span>
+                <span className="min-w-0"><span className="block text-xs font-black text-slate-800">إلغاء صلاحية المستند</span><span className="mt-0.5 block text-[10px] font-bold text-slate-500">إيقاف المستند مع حفظ الأثر الرقابي</span></span>
               </button>
             </div>
           ) : null}

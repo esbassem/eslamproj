@@ -324,7 +324,11 @@ export function VaultPaperworkDrawer({ open, onOpenChange, onOpenRequest, tenant
                                     : linkedInvoice
                                       ? 'الفاتورة مسددة'
                                       : 'لا توجد فاتورة مرتبطة'}
-                              {!balancesLoading && !balancesError && linkedInvoice?.saleNumber ? <span className="font-mono text-[9px] opacity-70" dir="ltr">#{linkedInvoice.saleNumber}</span> : null}
+                              {!balancesLoading && !balancesError && linkedInvoice ? (
+                                <span className="font-mono text-[9px] opacity-70" dir="ltr">
+                                  {linkedInvoice.saleNumber ? `#${linkedInvoice.saleNumber}` : 'رقم الفاتورة غير متوفر'}
+                                </span>
+                              ) : null}
                             </p>
                           ) : null}
                         </div>

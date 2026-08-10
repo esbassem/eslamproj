@@ -60,7 +60,7 @@ export async function createConfirmedSaleReturn({ tenantId, saleId, lines, reaso
 }
 
 export async function listSaleReturnHistory({ tenantId, saleId }) {
-  const { data, error } = await requireSupabase().from('showroom_sale_return_operations').select('*,showroom_sale_return_lines(*)').eq('tenant_id', tenantId).or(`original_sale_id.eq.${saleId},replacement_sale_id.eq.${saleId}`).order('created_at', { ascending: false });
+  const { data, error } = await requireSupabase().from('showroom_sale_return_operations').select('*,showroom_sale_return_lines(*),replacement_sale:showroom_sales!showroom_sale_return_operations_replacement_sale_fk(sale_number)').eq('tenant_id', tenantId).or(`original_sale_id.eq.${saleId},replacement_sale_id.eq.${saleId}`).order('created_at', { ascending: false });
   if (error) throw error; return data || [];
 }
 export const saleReturnService = { listSaleReturnContext, listReplacementCandidates, previewConfirmedSaleReturn, createConfirmedSaleReturn, listSaleReturnHistory };

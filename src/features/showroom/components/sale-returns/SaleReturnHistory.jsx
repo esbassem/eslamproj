@@ -15,7 +15,7 @@ export function SaleReturnHistory({ operations = [], status = 'idle', error = ''
         {status === 'loading' && <p className="text-xs text-slate-500">جاري تحميل التاريخ...</p>}
         {status === 'error' && <p className="rounded-xl bg-red-50 p-3 text-xs font-bold text-red-700">عدم توافق Schema المرتجعات: {error}</p>}
         {status === 'ready' && !operations.length && <p className="text-xs text-slate-500">لا توجد عمليات.</p>}
-        {operations.map((operation) => <article key={operation.id} className="rounded-xl border p-3 text-xs"><p className="font-black">{operation.operation_type === 'return' ? 'مرتجع' : operation.operation_type === 'exchange' ? 'استبدال' : 'مرتجع واستبدال'} · {operation.status}</p><p>{operation.showroom_sale_return_lines?.length || 0} سطر · إشعار دائن {operation.credit_note_move_id?.slice(0, 8) || '—'} · فاتورة بديلة {operation.replacement_invoice_move_id?.slice(0, 8) || '—'}</p><p>المرتجع {operation.total_return_amount} · البديل {operation.total_replacement_amount} · الفرق {operation.price_difference}</p></article>)}
+        {operations.map((operation) => <article key={operation.id} className="rounded-xl border p-3 text-xs"><p className="font-black">{operation.operation_type === 'return' ? 'مرتجع' : operation.operation_type === 'exchange' ? 'استبدال' : 'مرتجع واستبدال'} · {operation.status}</p><p>{operation.showroom_sale_return_lines?.length || 0} سطر · فاتورة بديلة {operation.replacement_sale ? operation.replacement_sale.sale_number || 'رقم الفاتورة غير متوفر' : '—'}</p><p>المرتجع {operation.total_return_amount} · البديل {operation.total_replacement_amount} · الفرق {operation.price_difference}</p></article>)}
       </div>}
     </section>
   );
