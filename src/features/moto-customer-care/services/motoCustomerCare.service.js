@@ -1,6 +1,7 @@
 import { requireSupabase } from '@/core/lib/supabase';
 import { invokePaperworkNotification } from '@/core/notifications/paperworkNotifications';
 import { resolveCurrentTenantUserId } from '@/features/workspace/api/currentTenantUser.api';
+import { invalidateVaultPaperworkCache } from '@/features/moto-customer-care/services/vaultPaperworkCache';
 
 const TENANT_FILES_BUCKET = 'tenant-files';
 const SIGNED_URL_EXPIRES_IN = 60 * 60;
@@ -105,6 +106,24 @@ const PAPERWORK_DOCUMENT_COLUMNS = `
   release_authorization_consumed_at,
   notes,
   created_by,
+  created_at,
+  updated_at
+`;
+const VAULT_PAPERWORK_SUMMARY_COLUMNS = `
+  id,
+  tenant_id,
+  document_type,
+  document_title,
+  document_owner_name,
+  tracking_unit_id,
+  paperwork_request_id,
+  owner_partner_id,
+  manual_item_description,
+  source_type,
+  status,
+  release_authorized_at,
+  release_authorized_to_name,
+  release_authorization_consumed_at,
   created_at,
   updated_at
 `;
@@ -1094,8 +1113,11 @@ async function loadSaleAccountingMap(client, tenantId, sales) {
 }
 
 async function loadPaperworkDocumentInvoiceMap(client, tenantId, documents) {
-  const requestIds = [...new Set((documents || []).map((document) => document.paperwork_request_id).filter(Boolean))];
-  if (!requestIds.length) return new Map();
+  const sourceDocuments = Array.isArray(documents) ? documents : [];
+  const requestIds = [...new Set(sourceDocuments
+    .filter((document) => !(document.sale_id || document.saleId))
+    .map((document) => document.paperwork_request_id || document.paperworkRequestId)
+    .filter(Boolean))];
 
   const chunks = Array.from(
     { length: Math.ceil(requestIds.length / 100) },
@@ -1103,14 +1125,45 @@ async function loadPaperworkDocumentInvoiceMap(client, tenantId, documents) {
   );
   const requestResults = await Promise.all(chunks.map((ids) => client
     .from('paperwork_requests')
-    .select('id, sale_id')
+    .select('id, sale_id, sale_line_id')
     .eq('tenant_id', tenantId)
     .in('id', ids)));
   const failedRequestResult = requestResults.find((result) => result.error);
   if (failedRequestResult?.error) throw failedRequestResult.error;
 
   const requests = requestResults.flatMap((result) => result.data || []);
-  const saleIds = [...new Set(requests.map((request) => request.sale_id).filter(Boolean))];
+  const saleLineIds = [...new Set(requests
+    .filter((request) => !request.sale_id)
+    .map((request) => request.sale_line_id)
+    .filter(Boolean))];
+  const saleLineChunks = Array.from(
+    { length: Math.ceil(saleLineIds.length / 100) },
+    (_, index) => saleLineIds.slice(index * 100, (index + 1) * 100),
+  );
+  const saleLineResults = await Promise.all(saleLineChunks.map((ids) => client
+    .from('showroom_sale_lines')
+    .select('id, sale_id')
+    .eq('tenant_id', tenantId)
+    .in('id', ids)));
+  const failedSaleLineResult = saleLineResults.find((result) => result.error);
+  if (failedSaleLineResult?.error) throw failedSaleLineResult.error;
+  const saleLineMap = new Map(saleLineResults
+    .flatMap((result) => result.data || [])
+    .map((line) => [line.id, line]));
+  const requestsMap = new Map(requests.map((request) => [request.id, request]));
+  const saleIdByDocumentId = new Map(sourceDocuments.map((document) => {
+    const requestId = document.paperwork_request_id || document.paperworkRequestId;
+    const request = requestsMap.get(requestId);
+    return [
+      document.id,
+      document.sale_id
+        || document.saleId
+        || request?.sale_id
+        || saleLineMap.get(request?.sale_line_id)?.sale_id
+        || null,
+    ];
+  }));
+  const saleIds = [...new Set([...saleIdByDocumentId.values()].filter(Boolean))];
   if (!saleIds.length) return new Map();
 
   const saleChunks = Array.from(
@@ -1129,11 +1182,11 @@ async function loadPaperworkDocumentInvoiceMap(client, tenantId, documents) {
   const salesMap = new Map(sales.map((sale) => [sale.id, sale]));
   const accountingMap = await loadSaleAccountingMap(client, tenantId, sales);
 
-  return requests.reduce((map, request) => {
-    const sale = salesMap.get(request.sale_id);
+  return sourceDocuments.reduce((map, document) => {
+    const sale = salesMap.get(saleIdByDocumentId.get(document.id));
     if (!sale) return map;
     const accounting = accountingMap.get(sale.id) || {};
-    map.set(request.id, {
+    map.set(document.id, {
       saleId: sale.id,
       saleNumber: sale.sale_number || '',
       totalAmount: toNumber(sale.total_amount),
@@ -1972,6 +2025,142 @@ export const motoCustomerCareService = {
     }));
   },
 
+  async listVaultPaperworkSummary({ tenantId, pageSize = 30, cursor = null } = {}) {
+    requireTenantId(tenantId);
+    const client = requireSupabase();
+    const safePageSize = Math.min(Math.max(Number(pageSize) || 30, 1), 100);
+    let query = client
+      .from('paperwork_documents')
+      .select(VAULT_PAPERWORK_SUMMARY_COLUMNS)
+      .eq('tenant_id', tenantId)
+      .eq('status', 'in_custody')
+      .order('updated_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(safePageSize + 1);
+
+    if (cursor?.updatedAt && cursor?.id) {
+      query = query.or(`updated_at.lt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.lt.${cursor.id})`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const rows = data || [];
+    const hasMore = rows.length > safePageSize;
+    const documents = rows.slice(0, safePageSize);
+    const trackingUnitIds = [...new Set(documents.map((document) => document.tracking_unit_id).filter(Boolean))];
+    const ownerPartnerIds = [...new Set(documents.map((document) => document.owner_partner_id).filter(Boolean))];
+
+    const [{ data: trackingUnits, error: trackingUnitsError }, partnersMap] = await Promise.all([
+      trackingUnitIds.length
+        ? client
+          .from('stock_tracking_units')
+          .select('id, product_product_id, tracking_number, status, data_status, incomplete_reason')
+          .eq('tenant_id', tenantId)
+          .in('id', trackingUnitIds)
+        : Promise.resolve({ data: [], error: null }),
+      loadPartnersByIdsMap(client, tenantId, ownerPartnerIds),
+    ]);
+    if (trackingUnitsError) throw trackingUnitsError;
+
+    const trackingUnitsMap = new Map((trackingUnits || []).map((unit) => [unit.id, unit]));
+    const productIds = [...new Set((trackingUnits || []).map((unit) => unit.product_product_id).filter(Boolean))];
+    const [{ data: products, error: productsError }, { data: identifierRows, error: identifiersError }] = await Promise.all([
+      productIds.length
+        ? client
+          .from('product_products')
+          .select('id, display_name, sku')
+          .eq('tenant_id', tenantId)
+          .in('id', productIds)
+        : Promise.resolve({ data: [], error: null }),
+      trackingUnitIds.length
+        ? client
+          .from('stock_tracking_unit_identifiers')
+          .select('id, tracking_unit_id, identifier_type_id, value, is_not_available')
+          .eq('tenant_id', tenantId)
+          .in('tracking_unit_id', trackingUnitIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (productsError) throw productsError;
+    if (identifiersError) throw identifiersError;
+
+    const identifierTypeIds = [...new Set((identifierRows || []).map((row) => row.identifier_type_id).filter(Boolean))];
+    const { data: identifierTypes, error: identifierTypesError } = identifierTypeIds.length
+      ? await client
+        .from('product_tracking_identifier_types')
+        .select('id, name, code')
+        .eq('tenant_id', tenantId)
+        .in('id', identifierTypeIds)
+      : { data: [], error: null };
+    if (identifierTypesError) throw identifierTypesError;
+
+    const productsMap = new Map((products || []).map((product) => [product.id, product]));
+    const identifierTypesMap = new Map((identifierTypes || []).map((type) => [type.id, type]));
+    const identifiersMap = (identifierRows || []).reduce((map, row) => {
+      const type = identifierTypesMap.get(row.identifier_type_id);
+      const current = map.get(row.tracking_unit_id) || [];
+      current.push({
+        id: row.id,
+        identifierTypeId: row.identifier_type_id,
+        label: type?.name || 'رقم تتبع',
+        code: type?.code || '',
+        value: row.value || '',
+        isNotAvailable: Boolean(row.is_not_available),
+      });
+      map.set(row.tracking_unit_id, current);
+      return map;
+    }, new Map());
+
+    const normalizedDocuments = documents.map((document) => {
+      const trackingUnit = trackingUnitsMap.get(document.tracking_unit_id) || null;
+      const product = productsMap.get(trackingUnit?.product_product_id) || null;
+      const documentOwnerName = document.document_owner_name ?? 'غير مسجل';
+      return {
+        id: document.id,
+        tenantId: document.tenant_id,
+        documentType: document.document_type || 'document',
+        documentTitle: document.document_title || '',
+        documentOwnerName,
+        ownerName: documentOwnerName,
+        displayTitle: document.document_title || document.manual_item_description || product?.display_name || trackingUnit?.tracking_number || 'ورقة بدون عنوان',
+        trackingUnitId: document.tracking_unit_id,
+        paperworkRequestId: document.paperwork_request_id,
+        ownerPartnerId: document.owner_partner_id,
+        manualItemDescription: document.manual_item_description || '',
+        sourceType: document.source_type || 'manual',
+        status: document.status,
+        releaseAuthorizedAt: document.release_authorized_at || null,
+        releaseAuthorizedToName: document.release_authorized_to_name || '',
+        releaseAuthorizationConsumedAt: document.release_authorization_consumed_at || null,
+        hasActiveReleaseAuthorization: Boolean(document.release_authorized_at && !document.release_authorization_consumed_at),
+        createdAt: document.created_at,
+        updatedAt: document.updated_at,
+        owner: partnersMap.get(document.owner_partner_id) || null,
+        trackingUnit: trackingUnit ? {
+          id: trackingUnit.id,
+          trackingNumber: trackingUnit.tracking_number || '',
+          status: trackingUnit.status || '',
+          productProductId: trackingUnit.product_product_id || null,
+          dataStatus: trackingUnit.data_status || 'complete',
+          incompleteReason: trackingUnit.incomplete_reason || null,
+          isIncomplete: ['incomplete', 'needs_review'].includes(trackingUnit.data_status),
+        } : null,
+        productName: product?.display_name || product?.sku || '',
+        itemDescription: trackingUnit
+          ? [product?.display_name, trackingUnit.tracking_number].filter(Boolean).join(' - ')
+          : document.manual_item_description || '',
+        trackingIdentifiers: identifiersMap.get(document.tracking_unit_id) || [],
+      };
+    });
+    const lastDocument = normalizedDocuments.at(-1);
+
+    return {
+      documents: normalizedDocuments,
+      hasMore,
+      cursor: hasMore && lastDocument ? { updatedAt: lastDocument.updatedAt, id: lastDocument.id } : null,
+    };
+  },
+
   async listPaperworkDocuments({ tenantId, limit = 250, status = null } = {}) {
     requireTenantId(tenantId);
     const client = requireSupabase();
@@ -2218,6 +2407,7 @@ export const motoCustomerCareService = {
     });
     if (error) throw error;
 
+    invalidateVaultPaperworkCache({ tenantId });
     return this.getPaperworkDocumentDetails({ tenantId, documentId });
   },
 
@@ -2234,6 +2424,7 @@ export const motoCustomerCareService = {
     });
 
     if (error) throw error;
+    invalidateVaultPaperworkCache({ tenantId });
     return this.getPaperworkDocumentDetails({ tenantId, documentId });
   },
 
@@ -2252,6 +2443,7 @@ export const motoCustomerCareService = {
     });
 
     if (error) throw error;
+    invalidateVaultPaperworkCache({ tenantId });
     return this.getPaperworkDocumentDetails({ tenantId, documentId });
   },
 
@@ -2269,6 +2461,7 @@ export const motoCustomerCareService = {
     });
 
     if (error) throw error;
+    invalidateVaultPaperworkCache({ tenantId });
     return this.getPaperworkDocumentDetails({ tenantId, documentId });
   },
 
@@ -2447,6 +2640,7 @@ export const motoCustomerCareService = {
       throw moveError;
     }
 
+    invalidateVaultPaperworkCache({ tenantId });
     return document.id;
   },
 
@@ -2489,6 +2683,7 @@ export const motoCustomerCareService = {
       throw new Error(error.message || 'تعذر تسجيل الجواب.');
     }
 
+    invalidateVaultPaperworkCache({ tenantId });
     return data?.document_id || null;
   },
 
@@ -3290,6 +3485,7 @@ export const motoCustomerCareService = {
       return {
         requestId: data?.request_id || requestId,
         documentId: data?.document_id || null,
+        saleId: data?.sale_id || null,
         oldStage: data?.old_stage || '',
         currentStage: data?.current_stage || 'received_from_processor',
         updatedAt: data?.updated_at || null,
@@ -3334,6 +3530,7 @@ export const motoCustomerCareService = {
       }
     });
 
+    if (succeeded.length) invalidateVaultPaperworkCache({ tenantId });
     return { succeeded, failed, imageFailed };
   },
 
@@ -3441,6 +3638,7 @@ export const motoCustomerCareService = {
       }
     }
 
+    invalidateVaultPaperworkCache({ tenantId });
     return {
       requestId: data?.request_id || requestId,
       documentId: data?.document_id || null,
@@ -3496,6 +3694,7 @@ export const motoCustomerCareService = {
     });
     if (error) throw error;
 
+    invalidateVaultPaperworkCache({ tenantId });
     return {
       requestId: data?.request_id || requestId,
       documentId: data?.document_id || documentId,
@@ -3531,6 +3730,7 @@ export const motoCustomerCareService = {
 
     if (error) throw error;
 
+    invalidateVaultPaperworkCache({ tenantId });
     return {
       requestId: data?.request_id || requestId,
       documentId: data?.document_id || null,
@@ -3627,6 +3827,7 @@ export const motoCustomerCareService = {
     });
 
     if (error) throw error;
+    invalidateVaultPaperworkCache({ tenantId });
     return {
       count: Number(data?.count || uniqueRequestIds.length),
       requestIds: data?.request_ids || uniqueRequestIds,
