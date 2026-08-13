@@ -164,6 +164,7 @@ function DocumentAttachments({ attachments = [] }) {
 function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissingOwnerPartnerClick, showAttachments = true }) {
   const attachments = document.attachments || (document.jawabPhoto ? [document.jawabPhoto] : []);
   const ownerName = document.documentOwnerName ?? document.ownerName ?? EMPTY_VALUE;
+  const ownerPartnerPhone = document.owner?.phone || document.owner?.phone1 || document.owner?.phone2 || '';
   const title = document.documentTitle || document.displayTitle || DOCUMENT_TYPE_LABELS[document.documentType] || 'مستند';
   const trackingIdentifiersText = formatTrackingIdentifiers(document.trackingIdentifiers);
 
@@ -199,9 +200,10 @@ function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissin
             ) : null}
             <div className="mt-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
               {document.owner?.name ? (
-                <p className="inline-flex min-w-0 max-w-full text-[10px] font-bold text-slate-600">
-                  <span className="truncate">Partner: {document.owner.name}</span>
-                </p>
+                <div className="min-w-0 max-w-full text-[10px] font-bold text-slate-600">
+                  <p className="truncate">Partner: {document.owner.name}</p>
+                  {ownerPartnerPhone ? <p className="mt-0.5 truncate text-[9px] text-slate-400" dir="ltr">{ownerPartnerPhone}</p> : null}
+                </div>
               ) : (
                 <button type="button" disabled={!canEditOwnerPartner} onClick={onMissingOwnerPartnerClick} className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 ring-1 ring-amber-200/80 transition enabled:cursor-pointer enabled:hover:bg-amber-100 enabled:focus:outline-none enabled:focus:ring-2 enabled:focus:ring-amber-300 disabled:cursor-default">
                   لا يوجد Partner مرتبط
@@ -224,7 +226,13 @@ function DocumentOverviewPanel({ document, canEditOwnerPartner = false, onMissin
           <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
             <div><dt className="text-[10px] font-bold text-slate-400">نوع المستند</dt><dd className="mt-1 text-xs font-black text-slate-800">{DOCUMENT_TYPE_LABELS[document.documentType] || document.documentType || EMPTY_VALUE}</dd></div>
             <div><dt className="text-[10px] font-bold text-slate-400">مصدر التسجيل</dt><dd className="mt-1 text-xs font-black text-slate-800">{document.paperworkRequestId ? 'طلب أوراق' : 'تسجيل يدوي'}</dd></div>
-            <div><dt className="text-[10px] font-bold text-slate-400">Partner المرتبط</dt><dd className="mt-1 text-xs font-black text-slate-800">{document.owner?.name || (canEditOwnerPartner ? <button type="button" onClick={onMissingOwnerPartnerClick} className="text-blue-700 hover:underline">تحديد Partner</button> : EMPTY_VALUE)}</dd></div>
+            <div>
+              <dt className="text-[10px] font-bold text-slate-400">Partner المرتبط</dt>
+              <dd className="mt-1 text-xs font-black text-slate-800">
+                {document.owner?.name || (canEditOwnerPartner ? <button type="button" onClick={onMissingOwnerPartnerClick} className="text-blue-700 hover:underline">تحديد Partner</button> : EMPTY_VALUE)}
+                {document.owner?.name && ownerPartnerPhone ? <span className="mt-1 block text-[10px] font-bold text-slate-400" dir="ltr">{ownerPartnerPhone}</span> : null}
+              </dd>
+            </div>
             <div><dt className="text-[10px] font-bold text-slate-400">تاريخ إنشاء السجل</dt><dd className="mt-1 text-xs font-black text-slate-800">{formatDateTime(document.createdAt)}</dd></div>
             <div><dt className="text-[10px] font-bold text-slate-400">آخر تحديث</dt><dd className="mt-1 text-xs font-black text-slate-800">{formatDateTime(document.updatedAt)}</dd></div>
             <div><dt className="text-[10px] font-bold text-slate-400">عدد الحركات</dt><dd className="mt-1 text-xs font-black text-slate-800">{document.moves?.length || 0}</dd></div>
