@@ -40,11 +40,8 @@ function getPaperworkGuardianshipLabel(note) {
 function getPaperworkStageLabel(stageCode) {
   return {
     preparation: 'تجهيز بيانات الورق',
-    owner_confirmation: 'تحديد صاحب الورق',
     sent_to_processor: 'تم الإرسال للجهة',
-    processor_ready: 'الورق جاهز عند الجهة',
     received_from_processor: 'تم استلام الورق من الجهة',
-    client_notified: 'تم إبلاغ العميل',
     delivered: 'تم التسليم للعميل',
     cancelled: 'ملغي',
   }[stageCode] || 'مرحلة الورق غير محددة';

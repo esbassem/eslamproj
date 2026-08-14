@@ -15,14 +15,15 @@ function register(paths, loaderName, exportName) {
   paths.forEach((path) => { routes[path] = Component; });
 }
 
-register(['/app/products'], 'products', 'ProductsPage');
-register(['/app/products/attributes'], 'productAttributes', 'ProductAttributesPage');
-register(['/app/products/attribute-values'], 'productAttributeValues', 'ProductAttributeValuesPage');
-register(['/app/products/tracking-identifiers'], 'productTrackingIdentifiers', 'ProductTrackingIdentifiersPage');
-register(['/app/inventory'], 'inventory', 'InventoryDashboard');
-register(['/app/inventory/stock'], 'inventoryStock', 'StockListPage');
-register(['/app/inventory/serials'], 'inventorySerials', 'SerialUnitsPage');
-register(['/app/inventory/moves'], 'inventoryMoves', 'StockMovesPage');
+register(['/apps/inventory'], 'inventoryOverview', 'InventoryOverviewPage');
+register(['/apps/inventory/products'], 'products', 'ProductsPage');
+register(['/apps/inventory/products/attributes'], 'productAttributes', 'ProductAttributesPage');
+register(['/apps/inventory/products/tracking-identifiers'], 'productTrackingIdentifiers', 'ProductTrackingIdentifiersPage');
+register(['/apps/inventory/stock'], 'inventoryStock', 'StockListPage');
+register(['/apps/inventory/unique-units'], 'inventorySerials', 'SerialUnitsPage');
+register(['/apps/inventory/operations/moves'], 'inventoryMoves', 'StockMovesPage');
+register(['/apps/inventory/operations/locations'], 'inventoryLocations', 'InventoryLocationsPage');
+register(['/apps/inventory/operations/counts'], 'inventoryCounts', 'InventoryCountsPage');
 register(['/app/sales', '/app/sales/invoices'], 'invoices', 'InvoicesPage');
 register(['/app/sales/contracts', '/app/contracts'], 'contracts', 'ContractsPage');
 register(['/app/accounting', '/app/accounting/payments', '/apps/accounting', '/apps/accounting/payments'], 'payments', 'PaymentsPage');

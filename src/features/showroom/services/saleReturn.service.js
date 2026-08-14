@@ -32,7 +32,7 @@ export async function listSaleReturnContext({ tenantId, sale }) {
   ]); if (docsError) throw docsError;
   return lines.map((line) => {
     const original = Number(line.quantity || 0); const returnedQuantity = returned.get(line.id) || 0; const request = requestMap.get(line.id); const trackingUnitId = unitId(line);
-    const hasAnswer = (docs || []).some((doc) => doc.paperwork_request_id === request?.id || doc.tracking_unit_id === trackingUnitId) || request?.status === 'done' || ['received_from_processor', 'client_notified', 'delivered'].includes(request?.current_stage);
+    const hasAnswer = (docs || []).some((doc) => doc.paperwork_request_id === request?.id || doc.tracking_unit_id === trackingUnitId) || request?.status === 'done' || ['received_from_processor', 'delivered'].includes(request?.current_stage);
     const availableQuantity = Math.max(original - returnedQuantity, 0);
     return { ...line, trackingUnitId, identifiers: idsMap.get(trackingUnitId) || [], originalQuantity: original, returnedQuantity, availableQuantity, paperworkRequest: request || null, hasPaperworkAnswer: hasAnswer, blockedReason: hasAnswer ? 'لا يمكن إرجاع هذه القطعة لأن جواب الأوراق تم استخراجه أو استلامه بالفعل. يلزم إجراء استثنائي مستقل.' : availableQuantity <= 0 ? 'سبق إرجاع السطر بالكامل.' : '' };
   });

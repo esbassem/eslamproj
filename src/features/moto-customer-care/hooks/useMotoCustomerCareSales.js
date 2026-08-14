@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motoCustomerCareService } from '@/features/moto-customer-care/services/motoCustomerCare.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
+const EMPTY_PAPERWORK_REPORTS = Object.freeze({
+  missing: 0,
+  totalRequests: 0,
+  vault: 0,
+  sentPendingReceipt: 0,
+  pendingNotification: 0,
+});
+
 function normalizeQuery(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -31,7 +39,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
   const [paperworkRequests, setPaperworkRequests] = useState([]);
   const [paperworkDocuments, setPaperworkDocuments] = useState([]);
   const [paperworkDocumentMoves, setPaperworkDocumentMoves] = useState([]);
-  const [paperworkReports, setPaperworkReports] = useState({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
+  const [paperworkReports, setPaperworkReports] = useState(EMPTY_PAPERWORK_REPORTS);
   const [reportsStatus, setReportsStatus] = useState('idle');
   const [reportsError, setReportsError] = useState('');
   const [sectionStatus, setSectionStatus] = useState({ sales: 'idle', requests: 'idle', papers: 'idle' });
@@ -53,7 +61,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     setPaperworkRequests([]);
     setPaperworkDocuments([]);
     setPaperworkDocumentMoves([]);
-    setPaperworkReports({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
+    setPaperworkReports(EMPTY_PAPERWORK_REPORTS);
     setReportsStatus('idle');
     setReportsError('');
     setSectionStatus({ sales: 'idle', requests: 'idle', papers: 'idle' });
@@ -67,7 +75,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     let active = true;
 
     if (!tenant?.id) {
-      setPaperworkReports({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
+      setPaperworkReports(EMPTY_PAPERWORK_REPORTS);
       setReportsStatus('idle');
       setReportsError('');
       return () => {};
@@ -82,7 +90,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
           return;
         }
 
-        setPaperworkReports(reports || { missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
+        setPaperworkReports(reports || EMPTY_PAPERWORK_REPORTS);
         setReportsStatus('ready');
       })
       .catch((nextError) => {
@@ -90,7 +98,7 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
           return;
         }
 
-        setPaperworkReports({ missing: 0, totalRequests: 0, vault: 0, sentPendingReceipt: 0 });
+        setPaperworkReports(EMPTY_PAPERWORK_REPORTS);
         setReportsStatus('error');
         setReportsError(nextError?.message || 'تعذر تحميل تقارير الأوراق.');
       });
@@ -287,6 +295,30 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     return loadPaperwork();
   }, [loadPaperwork, sectionStatus.papers]);
 
+  const ensureAllPaperworkRequestsLoaded = useCallback(() => {
+    if (!tenant?.id || !enabled || requestsLimitRef.current === null) return () => {};
+    let active = true;
+    setLoadStatus('requests', 'loading');
+    setLoadError('requests', '');
+    motoCustomerCareService.listPaperworkRequests({
+      tenantId: tenant.id,
+      limit: null,
+      includeDetails: false,
+    }).then((requests) => {
+      if (!active) return;
+      setPaperworkRequests(requests);
+      requestsReadyRef.current = true;
+      requestsTenantIdRef.current = tenant.id;
+      requestsLimitRef.current = null;
+      setLoadStatus('requests', 'ready');
+    }).catch((nextError) => {
+      if (!active) return;
+      setLoadStatus('requests', 'error');
+      setLoadError('requests', nextError?.message || 'تعذر تحميل طلبات الأوراق الكاملة.');
+    });
+    return () => { active = false; };
+  }, [enabled, setLoadError, setLoadStatus, tenant?.id]);
+
   const query = normalizeQuery(search);
 
   const filteredSales = useMemo(
@@ -351,5 +383,6 @@ export function useMotoCustomerCareSales({ search = '', status = 'all', limit = 
     refresh,
     updatePaperworkRequestLocally,
     ensurePaperworkLoaded,
+    ensureAllPaperworkRequestsLoaded,
   };
 }

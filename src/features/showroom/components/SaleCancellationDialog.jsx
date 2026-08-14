@@ -34,11 +34,8 @@ const BLOCKER_MESSAGES = {
 
 const PAPERWORK_STAGES = {
   preparation: 'مرحلة الإعداد',
-  owner_confirmation: 'تحديد صاحب الأوراق',
   sent_to_processor: 'تم الإرسال إلى الجهة',
-  processor_ready: 'الأوراق جاهزة لدى الجهة',
   received_from_processor: 'تم استلام الأوراق من الجهة',
-  client_notified: 'تم إبلاغ العميل',
   delivered: 'تم التسليم للعميل',
   cancelled: 'ملغي',
 };

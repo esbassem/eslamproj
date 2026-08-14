@@ -62,13 +62,14 @@ const PAPERWORK_REQUEST_COLUMNS = `
   document_owner_status,
   document_owner_note,
   processor_partner_id,
-  customer_confirmed,
-  customer_confirmed_at,
-  customer_confirmed_by,
   tracking_photos_ignored,
   tracking_photos_ignore_reason,
   current_stage,
   stage_entered_at,
+  customer_notified_at,
+  customer_notified_by,
+  customer_notification_channel,
+  customer_notification_notes,
   assigned_to,
   status,
   priority,
@@ -159,12 +160,9 @@ const PAPERWORK_REQUEST_EVENT_COLUMNS = `
 const TENANT_USER_COLUMNS = 'id, full_name, email';
 const PAPERWORK_STAGE_LABELS = {
   preparation: 'تجهيز بيانات الورق',
-  owner_confirmation: 'تحديد صاحب الورق',
   sent_to_processor: 'تم الإرسال للجهة',
-  processor_ready: 'الورق جاهز عند الجهة',
   pending_processor_cancellation: 'بانتظار الإلغاء لدى الجهة',
   received_from_processor: 'تم استلام الورق من الجهة',
-  client_notified: 'تم إبلاغ العميل',
   delivered: 'تم التسليم للعميل',
   cancelled: 'ملغي',
 };
@@ -186,7 +184,6 @@ const PAPERWORK_DOCUMENT_STATUS_LABELS = {
   in_custody: 'موجود في الخزنة',
   available: 'متاح',
   delivered: 'تم التسليم',
-  delivered_to_customer: 'تم التسليم للعميل',
   out: 'خارج الخزنة',
   cancelled: 'ملغى',
 };
@@ -1643,14 +1640,15 @@ function normalizePaperworkRequest(record, maps = {}) {
     documentOwnerStatus: record.document_owner_status || '',
     documentOwnerNote: record.document_owner_note || '',
     processorPartnerId: record.processor_partner_id,
-    customerConfirmed: Boolean(record.customer_confirmed),
-    customerConfirmedAt: record.customer_confirmed_at || null,
-    customerConfirmedBy: record.customer_confirmed_by || null,
-    customerConfirmedByName: maps.usersMap?.get(record.customer_confirmed_by)?.name || '',
     trackingPhotosIgnored: Boolean(record.tracking_photos_ignored),
     trackingPhotosIgnoreReason: record.tracking_photos_ignore_reason || '',
     currentStage: record.current_stage || '',
     stageEnteredAt: record.stage_entered_at,
+    customerNotifiedAt: record.customer_notified_at,
+    customerNotifiedBy: record.customer_notified_by,
+    customerNotifiedByName: maps.usersMap?.get(record.customer_notified_by)?.name || '',
+    customerNotificationChannel: record.customer_notification_channel || '',
+    customerNotificationNotes: record.customer_notification_notes || '',
     assignedTo: record.assigned_to,
     status: record.status || 'open',
     priority: record.priority || 'normal',
@@ -1735,6 +1733,8 @@ export const motoCustomerCareService = {
       requestsResult,
       requestsCountResult,
       vaultDocumentsResult,
+      sentPendingReceiptResult,
+      pendingNotificationResult,
     ] = await Promise.all([
       loadActiveSaleLineIds(),
       client
@@ -1751,6 +1751,19 @@ export const motoCustomerCareService = {
         .select('id', { count: 'exact', head: true })
         .eq('tenant_id', tenantId)
         .eq('status', 'in_custody'),
+      client
+        .from('paperwork_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('status', 'open')
+        .eq('current_stage', 'sent_to_processor'),
+      client
+        .from('paperwork_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('status', 'open')
+        .eq('current_stage', 'received_from_processor')
+        .is('customer_notified_at', null),
     ]);
 
     if (requestsResult.error) {
@@ -1765,9 +1778,11 @@ export const motoCustomerCareService = {
       throw vaultDocumentsResult.error;
     }
 
+    if (sentPendingReceiptResult.error) throw sentPendingReceiptResult.error;
+    if (pendingNotificationResult.error) throw pendingNotificationResult.error;
+
     const requests = requestsResult.data || [];
     const requestedSaleLineIds = new Set();
-    const sentPendingReceiptSaleLineIds = new Set();
 
     requests.forEach((request) => {
       if (!request?.sale_line_id) {
@@ -1780,18 +1795,14 @@ export const motoCustomerCareService = {
 
       requestedSaleLineIds.add(request.sale_line_id);
 
-      if (['sent_to_processor', 'processor_ready'].includes(request.current_stage)) {
-        sentPendingReceiptSaleLineIds.add(request.sale_line_id);
-        return;
-      }
-
     });
 
     return {
       missing: Math.max(activeSaleLineIds.size - requestedSaleLineIds.size, 0),
       totalRequests: requestsCountResult.count || 0,
       vault: vaultDocumentsResult.count || 0,
-      sentPendingReceipt: sentPendingReceiptSaleLineIds.size,
+      sentPendingReceipt: sentPendingReceiptResult.count || 0,
+      pendingNotification: pendingNotificationResult.count || 0,
     };
   },
 
@@ -1877,7 +1888,10 @@ export const motoCustomerCareService = {
         ? loadTenantUsersByIdsMap(
           client,
           tenantId,
-          requests.flatMap((request) => [request.customer_confirmed_by, request.created_by]).filter(Boolean),
+          requests.flatMap((request) => [
+            request.created_by,
+            request.customer_notified_by,
+          ]).filter(Boolean),
         )
         : Promise.resolve(new Map()),
     ]);
@@ -1953,11 +1967,8 @@ export const motoCustomerCareService = {
       .eq('status', 'open')
       .in('current_stage', [
         'preparation',
-        'owner_confirmation',
         'sent_to_processor',
-        'processor_ready',
         'received_from_processor',
-        'client_notified',
       ])
       .order('created_at', { ascending: false })
       .limit(20);
@@ -2885,7 +2896,7 @@ export const motoCustomerCareService = {
         customer_id: item.customerId || null,
         document_owner_partner_id: documentOwnerPartnerId || item.customerId || null,
         processor_partner_id: processorPartnerId || null,
-        current_stage: 'sent_to_processor',
+        current_stage: 'preparation',
         status: 'open',
         priority: priority || 'normal',
         notes: String(notes || '').trim() || null,
@@ -2898,7 +2909,8 @@ export const motoCustomerCareService = {
       throw error;
     }
 
-    if (request?.id) {
+    if (request?.id && processorPartnerId) {
+      await this.sendPaperworkRequestToProcessor({ tenantId, requestId: request.id });
       await invokePaperworkNotification(client, request.id);
     }
 
@@ -3200,104 +3212,6 @@ export const motoCustomerCareService = {
     return true;
   },
 
-  async confirmPaperworkRequestWithCustomer({ tenantId, requestId } = {}) {
-    requireTenantId(tenantId);
-    if (!requestId) {
-      throw new Error('تعذر تحديد طلب الأوراق.');
-    }
-
-    const client = requireSupabase();
-    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
-    const confirmedAt = new Date().toISOString();
-    const { data: updatedRequest, error: updateError } = await client
-      .from('paperwork_requests')
-      .update({
-        customer_confirmed: true,
-        customer_confirmed_at: confirmedAt,
-        customer_confirmed_by: currentTenantUserId,
-        updated_at: confirmedAt,
-      })
-      .eq('tenant_id', tenantId)
-      .eq('id', requestId)
-      .eq('customer_confirmed', false)
-      .select('id, customer_confirmed, customer_confirmed_at, customer_confirmed_by')
-      .maybeSingle();
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    if (!updatedRequest) {
-      const { data: existingRequest, error: existingError } = await client
-        .from('paperwork_requests')
-        .select('id, customer_confirmed, customer_confirmed_at, customer_confirmed_by')
-        .eq('tenant_id', tenantId)
-        .eq('id', requestId)
-        .maybeSingle();
-
-      if (existingError) throw existingError;
-      if (!existingRequest) throw new Error('طلب الأوراق غير موجود.');
-      if (!existingRequest.customer_confirmed) throw new Error('تعذر تأكيد الطلب مع العميل.');
-
-      const existingUsers = await loadTenantUsersByIdsMap(client, tenantId, [existingRequest.customer_confirmed_by]);
-      return {
-        customerConfirmed: true,
-        customerConfirmedAt: existingRequest.customer_confirmed_at,
-        customerConfirmedBy: existingRequest.customer_confirmed_by,
-        customerConfirmedByName: existingUsers.get(existingRequest.customer_confirmed_by)?.name || '',
-        event: null,
-      };
-    }
-
-    const eventNotes = 'تم التأكيد مع العميل على بيانات إصدار الأوراق.';
-    const { data: event, error: eventError } = await client
-      .from('paperwork_request_events')
-      .insert({
-        tenant_id: tenantId,
-        request_id: requestId,
-        event_type: 'note',
-        notes: eventNotes,
-        created_by: currentTenantUserId,
-      })
-      .select('id, tenant_id, request_id, event_type, notes, created_by, created_at')
-      .single();
-
-    if (eventError) {
-      await client
-        .from('paperwork_requests')
-        .update({
-          customer_confirmed: false,
-          customer_confirmed_at: null,
-          customer_confirmed_by: null,
-        })
-        .eq('tenant_id', tenantId)
-        .eq('id', requestId)
-        .eq('customer_confirmed_by', currentTenantUserId)
-        .eq('customer_confirmed_at', confirmedAt);
-      throw eventError;
-    }
-
-    const usersMap = await loadTenantUsersByIdsMap(client, tenantId, [currentTenantUserId]);
-    const employeeName = usersMap.get(currentTenantUserId)?.name || '';
-
-    return {
-      customerConfirmed: true,
-      customerConfirmedAt: updatedRequest.customer_confirmed_at,
-      customerConfirmedBy: currentTenantUserId,
-      customerConfirmedByName: employeeName,
-      event: {
-        id: event.id,
-        tenantId: event.tenant_id,
-        requestId: event.request_id,
-        eventType: event.event_type,
-        notes: event.notes,
-        createdBy: event.created_by,
-        createdByName: employeeName,
-        createdAt: event.created_at,
-      },
-    };
-  },
-
   async sendPaperworkRequestToProcessor({ tenantId, requestId, notes = '' } = {}) {
     requireTenantId(tenantId);
     if (!requestId) {
@@ -3305,141 +3219,17 @@ export const motoCustomerCareService = {
     }
 
     const client = requireSupabase();
-    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
-    const { data: request, error: requestError } = await client
-      .from('paperwork_requests')
-      .select(`
-        id,
-        document_owner_status,
-        document_owner_name,
-        document_owner_partner_id,
-        processor_partner_id,
-        customer_confirmed,
-        current_stage,
-        status,
-        blocked_reason,
-        processor_cancellation_blocking_request_id
-      `)
-      .eq('tenant_id', tenantId)
-      .eq('id', requestId)
-      .maybeSingle();
-
-    if (requestError) throw requestError;
-    if (!request) throw new Error('طلب الأوراق غير موجود.');
-
-    const { data: ownerAttachments, error: ownerAttachmentsError } = await client
-      .from('ir_attachments')
-      .select('document_type')
-      .eq('tenant_id', tenantId)
-      .eq('related_model', 'paperwork_requests')
-      .eq('related_id', requestId)
-      .eq('document_type', 'document_owner_id_card')
-      .eq('is_active', true);
-
-    if (ownerAttachmentsError) throw ownerAttachmentsError;
-
-    const ownerIsReady = request.document_owner_status === 'later'
-      || (
-        request.document_owner_status === 'confirmed'
-        && Boolean(request.document_owner_name || request.document_owner_partner_id)
-        && Boolean(ownerAttachments?.length)
-      );
-
-    if (!request.customer_confirmed) throw new Error('يجب التأكيد مع العميل أولًا.');
-    if (!request.processor_partner_id) throw new Error('يجب تحديد جهة إصدار الأوراق.');
-    if (request.processor_cancellation_blocking_request_id) {
-      const { data: blockingRequest, error: blockingError } = await client
-        .from('paperwork_requests')
-        .select('id, status, current_stage, processor_partner_id')
-        .eq('tenant_id', tenantId)
-        .eq('id', request.processor_cancellation_blocking_request_id)
-        .maybeSingle();
-      if (blockingError) throw blockingError;
-      if (blockingRequest
-        && blockingRequest.processor_partner_id === request.processor_partner_id
-        && !(blockingRequest.status === 'cancelled' && blockingRequest.current_stage === 'cancelled')) {
-        throw new Error('يوجد طلب سابق لدى جهة الإصدار ينتظر تأكيد الإلغاء بسبب استبدال القطعة. أكد إلغاء الطلب السابق أولًا.');
-      }
-    }
-    if (!ownerIsReady) throw new Error('بيانات صاحب الورق أو صورة البطاقة غير مكتملة.');
-    if (request.blocked_reason) throw new Error(request.blocked_reason);
-    if (request.current_stage !== 'preparation') throw new Error('الطلب ليس في مرحلة التجهيز.');
-    if (request.status !== 'open') throw new Error('لا يمكن إرسال طلب غير مفتوح.');
-
-    const updatedAt = new Date().toISOString();
-    const { data: updatedRequest, error: updateError } = await client
-      .from('paperwork_requests')
-      .update({
-        current_stage: 'sent_to_processor',
-        updated_at: updatedAt,
-      })
-      .eq('tenant_id', tenantId)
-      .eq('id', requestId)
-      .eq('current_stage', 'preparation')
-      .eq('customer_confirmed', true)
-      .not('processor_partner_id', 'is', null)
-      .select('id, current_stage, updated_at')
-      .maybeSingle();
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    if (!updatedRequest) {
-      throw new Error('تعذر إرسال الطلب. راجع مرحلة الطلب والتأكيد مع العميل وجهة الإصدار.');
-    }
-
-    const additionalNotes = String(notes || '').trim();
-    const eventNotes = [
-      'تم إرسال طلب الأوراق إلى الجهة المختصة.',
-      additionalNotes,
-    ].filter(Boolean).join('\n');
-    const { data: event, error: eventError } = await client
-      .from('paperwork_request_events')
-      .insert({
-        tenant_id: tenantId,
-        request_id: requestId,
-        event_type: 'sent_to_supplier',
-        old_stage: 'preparation',
-        new_stage: 'sent_to_processor',
-        notes: eventNotes,
-        created_by: currentTenantUserId,
-      })
-      .select('id, tenant_id, request_id, event_type, old_stage, new_stage, notes, created_by, created_at')
-      .single();
-
-    if (eventError) {
-      await client
-        .from('paperwork_requests')
-        .update({
-          current_stage: 'preparation',
-          updated_at: updatedAt,
-        })
-        .eq('tenant_id', tenantId)
-        .eq('id', requestId)
-        .eq('current_stage', 'sent_to_processor')
-        .eq('updated_at', updatedAt);
-      throw eventError;
-    }
-
-    const usersMap = await loadTenantUsersByIdsMap(client, tenantId, [currentTenantUserId]);
-    const employeeName = usersMap.get(currentTenantUserId)?.name || '';
+    const { data, error } = await client.rpc('send_paperwork_request_to_processor', {
+      p_tenant_id: tenantId,
+      p_request_id: requestId,
+      p_notes: String(notes || '').trim() || null,
+    });
+    if (error) throw error;
 
     return {
-      currentStage: 'sent_to_processor',
-      updatedAt: updatedRequest.updated_at,
-      event: {
-        id: event.id,
-        tenantId: event.tenant_id,
-        requestId: event.request_id,
-        eventType: event.event_type,
-        oldStage: event.old_stage,
-        newStage: event.new_stage,
-        notes: event.notes,
-        createdBy: event.created_by,
-        createdByName: employeeName,
-        createdAt: event.created_at,
-      },
+      requestId: data?.request_id || requestId,
+      currentStage: data?.current_stage || 'sent_to_processor',
+      updatedAt: data?.updated_at || new Date().toISOString(),
     };
   },
 
@@ -3534,7 +3324,7 @@ export const motoCustomerCareService = {
     return { succeeded, failed, imageFailed };
   },
 
-  async notifyPaperworkCustomer({ tenantId, requestId } = {}) {
+  async notifyPaperworkCustomer({ tenantId, requestId, channel = 'phone', notes = '' } = {}) {
     requireTenantId(tenantId);
     if (!requestId) {
       throw new Error('تعذر تحديد طلب الأوراق.');
@@ -3544,15 +3334,19 @@ export const motoCustomerCareService = {
     const { data, error } = await client.rpc('notify_paperwork_customer', {
       p_tenant_id: tenantId,
       p_request_id: requestId,
+      p_channel: channel,
+      p_notes: String(notes || '').trim() || null,
     });
 
     if (error) throw error;
 
     return {
       requestId: data?.request_id || requestId,
-      oldStage: data?.old_stage || 'received_from_processor',
-      currentStage: data?.current_stage || 'client_notified',
-      updatedAt: data?.updated_at || new Date().toISOString(),
+      currentStage: data?.current_stage || 'received_from_processor',
+      customerNotifiedAt: data?.customer_notified_at || null,
+      customerNotifiedBy: data?.customer_notified_by || null,
+      customerNotificationChannel: data?.customer_notification_channel || channel,
+      customerNotificationNotes: data?.customer_notification_notes || '',
     };
   },
 
@@ -3649,21 +3443,14 @@ export const motoCustomerCareService = {
     };
   },
 
-  // نقطة التنفيذ المركزية للإجراءات الاستثنائية. يضاف معالج كل actionId هنا
-  // عند اعتماد قواعده، وتظل الخيارات غير المنفذة disabled في ملف الإعدادات.
+  // نقطة التنفيذ المركزية للإجراءات الاستثنائية المعتمدة.
   async executePaperworkExceptionalAction({ actionId, ...payload } = {}) {
     if (!actionId) throw new Error('تعذر تحديد الإجراء الاستثنائي.');
 
     const handlers = {
       previous_customer_delivery: () => this.recordPreviousCustomerDelivery(payload),
       link_existing_vault_document: () => this.linkExistingVaultDocumentToRequest(payload),
-      // direct_processor_receipt: () => this.recordDirectProcessorReceipt(payload),
-      // previous_processor_send: () => this.recordPreviousProcessorSend(payload),
-      // move_stage: () => this.movePaperworkRequestStage(payload),
       cancel: () => this.cancelPaperworkRequest(payload),
-      // reopen: () => this.reopenPaperworkRequest(payload),
-      // pause: () => this.pausePaperworkRequest(payload),
-      // resume: () => this.resumePaperworkRequest(payload),
     };
 
     const handler = handlers[actionId];

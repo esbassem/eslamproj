@@ -1,19 +1,19 @@
 import {
-  ArrowDownToLine, BarChart3, BookOpen, Boxes, CalendarClock, Circle, ContactRound,
+  ArrowDownToLine, BarChart3, BookOpen, Boxes, CalendarClock, Circle, ClipboardCheck, ContactRound,
   CreditCard, FilePlus2, FileSignature, FileText, Handshake, Hash, Image, Images,
-  Landmark, Layers3, LayoutDashboard, ListFilter, Package, PlusCircle, Receipt,
+  Landmark, Layers3, LayoutDashboard, ListFilter, MapPin, Package, PlusCircle, Receipt,
   ReceiptText, Settings, ShoppingCart, Store, Truck, Users, Users2, WalletCards,
-  Warehouse,
+  ScanLine, Warehouse, Workflow,
 } from 'lucide-react';
 import { ROUTES } from '@/core/config/routes.config';
 
 const APP_ROUTE_VALUES = Object.values(ROUTES);
 const ICONS = {
-  ArrowDownToLine, BarChart3, BookOpen, Boxes, CalendarClock, Circle, ContactRound,
+  ArrowDownToLine, BarChart3, BookOpen, Boxes, CalendarClock, Circle, ClipboardCheck, ContactRound,
   CreditCard, FilePlus2, FileSignature, FileText, Handshake, Hash, Image, Images,
-  Landmark, Layers3, LayoutDashboard, ListFilter, Package, PlusCircle, Receipt,
+  Landmark, Layers3, LayoutDashboard, ListFilter, MapPin, Package, PlusCircle, Receipt,
   ReceiptText, Settings, ShoppingCart, Store, Truck, Users, Users2, WalletCards,
-  Warehouse,
+  ScanLine, Warehouse, Workflow,
 };
 
 function normalizePathValue(routePath) {

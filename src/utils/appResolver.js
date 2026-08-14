@@ -31,7 +31,8 @@ export function getAppCodeFromPathname(pathname = '') {
   const appMatch = normalizedPathname.match(/^\/apps?\/([^/]+)/);
 
   if (appMatch?.[1]) {
-    return normalizeAppCode(appMatch[1]);
+    const routeCode = normalizeAppCode(appMatch[1]);
+    return routeCode === 'inventory' ? 'products' : routeCode;
   }
 
   if (normalizedPathname === ROUTES.admin || normalizedPathname === '/admin/dashboard') {
@@ -43,6 +44,9 @@ export function getAppCodeFromPathname(pathname = '') {
 
 export function getAppBasePath(appCode) {
   const normalizedAppCode = normalizeAppCode(appCode);
+  if (normalizedAppCode === 'products') {
+    return '/apps/inventory';
+  }
   if (normalizedAppCode === 'crm') {
     return '/apps/crm';
   }

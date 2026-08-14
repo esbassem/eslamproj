@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ROUTES } from '@/core/config/routes.config';
 import { AppAccessRoute, PublicOnlyRoute, ProtectedRoute, SessionGate } from '@/app/router/RouteGuards';
 import { modeRoutes } from '@/routes';
@@ -49,6 +49,23 @@ function renderModeRoute(route) {
   );
 }
 
+function LegacyInventoryRedirect({ sourceBase, targetBase }) {
+  const location = useLocation();
+  const suffix = location.pathname.slice(sourceBase.length).replace(/^\/+/, '');
+  const mappedSuffix = suffix === 'attributes'
+    ? 'products/attributes'
+    : suffix === 'tracking-identifiers'
+      ? 'products/tracking-identifiers'
+      : suffix === 'serials'
+        ? 'unique-units'
+        : suffix === 'moves'
+          ? 'operations/moves'
+          : suffix === 'stock'
+            ? 'stock'
+            : suffix ? suffix : sourceBase.includes('products') ? 'products' : '';
+  return <Navigate to={`${targetBase}${mappedSuffix ? `/${mappedSuffix}` : ''}${location.search}`} replace />;
+}
+
 export function AppRouter() {
   return (
     <BrowserRouter>
@@ -71,7 +88,10 @@ export function AppRouter() {
             <Route element={<ProtectedRoute />}>
               <Route path={ROUTES.onboarding} element={<OnboardingPage />} />
               {modeRoutes.map(renderModeRoute)}
-              <Route path="/products/tracking-identifiers" element={<Navigate to="/app/products/tracking-identifiers" replace />} />
+              <Route path="/products/tracking-identifiers" element={<Navigate to="/apps/inventory/products/tracking-identifiers" replace />} />
+              <Route path="/app/products/*" element={<LegacyInventoryRedirect sourceBase="/app/products" targetBase="/apps/inventory" />} />
+              <Route path="/apps/products/*" element={<LegacyInventoryRedirect sourceBase="/apps/products" targetBase="/apps/inventory" />} />
+              <Route path="/app/inventory/*" element={<LegacyInventoryRedirect sourceBase="/app/inventory" targetBase="/apps/inventory" />} />
               <Route path="/app" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/dashboard" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/team" element={<Navigate to={ROUTES.settingsTeam} replace />} />

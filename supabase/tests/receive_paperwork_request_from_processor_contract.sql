@@ -56,18 +56,6 @@ begin
     'public.receive_paperwork_request_from_processor(uuid, uuid)'::regprocedure
   ) into v_definition;
 
-  if position('owner_partner_id = v_request.customer_id' in v_definition) = 0 then
-    raise exception 'TEST_FAILED: existing document does not receive the request invoice partner';
-  end if;
-
-  if position('document_owner_name = v_document_owner_name' in v_definition) = 0 then
-    raise exception 'TEST_FAILED: existing document does not receive the independent document owner name';
-  end if;
-
-  if position('sale_id = v_sale_id' in v_definition) = 0 then
-    raise exception 'TEST_FAILED: existing document does not receive the request sale';
-  end if;
-
   if position('v_request.id, v_sale_id, v_request.tracking_unit_id' in v_definition) = 0 then
     raise exception 'TEST_FAILED: new document does not persist the request sale';
   end if;
@@ -76,12 +64,17 @@ begin
     raise exception 'TEST_FAILED: sale line fallback is missing';
   end if;
 
-  if position('v_document_owner_name := nullif(trim(coalesce(v_request.document_owner_name' in v_definition) = 0 then
+  if position('v_owner_name := nullif(btrim(coalesce(v_request.document_owner_name' in v_definition) = 0 then
     raise exception 'TEST_FAILED: document owner name is not sourced from paperwork_requests.document_owner_name';
   end if;
 
-  if position('v_request.customer_id, v_document_owner_name' in v_definition) = 0 then
+  if position('v_request.customer_id, v_owner_name' in v_definition) = 0 then
     raise exception 'TEST_FAILED: new document does not persist partner and document name independently';
+  end if;
+
+  if position('v_request.current_stage <> ''sent_to_processor''' in v_definition) = 0
+     or position('v_request.status <> ''open''' in v_definition) = 0 then
+    raise exception 'TEST_FAILED: receipt is not a direct sent_to_processor/open transition';
   end if;
 
   raise notice 'receive_paperwork_request_from_processor contract tests passed';

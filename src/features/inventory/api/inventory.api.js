@@ -975,10 +975,87 @@ export const inventoryService = {
     const [{ data, error }, productsMap] = await Promise.all([query.order('created_at', { ascending: false }), loadProductsMap(client, tenantId)]);
     if (error) throw new Error(error.message);
 
-    return (data ?? []).map(normalizeSerial).map((unit) => ({
-      ...unit,
-      product: productsMap.get(unit.productProductId) ?? null,
-    }));
+    const units = (data ?? []).map(normalizeSerial);
+    const unitIds = units.map((unit) => unit.id);
+    if (!unitIds.length) return [];
+    const [identifierRowsResult, attributeRowsResult, identifierTypesResult, attributeDefinitionsResult, attributeValuesResult] = await Promise.all([
+      client.from('stock_tracking_unit_identifiers').select('tracking_unit_id, identifier_type_id, value, is_not_available').eq('tenant_id', tenantId).in('tracking_unit_id', unitIds),
+      client.from('stock_tracking_unit_attributes').select('tracking_unit_id, attribute_id, attribute_value_id, value_text').eq('tenant_id', tenantId).in('tracking_unit_id', unitIds),
+      client.from('product_tracking_identifier_types').select('id, name, code').eq('tenant_id', tenantId),
+      client.from('product_attributes').select('id, name').eq('tenant_id', tenantId),
+      client.from('product_attribute_values').select('id, name').eq('tenant_id', tenantId),
+    ]);
+    for (const result of [identifierRowsResult, attributeRowsResult, identifierTypesResult, attributeDefinitionsResult, attributeValuesResult]) {
+      if (result.error) throw new Error(result.error.message);
+    }
+    const identifierTypes = byId(identifierTypesResult.data || []);
+    const attributeDefinitions = byId(attributeDefinitionsResult.data || []);
+    const attributeValues = byId(attributeValuesResult.data || []);
+    const identifiersByUnit = new Map();
+    for (const row of identifierRowsResult.data || []) {
+      const type = identifierTypes.get(row.identifier_type_id);
+      const current = identifiersByUnit.get(row.tracking_unit_id) || [];
+      current.push({ name: type?.name || type?.code || 'رقم تعريف', code: type?.code || '', value: row.is_not_available ? 'غير متاح' : row.value || '-' });
+      identifiersByUnit.set(row.tracking_unit_id, current);
+    }
+    const attributesByUnit = new Map();
+    for (const row of attributeRowsResult.data || []) {
+      const current = attributesByUnit.get(row.tracking_unit_id) || [];
+      current.push({ name: attributeDefinitions.get(row.attribute_id)?.name || 'خاصية', value: attributeValues.get(row.attribute_value_id)?.name || row.value_text || '-' });
+      attributesByUnit.set(row.tracking_unit_id, current);
+    }
+    const identifierValue = (items, pattern) => items.find((item) => pattern.test(`${item.code} ${item.name}`))?.value || '';
+    return units.map((unit) => {
+      const identifiers = identifiersByUnit.get(unit.id) || [];
+      const attributes = attributesByUnit.get(unit.id) || [];
+      return {
+        ...unit,
+        product: productsMap.get(unit.productProductId) ?? null,
+        identifiers,
+        attributes,
+        chassisNumber: identifierValue(identifiers, /chassis|شاسيه/i) || unit.trackingNumber,
+        engineNumber: identifierValue(identifiers, /engine|motor|موتور|محرك/i),
+        attributesText: attributes.map((item) => `${item.name}: ${item.value}`).join('، '),
+      };
+    });
+  },
+
+  async getTrackingUnitDetails({ tenantId, trackingUnitId }) {
+    const client = requireSupabase();
+    const [identifiersResult, attributesResult] = await Promise.all([
+      client.from('stock_tracking_unit_identifiers').select('identifier_type_id, value, is_not_available').eq('tenant_id', tenantId).eq('tracking_unit_id', trackingUnitId),
+      client.from('stock_tracking_unit_attributes').select('attribute_id, attribute_value_id, value_text').eq('tenant_id', tenantId).eq('tracking_unit_id', trackingUnitId),
+    ]);
+    if (identifiersResult.error) throw new Error(identifiersResult.error.message);
+    if (attributesResult.error) throw new Error(attributesResult.error.message);
+
+    const identifierTypeIds = [...new Set((identifiersResult.data || []).map((row) => row.identifier_type_id).filter(Boolean))];
+    const attributeIds = [...new Set((attributesResult.data || []).map((row) => row.attribute_id).filter(Boolean))];
+    const attributeValueIds = [...new Set((attributesResult.data || []).map((row) => row.attribute_value_id).filter(Boolean))];
+    const [typesResult, attributeDefinitionsResult, attributeValuesResult] = await Promise.all([
+      identifierTypeIds.length ? client.from('product_tracking_identifier_types').select('id, name, code').eq('tenant_id', tenantId).in('id', identifierTypeIds) : Promise.resolve({ data: [], error: null }),
+      attributeIds.length ? client.from('product_attributes').select('id, name').eq('tenant_id', tenantId).in('id', attributeIds) : Promise.resolve({ data: [], error: null }),
+      attributeValueIds.length ? client.from('product_attribute_values').select('id, name').eq('tenant_id', tenantId).in('id', attributeValueIds) : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (typesResult.error) throw new Error(typesResult.error.message);
+    if (attributeDefinitionsResult.error) throw new Error(attributeDefinitionsResult.error.message);
+    if (attributeValuesResult.error) throw new Error(attributeValuesResult.error.message);
+    const types = byId(typesResult.data || []);
+    const definitions = byId(attributeDefinitionsResult.data || []);
+    const values = byId(attributeValuesResult.data || []);
+    return {
+      identifiers: (identifiersResult.data || []).map((row) => ({
+        id: row.identifier_type_id,
+        name: types.get(row.identifier_type_id)?.name || types.get(row.identifier_type_id)?.code || 'رقم تعريف',
+        code: types.get(row.identifier_type_id)?.code || '',
+        value: row.is_not_available ? 'غير متاح' : row.value || '-',
+      })),
+      attributes: (attributesResult.data || []).map((row) => ({
+        id: row.attribute_id,
+        name: definitions.get(row.attribute_id)?.name || 'خاصية',
+        value: values.get(row.attribute_value_id)?.name || row.value_text || '-',
+      })),
+    };
   },
 
   async listJawabIdentifierDefinitions({ tenantId } = {}) {

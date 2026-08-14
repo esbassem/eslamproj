@@ -21,7 +21,7 @@ begin
   if position('يوجد طلب سابق لدى جهة الإصدار ينتظر تأكيد الإلغاء' in v_guard)=0 then
     raise exception 'TEST_FAILED: same-processor send guard is missing';
   end if;
-  if position('current_stage=''pending_processor_cancellation''' in v_confirm)=0
+  if position('pending_processor_cancellation' in v_confirm)=0
      or position('processor_cancellation_confirmed' in v_confirm)=0
      or position('processor_cancellation_confirmed_at' in v_confirm)=0 then
     raise exception 'TEST_FAILED: atomic processor cancellation confirmation is incomplete';

@@ -150,7 +150,7 @@ export function PendingProcessorPaperworkDrawer({
     const groups = new Map();
 
     requests
-      .filter((request) => ['sent_to_processor', 'processor_ready'].includes(request.currentStage))
+      .filter((request) => request.currentStage === 'sent_to_processor')
       .forEach((request) => {
         const processorId = request.processor?.id || request.processorPartnerId || 'unknown';
         const processorName = request.processor?.name || 'جهة غير محددة';

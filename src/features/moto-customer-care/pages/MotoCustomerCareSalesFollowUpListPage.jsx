@@ -166,7 +166,7 @@ function buildPaperworkSidebarReports(sales = [], paperworkRequests = []) {
           return;
         }
 
-        if (['sent_to_processor', 'processor_ready'].includes(request.currentStage)) {
+        if (request.currentStage === 'sent_to_processor') {
           accumulator.sentPendingReceipt += 1;
           return;
         }
@@ -307,7 +307,7 @@ function FollowUpSectionsPanel({
     {
       id: 'pending_notification',
       label: 'عملاء بانتظار الإبلاغ',
-      value: paperworkRequests.filter((request) => request.currentStage === 'received_from_processor').length,
+      value: resolvedPaperworkReports.pendingNotification,
       color: '#f59e0b',
     },
   ];
@@ -420,7 +420,7 @@ function getPaperworkRequestForItem(item, paperworkRequests) {
 
 const INACTIVE_PAPERWORK_DOCUMENT_STATUSES = new Set([
   'delivered',
-  'delivered_to_customer',
+  'delivered',
   'returned_to_owner',
   'lost',
   'archived',
@@ -861,19 +861,19 @@ const PAPERWORK_JOURNEY_STATIONS = [
     id: 'preparation',
     label: 'إعداد الأوراق',
     icon: FileText,
-    stages: ['preparation', 'owner_confirmation'],
+    stages: ['preparation'],
   },
   {
     id: 'processor',
     label: 'عند الجهة',
     icon: Building2,
-    stages: ['sent_to_processor', 'processor_ready', 'received_from_processor'],
+    stages: ['sent_to_processor'],
   },
   {
     id: 'customer',
-    label: 'بانتظار العميل',
+    label: 'في الخزنة',
     icon: PhoneCall,
-    stages: ['client_notified'],
+    stages: ['received_from_processor'],
   },
   {
     id: 'finished',
@@ -885,11 +885,8 @@ const PAPERWORK_JOURNEY_STATIONS = [
 
 const PAPERWORK_INTERNAL_STAGE_LABELS = {
   preparation: 'تجهيز بيانات الورق',
-  owner_confirmation: 'تحديد صاحب الورق',
   sent_to_processor: 'تم الإرسال للجهة',
-  processor_ready: 'الورق جاهز عند الجهة',
   received_from_processor: 'تم استلام الورق من الجهة',
-  client_notified: 'تم إبلاغ العميل',
   delivered: 'تم التسليم للعميل',
   cancelled: 'ملغي',
 };
@@ -3398,8 +3395,6 @@ function SalesStatusFilters({ value, onChange, counts, searchValue, onSearchChan
 }
 
 const COMPLETED_PAPERWORK_REQUEST_STAGES = new Set([
-  'received_from_processor',
-  'client_notified',
   'delivered',
 ]);
 
@@ -3518,6 +3513,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     refresh,
     updatePaperworkRequestLocally,
     ensurePaperworkLoaded,
+    ensureAllPaperworkRequestsLoaded,
     sectionStatus,
   } = useMotoCustomerCareSales({
     limit: salesLimit,
@@ -3652,13 +3648,13 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const handleReportFilterChange = (filterId) => {
     if (filterId === 'pending_notification') {
       setPendingCustomerNotificationsOpen(true);
-      ensurePaperworkLoaded();
+      ensureAllPaperworkRequestsLoaded();
       return;
     }
 
     if (filterId === 'sent_pending_receipt') {
       setPendingProcessorPaperworkOpen(true);
-      ensurePaperworkLoaded();
+      ensureAllPaperworkRequestsLoaded();
       return;
     }
 
@@ -4091,29 +4087,6 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         tenantId={tenantId}
         canManageProcessor={tenantUser?.role === 'owner'}
         canConfirmProcessorCancellation={['owner', 'admin', 'staff'].includes(tenantUser?.role)}
-        onCustomerConfirmed={(confirmation) => {
-          if (!paperworkRequestDetails?.id || !confirmation) return;
-
-          const confirmationPatch = {
-            customerConfirmed: true,
-            customerConfirmedAt: confirmation.customerConfirmedAt,
-            customerConfirmedBy: confirmation.customerConfirmedBy,
-            customerConfirmedByName: confirmation.customerConfirmedByName,
-          };
-
-          updatePaperworkRequestLocally(paperworkRequestDetails.id, confirmationPatch);
-          setPaperworkRequestDetails((current) => (
-            current?.id === paperworkRequestDetails.id
-              ? {
-                ...current,
-                ...confirmationPatch,
-                events: confirmation.event
-                  ? [...(current.events || []), confirmation.event]
-                  : current.events,
-              }
-              : current
-          ));
-        }}
         onRequestSent={(result) => {
           if (!paperworkRequestDetails?.id || !result) return;
 
@@ -4143,9 +4116,10 @@ export function MotoCustomerCareSalesFollowUpListPage() {
           if (!paperworkRequestDetails?.id || !result) return;
           const notifiedPatch = {
             currentStage: result.currentStage,
-            stageEnteredAt: result.updatedAt,
-            stage: { code: result.currentStage, name: 'تم إبلاغ العميل' },
-            updatedAt: result.updatedAt,
+            customerNotifiedAt: result.customerNotifiedAt,
+            customerNotifiedBy: result.customerNotifiedBy,
+            customerNotificationChannel: result.customerNotificationChannel,
+            customerNotificationNotes: result.customerNotificationNotes,
           };
           updatePaperworkRequestLocally(paperworkRequestDetails.id, notifiedPatch);
           setPaperworkRequestDetails((current) => current?.id === paperworkRequestDetails.id

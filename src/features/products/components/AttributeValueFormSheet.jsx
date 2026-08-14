@@ -26,15 +26,21 @@ function getInitialState(record) {
   };
 }
 
-export function AttributeValueFormSheet({ open, onOpenChange, record, attributes, onSubmit, isSubmitting }) {
-  const [formState, setFormState] = useState(() => getInitialState(record));
+export function AttributeValueFormSheet({ open, onOpenChange, record, defaultAttributeId = '', attributes, onSubmit, isSubmitting }) {
+  const [formState, setFormState] = useState(() => ({
+    ...getInitialState(record),
+    attributeId: record?.attributeId ?? defaultAttributeId,
+  }));
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
     if (!open) return;
-    setFormState(getInitialState(record));
+    setFormState({
+      ...getInitialState(record),
+      attributeId: record?.attributeId ?? defaultAttributeId,
+    });
     setFormError('');
-  }, [open, record]);
+  }, [defaultAttributeId, open, record]);
 
   const selectedAttribute = useMemo(
     () => attributes.find((attribute) => attribute.id === formState.attributeId) ?? null,
