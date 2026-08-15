@@ -7,14 +7,13 @@ import { getAppBasePath, normalizeAppCode } from '@/utils/appResolver';
 
 const APP_COLUMNS = 'id, technical_name, name, description, icon, icon_color, route_path, application, technical, installable, is_removable, active, sequence';
 const MENU_COLUMNS = 'id, module_id, parent_id, name, code, route_path, icon, sequence, active';
-const PRODUCT_MENU_ROUTES = new Set(['/app/products', '/app/products/attributes', '/app/products/attribute-values', '/app/products/tracking-identifiers']);
 const EMBEDDED_APP_CODES = new Set(['team']);
 
 const FALLBACK_APP_CODES_BY_HREF = {
   [ROUTES.dashboard]: 'dashboard',
   [ROUTES.partners]: 'partners',
   [ROUTES.products]: 'products',
-  [ROUTES.inventory]: 'inventory',
+  [ROUTES.inventory]: 'products',
   [ROUTES.adminPos]: 'pos',
   [ROUTES.invoices]: 'sales',
   [ROUTES.payments]: 'accounting',
@@ -151,11 +150,7 @@ function filterMenusByAppRules(menus, appCode) {
     return menus.filter((menu) => menu.active !== false);
   }
 
-  if (appCode !== 'products') {
-    return menus;
-  }
-
-  return menus.filter((menu) => PRODUCT_MENU_ROUTES.has(menu.routePath));
+  return menus.filter((menu) => menu.active !== false);
 }
 
 function compareBySortOrder(first, second) {

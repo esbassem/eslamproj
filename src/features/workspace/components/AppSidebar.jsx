@@ -7,8 +7,7 @@ import { useAppContext } from '@/contexts/AppContext';
 import { SidebarNav } from '@/features/workspace/components/SidebarNav';
 
 const APP_DESCRIPTIONS = {
-  inventory: 'إضافة، بيع، وحركات بسيطة',
-  products: 'تعريفات المنتجات وربطها بالنظام',
+  products: 'المنتجات والقطع الفريدة وحركات المخزون',
   accounting: 'قيود، مدفوعات، وتقارير مالية',
   accountant_app: 'تحصيلات وتوريدات يومية',
   sales: 'فواتير، عقود، ومتابعة المبيعات',

@@ -904,13 +904,7 @@ export function QuickStockUnitSheet({
                     </div>
                   ) : null}
 
-                  {trackingNumber ? (
-                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left font-mono text-xs font-bold text-slate-600" dir="ltr">
-                      {trackingNumber}
-                    </div>
-                  ) : null}
-
-                  {(
+                  {!isJawabRegistration ? (
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="block rounded-xl border border-slate-200 bg-white px-3 py-3">
                         <span className="mb-2 block text-xs font-black text-slate-600">
@@ -948,7 +942,7 @@ export function QuickStockUnitSheet({
                         </span>
                       </label>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               )}
 

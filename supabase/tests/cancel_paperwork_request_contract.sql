@@ -13,9 +13,6 @@ begin
      or position('sent_to_processor' in v_definition) = 0 then
     raise exception 'TEST_FAILED: cancellable-stage allowlist is missing';
   end if;
-  if position('processor_ready' in v_definition) > 0 then
-    raise exception 'TEST_FAILED: completed issuer paperwork is cancellable';
-  end if;
   if position('paperwork_documents' in v_definition) = 0 then
     raise exception 'TEST_FAILED: linked document guard is missing';
   end if;

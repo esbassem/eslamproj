@@ -16,6 +16,10 @@ const EVENT_LABELS = {
   cancelled: 'تم إلغاء الطلب',
   note: 'ملاحظة',
   sent_to_supplier: 'تم إرسال الأوراق للجهة',
+  sent_to_processor: 'تم إرسال الأوراق للجهة',
+  received_from_supplier: 'تم استلام الورق من الجهة',
+  customer_notified: 'تم إبلاغ العميل',
+  delivered_to_customer: 'تم تسليم الورق للعميل',
   paperwork_request_cancelled_by_sale_replacement: 'تم إلغاء طلب الأوراق بسبب استبدال البيع',
   processor_cancellation_required_by_sale_replacement: 'مطلوب إلغاء الطلب لدى جهة الإصدار',
   processor_cancellation_confirmed: 'تم تأكيد الإلغاء لدى جهة الإصدار',
@@ -300,13 +304,6 @@ function ProcessorSelector({ tenantId, request, currentProcessor, onClose, onCha
   );
 }
 
-const CUSTOMER_CONFIRMATION_CHECKLIST = [
-  'مراجعة بيانات البيع والمنتج.',
-  'مراجعة صاحب الورق.',
-  'مراجعة صورة البطاقة أو التأكد أن صاحب الورق سيتم تحديده لاحقًا.',
-  'التأكد أن العميل على علم بأن الأوراق ستُرسل للجهة المختصة.',
-];
-
 export function PaperworkRequestDetailsDrawer({
   request,
   open,
@@ -315,7 +312,6 @@ export function PaperworkRequestDetailsDrawer({
   canManageProcessor = false,
   canConfirmProcessorCancellation = false,
   onSaved,
-  onCustomerConfirmed,
   onRequestSent,
   onCustomerNotified,
   onDelivered,
@@ -339,9 +335,6 @@ export function PaperworkRequestDetailsDrawer({
   const [exceptionalActionError, setExceptionalActionError] = useState('');
   const [isExecutingExceptionalAction, setIsExecutingExceptionalAction] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [customerConfirmationOpen, setCustomerConfirmationOpen] = useState(false);
-  const [isConfirmingCustomer, setIsConfirmingCustomer] = useState(false);
-  const [customerConfirmationError, setCustomerConfirmationError] = useState('');
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false);
   const [isSendingToProcessor, setIsSendingToProcessor] = useState(false);
   const [sendToProcessorError, setSendToProcessorError] = useState('');
@@ -415,8 +408,6 @@ export function PaperworkRequestDetailsDrawer({
       setExceptionalActionError('');
       setIsExecutingExceptionalAction(false);
       setPreviewOpen(false);
-      setCustomerConfirmationOpen(false);
-      setCustomerConfirmationError('');
       setSendConfirmationOpen(false);
       setCustomerNotificationOpen(false);
       setIsNotifyingCustomer(false);
@@ -450,7 +441,7 @@ export function PaperworkRequestDetailsDrawer({
   useEffect(() => {
     let active = true;
 
-    const balanceVisibleStages = new Set(['received_from_processor', 'client_notified']);
+    const balanceVisibleStages = new Set(['received_from_processor']);
 
     if (!open || !balanceVisibleStages.has(snapshot?.currentStage)) {
       setDeliveryBalanceStatus('idle');
@@ -501,13 +492,12 @@ export function PaperworkRequestDetailsDrawer({
         setCustomerNotificationOpen(false);
       }
       else if (deliveryOpen && !isDelivering) setDeliveryOpen(false);
-      else if (customerConfirmationOpen) setCustomerConfirmationOpen(false);
       else if (sendConfirmationOpen) setSendConfirmationOpen(false);
       else onOpenChange(false);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [customerConfirmationOpen, customerNotificationOpen, deliveryOpen, exceptionalActionsOpen, isDelivering, isExecutingExceptionalAction, mounted, onOpenChange, previewOpen, processorDetailsOpen, processorOpen, selectedExceptionalAction, sendConfirmationOpen]);
+  }, [customerNotificationOpen, deliveryOpen, exceptionalActionsOpen, isDelivering, isExecutingExceptionalAction, mounted, onOpenChange, previewOpen, processorDetailsOpen, processorOpen, selectedExceptionalAction, sendConfirmationOpen]);
 
   if (!mounted || !snapshot) return null;
 
@@ -528,13 +518,14 @@ export function PaperworkRequestDetailsDrawer({
       const result = await motoCustomerCareService.notifyPaperworkCustomer({
         tenantId,
         requestId: snapshot.id,
+        channel: 'phone',
       });
       setSnapshot((current) => ({
         ...current,
-        currentStage: result.currentStage,
-        stage: { code: result.currentStage, name: 'تم إبلاغ العميل' },
-        stageEnteredAt: result.updatedAt,
-        updatedAt: result.updatedAt,
+        customerNotifiedAt: result.customerNotifiedAt,
+        customerNotifiedBy: result.customerNotifiedBy,
+        customerNotificationChannel: result.customerNotificationChannel,
+        customerNotificationNotes: result.customerNotificationNotes,
       }));
       onCustomerNotified?.(result);
       setCustomerNotificationOpen(false);
@@ -615,7 +606,6 @@ export function PaperworkRequestDetailsDrawer({
       && Boolean(ownerImage?.signedUrl)
     );
   const sendBlockers = [
-    !snapshot.customerConfirmed ? 'يجب التأكيد مع العميل أولًا.' : '',
     !displayedProcessor?.id ? 'يجب تحديد جهة إصدار الأوراق.' : '',
     !ownerIsReady ? 'بيانات صاحب الورق أو صورة البطاقة غير مكتملة.' : '',
     snapshot.blockedReason ? snapshot.blockedReason : '',
@@ -646,36 +636,6 @@ export function PaperworkRequestDetailsDrawer({
       ...sortedEvents.filter((event) => !isCreationEvent(event)),
     ]
     : [];
-  const confirmWithCustomer = async () => {
-    if (isConfirmingCustomer || snapshot.customerConfirmed) return;
-
-    setIsConfirmingCustomer(true);
-    setCustomerConfirmationError('');
-
-    try {
-      const confirmation = await motoCustomerCareService.confirmPaperworkRequestWithCustomer({
-        tenantId,
-        requestId: snapshot.id,
-      });
-      const nextSnapshot = {
-        ...snapshot,
-        customerConfirmed: true,
-        customerConfirmedAt: confirmation.customerConfirmedAt,
-        customerConfirmedBy: confirmation.customerConfirmedBy,
-        customerConfirmedByName: confirmation.customerConfirmedByName,
-        events: confirmation.event
-          ? [...(snapshot.events || []), confirmation.event]
-          : snapshot.events,
-      };
-      setSnapshot(nextSnapshot);
-      setCustomerConfirmationOpen(false);
-      onCustomerConfirmed?.(confirmation);
-    } catch (error) {
-      setCustomerConfirmationError(error?.message || 'تعذر تأكيد الطلب مع العميل.');
-    } finally {
-      setIsConfirmingCustomer(false);
-    }
-  };
   const sendToProcessor = async () => {
     if (isSendingToProcessor || !canSendToProcessor) return;
 
@@ -966,26 +926,7 @@ export function PaperworkRequestDetailsDrawer({
           )}
         </div>
 
-        <footer className={`relative z-20 shrink-0 border-t shadow-[0_-10px_26px_-16px_rgba(15,23,42,0.70)] ${
-          snapshot.customerConfirmed
-            ? 'border-slate-200 bg-white'
-            : 'border-slate-200/80 bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3'
-        }`}
-        >
-          {!snapshot.customerConfirmed ? (
-            <button
-              type="button"
-              onClick={() => {
-                setCustomerConfirmationError('');
-                setCustomerConfirmationOpen(true);
-              }}
-              className="mb-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white transition-colors hover:bg-emerald-700"
-            >
-              <Check className="h-4 w-4" />
-              تأكيد مع العميل
-            </button>
-          ) : null}
-
+        <footer className="relative z-20 shrink-0 border-t border-slate-200 bg-white shadow-[0_-10px_26px_-16px_rgba(15,23,42,0.70)]">
           {snapshot.currentStage === 'pending_processor_cancellation' ? (
             <div className="flex min-h-[5.25rem] items-center justify-between gap-3 border-t border-red-200 bg-red-50 px-4 py-3 pb-[calc(.75rem+env(safe-area-inset-bottom))]">
               <div className="min-w-0">
@@ -1029,15 +970,13 @@ export function PaperworkRequestDetailsDrawer({
                 <span className="text-xs font-black">إرسال للجهة</span>
               </button>
             </div>
-          ) : ['sent_to_processor', 'processor_ready'].includes(snapshot.currentStage) ? (
+          ) : snapshot.currentStage === 'sent_to_processor' ? (
             <div className="flex min-h-[4.25rem] items-center justify-between gap-3 px-4 pb-[env(safe-area-inset-bottom)]">
               <div className="min-w-0">
                 <p className="text-[10px] font-bold text-slate-400">الحالة الحالية</p>
                 <p className="mt-0.5 text-xs font-black text-slate-800">بانتظار استلام الأوراق من الجهة</p>
               </div>
-              <span className="shrink-0 rounded-lg bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700">
-                قيد الانتظار
-              </span>
+              <span className="shrink-0 rounded-lg bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700">عند الجهة</span>
             </div>
           ) : snapshot.currentStage === 'received_from_processor' ? (
             <div className={`grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_9.5rem] pb-[env(safe-area-inset-bottom)] ${deliveryRemainingAmount > 0 ? 'bg-red-50' : ''}`}>
@@ -1066,53 +1005,16 @@ export function PaperworkRequestDetailsDrawer({
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setCustomerNotificationOpen(true)}
-                className="flex items-center justify-center gap-2 border-r border-blue-700/25 bg-gradient-to-l from-blue-600 to-sky-500 px-3 text-xs font-black text-white transition hover:from-blue-700 hover:to-sky-600"
-              >
-                <Phone className="h-4 w-4" />
-                إبلاغ العميل
-              </button>
-            </div>
-          ) : snapshot.currentStage === 'client_notified' && ['idle', 'loading'].includes(deliveryBalanceStatus) ? (
-            <div className="flex min-h-[4.25rem] items-center gap-3 border-t border-blue-100 bg-blue-50 px-4 pb-[env(safe-area-inset-bottom)] text-blue-800">
-              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
-              <div>
-                <p className="text-xs font-black">جاري مراجعة رصيد الفاتورة</p>
-                <p className="mt-0.5 text-[10px] font-bold text-blue-600">سيتم تحديد إمكانية التسليم بعد المراجعة.</p>
+              <div className="grid grid-rows-2">
+                <button type="button" disabled={Boolean(snapshot.customerNotifiedAt)} onClick={() => setCustomerNotificationOpen(true)} className="flex items-center justify-center gap-1 border-r border-blue-700/25 bg-blue-600 px-2 text-[10px] font-black text-white disabled:bg-slate-300">
+                  <Phone className="h-3.5 w-3.5" />{snapshot.customerNotifiedAt ? 'تم الإبلاغ' : 'إبلاغ العميل'}
+                </button>
+                <button type="button" disabled={deliveryBalanceStatus !== 'ready' || deliveryRemainingAmount > 0} onClick={openDelivery} className="flex items-center justify-center gap-1 border-r border-t border-emerald-700/25 bg-emerald-600 px-2 text-[10px] font-black text-white disabled:bg-slate-300">
+                  <Check className="h-3.5 w-3.5" />تسليم الأوراق
+                </button>
               </div>
             </div>
-          ) : snapshot.currentStage === 'client_notified' && deliveryBalanceStatus === 'error' ? (
-            <div className="flex min-h-[4.25rem] items-center gap-3 border-t border-amber-200 bg-amber-50 px-4 pb-[env(safe-area-inset-bottom)] text-amber-800">
-              <AlertCircle className="h-5 w-5 shrink-0" />
-              <div>
-                <p className="text-xs font-black">لا يمكن التحقق من رصيد الفاتورة</p>
-                <p className="mt-0.5 text-[10px] font-bold leading-4">{deliveryBalanceError}</p>
-              </div>
-            </div>
-          ) : snapshot.currentStage === 'client_notified' && deliveryRemainingAmount > 0 ? (
-            <div className="flex min-h-[4.25rem] items-center gap-3 border-t border-red-200 bg-red-50 px-4 pb-[env(safe-area-inset-bottom)] text-red-800">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100">
-                <AlertCircle className="h-5 w-5" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-black">لا يمكن تسليم الأوراق</p>
-                <p className="mt-0.5 text-[11px] font-bold">متبقي على الفاتورة {formatMoney(deliveryRemainingAmount)}</p>
-              </div>
-            </div>
-          ) : snapshot.currentStage === 'client_notified' ? (
-            <div className="grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_9.5rem] pb-[env(safe-area-inset-bottom)]">
-              <div className="flex min-w-0 flex-col justify-center px-4 py-2.5">
-                <p className="text-[10px] font-bold text-slate-400">الإجراء التالي</p>
-                <p className="mt-0.5 text-xs font-black text-slate-800">تسليم الأوراق للعميل</p>
-              </div>
-              <button type="button" onClick={openDelivery} className="flex items-center justify-center gap-2 border-r border-emerald-700/25 bg-gradient-to-l from-emerald-600 to-teal-500 px-3 text-xs font-black text-white transition hover:from-emerald-700 hover:to-teal-600">
-                <Check className="h-4 w-4" />
-                تسليم الأوراق
-              </button>
-            </div>
-          ) : snapshot.customerConfirmed ? (
+          ) : sendBlockers.length ? (
             <div className="px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
               <p className="text-xs font-black text-slate-700">لا يمكن إرسال الطلب حاليًا</p>
               <p className="mt-1 text-[10px] font-bold leading-5 text-slate-400">{sendBlockers[0]}</p>
@@ -1246,74 +1148,6 @@ export function PaperworkRequestDetailsDrawer({
           </div>
         ) : null}
 
-        {customerConfirmationOpen ? (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/30 p-4" dir="rtl">
-            <button
-              type="button"
-              className="absolute inset-0"
-              onClick={() => {
-                if (!isConfirmingCustomer) setCustomerConfirmationOpen(false);
-              }}
-              aria-label="إغلاق تأكيد العميل"
-            />
-            <section className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-black text-slate-950">تأكيد مع العميل</h3>
-                  <p className="mt-1 text-xs font-bold leading-5 text-slate-500">
-                    راجع النقاط التالية مع العميل قبل التأكيد.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCustomerConfirmationOpen(false)}
-                  disabled={isConfirmingCustomer}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 disabled:opacity-50"
-                  aria-label="إغلاق"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {CUSTOMER_CONFIRMATION_CHECKLIST.map((item) => (
-                  <div key={item} className="flex items-start gap-2.5">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                      <Check className="h-3.5 w-3.5" />
-                    </span>
-                    <p className="text-xs font-bold leading-5 text-slate-700">{item}</p>
-                  </div>
-                ))}
-              </div>
-
-              {customerConfirmationError ? (
-                <p className="mt-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-bold text-red-700">
-                  {customerConfirmationError}
-                </p>
-              ) : null}
-
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCustomerConfirmationOpen(false)}
-                  disabled={isConfirmingCustomer}
-                  className="h-10 rounded-xl bg-slate-100 text-xs font-black text-slate-700 disabled:opacity-50"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmWithCustomer}
-                  disabled={isConfirmingCustomer}
-                  className="h-10 rounded-xl bg-emerald-600 text-xs font-black text-white transition-colors hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {isConfirmingCustomer ? 'جاري التأكيد...' : 'تأكيد مع العميل'}
-                </button>
-              </div>
-            </section>
-          </div>
-        ) : null}
-
         {sendConfirmationOpen ? (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/30 p-4" dir="rtl">
             <button
@@ -1346,7 +1180,6 @@ export function PaperworkRequestDetailsDrawer({
 
               <div className="mt-4 space-y-3">
                 {[
-                  'تم التأكيد مع العميل.',
                   'تمت مراجعة بيانات صاحب الورق.',
                 ].map((item) => (
                   <div key={item} className="flex items-start gap-2.5">
@@ -1403,11 +1236,11 @@ export function PaperworkRequestDetailsDrawer({
           canExecute={canManageProcessor}
           isActionAvailable={(action) => (
             action.id === PAPERWORK_EXCEPTIONAL_ACTION_IDS.LINK_EXISTING_VAULT_DOCUMENT
-              ? snapshot.status === 'open' && !['received_from_processor', 'client_notified', 'delivered'].includes(snapshot.currentStage)
+              ? snapshot.status === 'open' && !['received_from_processor', 'delivered'].includes(snapshot.currentStage)
               : action.id !== PAPERWORK_EXCEPTIONAL_ACTION_IDS.CANCEL
                 || (
               snapshot.status === 'open'
-              && ['preparation', 'owner_confirmation', 'sent_to_processor'].includes(snapshot.currentStage)
+              && ['preparation', 'sent_to_processor'].includes(snapshot.currentStage)
                 )
           )}
           onClose={() => setExceptionalActionsOpen(false)}

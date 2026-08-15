@@ -7,7 +7,6 @@ const DOCUMENT_STATUS_LABELS = {
   with_employee: 'مع موظف',
   stored: 'مخزنة',
   delivered: 'تم التسليم',
-  delivered_to_customer: 'تم التسليم للعميل',
   returned: 'مرتجعة',
   lost: 'مفقودة',
   archived: 'مؤرشفة',
@@ -53,7 +52,6 @@ const FILTERS = [
 
 const INACTIVE_STATUSES = new Set([
   'delivered',
-  'delivered_to_customer',
   'returned_to_owner',
   'lost',
   'archived',

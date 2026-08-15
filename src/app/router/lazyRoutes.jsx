@@ -12,7 +12,7 @@ const {
   publicLayout: loadPublicLayout, authLayout: loadAuthLayout, appLayout: loadAppLayout,
   landing: loadLandingPage, signup: loadSignupPage, forgotPassword: loadForgotPasswordPage,
   notFound: loadNotFoundPage, onboarding: loadOnboardingPage, dashboard: loadDashboardPage,
-  partners: loadPartnersPage, products: loadProductsPage, inventory: loadInventoryPage,
+  partners: loadPartnersPage, products: loadProductsPage, inventoryOverview: loadInventoryOverviewPage,
   pos: loadPosPage, invoices: loadInvoicesPage, payments: loadPaymentsPage,
   contracts: loadContractsPage, settings: loadSettingsPage, team: loadTeamManagementPage,
   showroomLayout: loadShowroomWorkspaceLayout, showroomCockpit: loadShowroomCockpitPage,
@@ -36,7 +36,6 @@ export const OnboardingPage = lazyNamed(loadOnboardingPage, 'OnboardingPage');
 export const DashboardPage = lazyNamed(loadDashboardPage, 'DashboardPage');
 export const PartnersPage = lazyNamed(loadPartnersPage, 'PartnersPage');
 export const ProductsPage = lazyNamed(loadProductsPage, 'ProductsPage');
-export const InventoryDashboard = lazyNamed(loadInventoryPage, 'InventoryDashboard');
 export const PosPage = lazyNamed(loadPosPage, 'PosPage');
 export const InvoicesPage = lazyNamed(loadInvoicesPage, 'InvoicesPage');
 export const PaymentsPage = lazyNamed(loadPaymentsPage, 'PaymentsPage');
@@ -66,7 +65,7 @@ const protectedRoutePreloaders = {
   [ROUTES.dashboard]: loadDashboardPage,
   [ROUTES.partners]: loadPartnersPage,
   [ROUTES.products]: loadProductsPage,
-  [ROUTES.inventory]: loadInventoryPage,
+  [ROUTES.inventory]: loadInventoryOverviewPage,
   [ROUTES.adminPos]: loadPosPage,
   [ROUTES.invoices]: loadInvoicesPage,
   [ROUTES.payments]: loadPaymentsPage,

@@ -31,7 +31,6 @@ import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 export const PRODUCT_VIEWS = {
   products: 'products',
   attributes: 'attributes',
-  values: 'values',
   trackingIdentifiers: 'trackingIdentifiers',
 };
 
@@ -91,6 +90,7 @@ export function ProductsOverview({ initialView = PRODUCT_VIEWS.products }) {
   const [productSheet, setProductSheet] = useState({ open: false, product: null });
   const [detailsSheet, setDetailsSheet] = useState({ open: false, product: null, details: null, loading: false });
   const [recordSheet, setRecordSheet] = useState({ open: false, type: '', record: null });
+  const [selectedAttributeId, setSelectedAttributeId] = useState('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const categoriesById = useMemo(() => byId(categories), [categories]);
@@ -105,6 +105,12 @@ export function ProductsOverview({ initialView = PRODUCT_VIEWS.products }) {
   useEffect(() => {
     setActiveView(initialView);
   }, [initialView]);
+
+  useEffect(() => {
+    if (selectedAttributeId !== 'all' && !attributes.some((attribute) => attribute.id === selectedAttributeId)) {
+      setSelectedAttributeId('all');
+    }
+  }, [attributes, selectedAttributeId]);
 
   useEffect(() => {
     if (isLoading || searchParams.get('quickCreate') !== 'product') {
@@ -352,21 +358,18 @@ export function ProductsOverview({ initialView = PRODUCT_VIEWS.products }) {
             disabled={isSubmitting}
           />
         ) : activeView === PRODUCT_VIEWS.attributes ? (
-          <AttributesView
+          <AttributesWorkspaceView
             attributes={attributes}
-            onAdd={() => setRecordSheet({ open: true, type: 'attribute', record: null })}
-            onEdit={(record) => setRecordSheet({ open: true, type: 'attribute', record })}
-            onToggle={(record) => handleToggleRecord('attribute', record)}
-            onDelete={handleDeleteAttribute}
-            disabled={isSubmitting}
-          />
-        ) : activeView === PRODUCT_VIEWS.values ? (
-          <AttributeValuesView
             values={attributeValues}
             attributesById={attributesById}
-            onAdd={() => setRecordSheet({ open: true, type: 'value', record: null })}
-            onEdit={(record) => setRecordSheet({ open: true, type: 'value', record })}
-            onToggle={(record) => handleToggleRecord('value', record)}
+            selectedAttributeId={selectedAttributeId}
+            onSelectAttribute={setSelectedAttributeId}
+            onAddAttribute={() => setRecordSheet({ open: true, type: 'attribute', record: null })}
+            onEditAttribute={(record) => setRecordSheet({ open: true, type: 'attribute', record })}
+            onDeleteAttribute={handleDeleteAttribute}
+            onAddValue={() => setRecordSheet({ open: true, type: 'value', record: null })}
+            onEditValue={(record) => setRecordSheet({ open: true, type: 'value', record })}
+            onToggleValue={(record) => handleToggleRecord('value', record)}
             disabled={isSubmitting}
           />
         ) : (
@@ -423,6 +426,7 @@ export function ProductsOverview({ initialView = PRODUCT_VIEWS.products }) {
           open={recordSheet.open}
           onOpenChange={(open) => setRecordSheet((current) => ({ ...current, open }))}
           record={recordSheet.record}
+          defaultAttributeId={selectedAttributeId === 'all' ? '' : selectedAttributeId}
           attributes={attributes}
           onSubmit={handleRecordSubmit}
           isSubmitting={isSubmitting}
@@ -575,7 +579,7 @@ function CategoryStrip({ categories, counts, activeCategoryId, onSelect, onAddCa
   );
 }
 
-function CategoryCard({ title, count, active = false, muted = false, onClick, onEdit, onDelete, tone = 'light' }) {
+function CategoryCard({ title, count, countLabel = 'عدد المنتجات', entityLabel = 'التصنيف', active = false, muted = false, onClick, onEdit, onDelete, tone = 'light' }) {
   const isDark = tone === 'dark';
 
   return (
@@ -603,7 +607,7 @@ function CategoryCard({ title, count, active = false, muted = false, onClick, on
                     : 'bg-white/12 text-white hover:bg-white/20'
                   : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-[rgb(2,27,76)]'
               }`}
-              title="تعديل التصنيف"
+              title={`تعديل ${entityLabel}`}
             >
               <Pencil className="h-3 w-3" />
             </button>
@@ -619,7 +623,7 @@ function CategoryCard({ title, count, active = false, muted = false, onClick, on
                     : 'bg-white/12 text-white hover:bg-red-500'
                   : 'bg-red-50 text-red-600 hover:bg-red-100'
               }`}
-              title="حذف التصنيف"
+              title={`حذف ${entityLabel}`}
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -647,7 +651,7 @@ function CategoryCard({ title, count, active = false, muted = false, onClick, on
                   : 'text-slate-500'
             }`}
           >
-            عدد المنتجات
+            {countLabel}
           </span>
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
@@ -704,53 +708,56 @@ function ProductRow({ product, categoryName, onView, onEdit, onToggle, onDelete,
   );
 }
 
-function AttributesView({ attributes, onAdd, onEdit, onToggle, onDelete, disabled }) {
+function AttributesWorkspaceView({ attributes, values, attributesById, selectedAttributeId, onSelectAttribute, onAddAttribute, onEditAttribute, onDeleteAttribute, onAddValue, onEditValue, onToggleValue, disabled }) {
+  const valueCounts = useMemo(() => values.reduce((counts, value) => {
+    counts.set(value.attributeId, (counts.get(value.attributeId) ?? 0) + 1);
+    return counts;
+  }, new Map()), [values]);
+  const filteredValues = selectedAttributeId === 'all' ? values : values.filter((value) => value.attributeId === selectedAttributeId);
+  const selectedAttribute = attributesById.get(selectedAttributeId);
+
   return (
-    <SimpleListView
-      title="الخصائص"
-      description="مثل اللون، السعة، المقاس. يتم ربطها بالتصنيفات وتظهر لاحقًا فقط أثناء إدخال المخزون."
-      count={attributes.length}
-      actionLabel="إضافة خاصية"
-      onAdd={onAdd}
-      emptyTitle="لا توجد خصائص بعد"
-      headers={['الاسم', 'السلوك', 'العرض', 'مرتبطة بتصنيفات', 'الحالة', 'إجراءات']}
-      rows={attributes.map((attribute) => [
-        <div className="space-y-1">
-          <StrongText>{attribute.name}</StrongText>
-          <div className="text-xs font-semibold text-slate-500">
-            {attribute.createsVariant ? 'تنشئ Variant' : 'لا تنشئ Variant'}
-            {attribute.showInVariantName ? ' • تظهر في الاسم' : ''}
-          </div>
-        </div>,
-        labelFrom([
-          { value: 'variant', label: 'Variant' },
-          { value: 'commercial', label: 'Commercial' },
-          { value: 'informational', label: 'Informational' },
-        ], attribute.behavior, '-'),
-        labelFrom([
-          { value: 'select', label: 'Select' },
-          { value: 'buttons', label: 'Buttons' },
-          { value: 'radio', label: 'Radio' },
-          { value: 'color', label: 'Color' },
-        ], attribute.displayType, '-'),
-        String(attribute.categoryLinks?.length ?? 0),
-        <StatusBadge active={attribute.isActive} />,
-        <EditToggleActions
-          disabled={disabled}
-          active={attribute.isActive}
-          onEdit={() => onEdit(attribute)}
-          onToggle={() => onToggle(attribute)}
-          onDelete={() => onDelete(attribute)}
-        />,
-      ])}
-    />
+    <div className="space-y-5">
+      <SectionHeader title="الخصائص وقيمها" description="اختر خاصية لعرض قيمها وإدارتها، أو أضف خاصية جديدة." count={attributes.length} />
+      <div className="border-b-2 border-slate-200 pb-5">
+        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
+          <CategoryCard title="الكل" count={values.length} countLabel="عدد القيم" active={selectedAttributeId === 'all'} onClick={() => onSelectAttribute('all')} />
+          {attributes.map((attribute) => (
+            <CategoryCard
+              key={attribute.id}
+              title={attribute.name}
+              count={valueCounts.get(attribute.id) ?? 0}
+              countLabel="عدد القيم"
+              entityLabel="الخاصية"
+              active={selectedAttributeId === attribute.id}
+              muted={!attribute.isActive}
+              onClick={() => onSelectAttribute(attribute.id)}
+              onEdit={selectedAttributeId === attribute.id ? () => onEditAttribute(attribute) : null}
+              onDelete={selectedAttributeId === attribute.id ? () => onDeleteAttribute(attribute) : null}
+            />
+          ))}
+          <button type="button" onClick={onAddAttribute} className="flex min-h-[68px] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 text-xs font-bold text-slate-600 transition hover:border-[rgb(2,27,76)] hover:bg-white hover:text-[rgb(2,27,76)]">
+            <div className="flex flex-col items-center gap-2 text-center"><Plus className="h-4 w-4" /><span>إضافة خاصية</span></div>
+          </button>
+        </div>
+      </div>
+      <AttributeValuesView
+        values={filteredValues}
+        attributesById={attributesById}
+        title={selectedAttribute ? `قيم خاصية: ${selectedAttribute.name}` : 'كل قيم الخصائص'}
+        onAdd={onAddValue}
+        onEdit={onEditValue}
+        onToggle={onToggleValue}
+        disabled={disabled || !attributes.length}
+      />
+    </div>
   );
 }
 
-function AttributeValuesView({ values, attributesById, onAdd, onEdit, onToggle, disabled }) {
+function AttributeValuesView({ values, attributesById, title = 'قيم الخصائص', onAdd, onEdit, onToggle, disabled }) {
   return (
     <SimpleListView
-      title="قيم الخصائص"
+      title={title}
       description="القيم المرتبطة بكل خاصية مع السعر الإضافي والترتيب."
       count={values.length}
       actionLabel="إضافة قيمة"
