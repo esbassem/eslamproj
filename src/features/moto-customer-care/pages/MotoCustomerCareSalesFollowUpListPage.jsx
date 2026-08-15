@@ -20,6 +20,7 @@ import { partnersService } from '@/features/contacts/services/partners.service';
 import { QuickStockUnitSheet } from '@/features/dashboard/components/QuickStockUnitSheet';
 import { inventoryService, normalizeTrackingIdentifierValue } from '@/features/inventory/api/inventory.api';
 import { CompleteTrackingUnitWizard } from '@/features/inventory/components/CompleteTrackingUnitWizard';
+import { posService } from '@/features/pos/api/pos.api';
 import { PaperworkRequestDetailsDrawer } from '@/features/moto-customer-care/components/PaperworkRequestDetailsDrawer';
 import { PendingProcessorPaperworkDrawer } from '@/features/moto-customer-care/components/PendingProcessorPaperworkDrawer';
 import { PendingCustomerNotificationDrawer } from '@/features/moto-customer-care/components/PendingCustomerNotificationDrawer';
@@ -905,6 +906,7 @@ function PaperworkJourneyStations({ currentStage }) {
           const Icon = station.icon;
           const isCompleted = currentStationIndex > index;
           const isCurrent = currentStationIndex === index;
+          const isPreparationCurrent = isCurrent && station.id === 'preparation';
 
           return (
             <div
@@ -913,14 +915,16 @@ function PaperworkJourneyStations({ currentStage }) {
                 isCompleted
                   ? 'bg-emerald-50 text-emerald-800'
                   : isCurrent
-                    ? 'bg-blue-600 text-white shadow-[0_5px_14px_rgba(37,99,235,0.24)]'
+                    ? isPreparationCurrent
+                      ? 'bg-amber-400 text-amber-950 shadow-[0_5px_14px_rgba(245,158,11,0.22)]'
+                      : 'bg-blue-600 text-white shadow-[0_5px_14px_rgba(37,99,235,0.24)]'
                     : 'text-slate-400'
               }`}
               aria-current={isCurrent ? 'step' : undefined}
             >
               {isCurrent ? (
                 <span
-                  className="absolute inset-x-2 -top-px h-0.5 rounded-full bg-sky-300"
+                  className={`absolute inset-x-2 -top-px h-0.5 rounded-full ${isPreparationCurrent ? 'bg-amber-100' : 'bg-sky-300'}`}
                   aria-hidden="true"
                 />
               ) : null}
@@ -929,7 +933,7 @@ function PaperworkJourneyStations({ currentStage }) {
                   isCompleted
                     ? 'bg-emerald-600 text-white'
                     : isCurrent
-                      ? 'bg-white/16 text-white'
+                      ? isPreparationCurrent ? 'bg-white/35 text-amber-950' : 'bg-white/16 text-white'
                       : 'bg-slate-200/70 text-slate-400'
                 }`}
               >
@@ -939,7 +943,7 @@ function PaperworkJourneyStations({ currentStage }) {
                 {station.label}
               </span>
               {isCurrent && currentStageLabel ? (
-                <span className="mt-1 hidden max-w-full truncate text-[8px] font-bold leading-3 text-blue-100 sm:block">
+                <span className={`mt-1 hidden max-w-full truncate text-[8px] font-bold leading-3 sm:block ${isPreparationCurrent ? 'text-amber-900' : 'text-blue-100'}`}>
                   {currentStageLabel}
                 </span>
               ) : null}
@@ -1072,16 +1076,16 @@ function PaperworkRequestCard({ request, onOpen, selectionMode = false, selected
               </p>
             </div>
             {currentStation.station ? (
-              <div className="-mt-1 flex aspect-square w-[5.9rem] shrink-0 items-center justify-center rounded-2xl bg-blue-600 px-2 text-center text-white shadow-[0_12px_26px_rgba(37,99,235,0.24)] lg:hidden">
+              <div className={`-mt-1 flex aspect-square w-[5.9rem] shrink-0 items-center justify-center rounded-2xl px-2 text-center shadow lg:hidden ${currentStage === 'preparation' ? 'bg-amber-400 text-amber-950 shadow-[0_12px_26px_rgba(245,158,11,0.22)]' : 'bg-blue-600 text-white shadow-[0_12px_26px_rgba(37,99,235,0.24)]'}`}>
                 <div className="min-w-0">
-                  <p className="mb-1 text-[8px] font-black leading-3 text-white/65">
+                  <p className={`mb-1 text-[8px] font-black leading-3 ${currentStage === 'preparation' ? 'text-amber-900/70' : 'text-white/65'}`}>
                     مرحلة الطلب
                   </p>
-                  <p className="line-clamp-2 text-[11px] font-black leading-3 text-white">
+                  <p className={`line-clamp-2 text-[11px] font-black leading-3 ${currentStage === 'preparation' ? 'text-amber-950' : 'text-white'}`}>
                     {currentStation.station.label}
                   </p>
                   {currentStation.stageLabel ? (
-                    <p className="mt-1 line-clamp-2 text-[8px] font-bold leading-3 text-white/78">
+                    <p className={`mt-1 line-clamp-2 text-[8px] font-bold leading-3 ${currentStage === 'preparation' ? 'text-amber-900/80' : 'text-white/78'}`}>
                       {currentStation.stageLabel}
                     </p>
                   ) : null}
@@ -2524,6 +2528,11 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
   const [unlinkReason, setUnlinkReason] = useState('');
   const [openRequestsError, setOpenRequestsError] = useState('');
   const [quickUnitOpen, setQuickUnitOpen] = useState(false);
+  const [availableProducts, setAvailableProducts] = useState([]);
+  const [productsStatus, setProductsStatus] = useState('idle');
+  const [productsError, setProductsError] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [selectedNewProduct, setSelectedNewProduct] = useState(null);
   const [completionUnit, setCompletionUnit] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingDocumentId, setPendingDocumentId] = useState(null);
@@ -2550,6 +2559,11 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
     setUnlinkReason('');
     setOpenRequestsError('');
     setQuickUnitOpen(false);
+    setAvailableProducts([]);
+    setProductsStatus('idle');
+    setProductsError('');
+    setProductSearch('');
+    setSelectedNewProduct(null);
     setCompletionUnit(null);
     setStep('unit');
     setError('');
@@ -2558,6 +2572,29 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
     searchRequestRef.current += 1;
     openRequestsRequestRef.current += 1;
   }, [open]);
+
+  useEffect(() => {
+    if (!open || searchStatus !== 'not_found' || !tenantId) return undefined;
+
+    let mounted = true;
+    setProductsStatus('loading');
+    setProductsError('');
+
+    posService.listSellProducts({ tenantId })
+      .then((products) => {
+        if (!mounted) return;
+        setAvailableProducts((products || []).filter((product) => product.productType !== 'service'));
+        setProductsStatus('ready');
+      })
+      .catch((loadError) => {
+        if (!mounted) return;
+        setAvailableProducts([]);
+        setProductsStatus('error');
+        setProductsError(loadError.message || 'تعذر تحميل المنتجات.');
+      });
+
+    return () => { mounted = false; };
+  }, [open, searchStatus, tenantId]);
 
   useEffect(() => {
     if (!open || step !== 'unit') return undefined;
@@ -2696,6 +2733,18 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
       && documentOwnerName.trim()
       && requestDecisionValid,
   );
+  const filteredAvailableProducts = useMemo(() => {
+    const normalizedSearch = productSearch.trim().toLocaleLowerCase('ar');
+    if (!normalizedSearch) return availableProducts;
+
+    return availableProducts.filter((product) => [
+      product.displayName,
+      product.name,
+      product.code,
+      product.barcode,
+      product.sku,
+    ].filter(Boolean).join(' ').toLocaleLowerCase('ar').includes(normalizedSearch));
+  }, [availableProducts, productSearch]);
 
   const save = async () => {
     if (!selectedUnit?.id) {
@@ -2802,22 +2851,6 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
           <SheetDismissButton />
           <SheetHeader className="pl-16 text-right">
             <SheetTitle>استلام جواب جديد</SheetTitle>
-            <div className="mt-2 flex items-center gap-2 text-[11px] font-black text-slate-500">
-              <span className={`flex h-5 w-5 items-center justify-center rounded-full ${
-                step === 'unit' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'
-              }`}>
-                1
-              </span>
-              <span className="h-px w-8 bg-slate-200" aria-hidden="true" />
-              <span className={`flex h-5 w-5 items-center justify-center rounded-full ${
-                step === 'details' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'
-              }`}>
-                2
-              </span>
-              <span className="mr-1 text-slate-400">
-                {step === 'unit' ? 'بيانات الورقة والقطعة' : 'الصورة والملاحظات'}
-              </span>
-            </div>
           </SheetHeader>
 
           <SheetBody className="space-y-4">
@@ -2835,42 +2868,44 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
                   />
                 </label>
 
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-black text-slate-600">رقم الشاسيه <span className="text-red-500">*</span></span>
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <div className="grid grid-cols-2 items-start gap-3">
+                  <label className="block min-w-0 space-y-1.5">
+                    <span className="text-xs font-black text-slate-600">رقم الشاسيه <span className="text-red-500">*</span></span>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        value={chassisNumber}
+                        onChange={(event) => {
+                          setChassisNumber(event.target.value);
+                          setSelectedUnit(null);
+                          setError('');
+                        }}
+                        placeholder="رقم الشاسيه أو آخر 6 خانات"
+                        className="pr-9 font-mono"
+                        dir="ltr"
+                      />
+                    </div>
+                    {normalizeTrackingIdentifierValue(chassisNumber).length > 0
+                      && normalizeTrackingIdentifierValue(chassisNumber).length < 6 ? (
+                        <span className="block text-[11px] font-bold text-amber-600">أدخل 6 خانات على الأقل لبدء البحث.</span>
+                      ) : null}
+                  </label>
+
+                  <label className="block min-w-0 space-y-1.5">
+                    <span className="text-xs font-black text-slate-600">رقم الموتور</span>
                     <Input
-                      value={chassisNumber}
+                      value={engineNumber}
                       onChange={(event) => {
-                        setChassisNumber(event.target.value);
+                        setEngineNumber(event.target.value);
                         setSelectedUnit(null);
                         setError('');
                       }}
-                      placeholder="أدخل رقم الشاسيه أو آخر 6 خانات"
-                      className="pr-9 font-mono"
+                      placeholder="اختياري لتأكيد القطعة"
+                      className="font-mono"
                       dir="ltr"
                     />
-                  </div>
-                  {normalizeTrackingIdentifierValue(chassisNumber).length > 0
-                    && normalizeTrackingIdentifierValue(chassisNumber).length < 6 ? (
-                      <span className="block text-[11px] font-bold text-amber-600">أدخل 6 خانات على الأقل لبدء البحث.</span>
-                    ) : null}
-                </label>
-
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-black text-slate-600">رقم الموتور</span>
-                  <Input
-                    value={engineNumber}
-                    onChange={(event) => {
-                      setEngineNumber(event.target.value);
-                      setSelectedUnit(null);
-                      setError('');
-                    }}
-                    placeholder="اختياري لتأكيد القطعة"
-                    className="font-mono"
-                    dir="ltr"
-                  />
-                </label>
+                  </label>
+                </div>
 
                 {searchStatus === 'searching' ? (
                   <div className="flex items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-5 text-sm font-black text-blue-700">
@@ -2955,22 +2990,63 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
                 ) : null}
 
                 {searchStatus === 'not_found' ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
-                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                      <AlertTriangle className="h-5 w-5" />
+                  <div className="space-y-3 border-r-2 border-amber-300 bg-amber-50/40 px-3 py-2.5">
+                    <div className="flex items-center gap-2 text-right text-xs font-black text-amber-700">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <p>لم نجد القطعة؛ اختر المنتج لتسجيلها.</p>
                     </div>
-                    <p className="mt-2 text-sm font-black text-amber-950">لم يتم العثور على قطعة مسجلة بهذه البيانات.</p>
-                    <p className="mt-1 text-xs font-bold leading-5 text-amber-700">
-                      المنتج غير محدد، وسيتم تحديده من جديد قبل تسجيل القطعة في المخزون.
-                    </p>
-                    <Button
-                      type="button"
-                      onClick={() => setQuickUnitOpen(true)}
-                      className="mt-3 gap-2 rounded-full px-4 text-xs font-black"
-                    >
-                      <PackagePlus className="h-4 w-4" />
-                      تحديد المنتج
-                    </Button>
+
+                    {productsStatus === 'loading' ? (
+                      <div className="flex items-center gap-2 py-3 text-xs font-black text-slate-500">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        جاري تحميل المنتجات...
+                      </div>
+                    ) : null}
+
+                    {productsStatus === 'error' ? (
+                      <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700">
+                        {productsError}
+                      </p>
+                    ) : null}
+
+                    {productsStatus === 'ready' ? (
+                      <div className="space-y-2 text-right">
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <Input
+                            value={productSearch}
+                            onChange={(event) => setProductSearch(event.target.value)}
+                            placeholder="ابحث عن المنتج بالاسم أو الكود"
+                            className="bg-white pr-9"
+                          />
+                        </div>
+                        <div className="max-h-56 divide-y divide-slate-100 overflow-y-auto border-y border-slate-200">
+                          {filteredAvailableProducts.length ? filteredAvailableProducts.map((product) => (
+                            <button
+                              key={product.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedNewProduct(product);
+                                setQuickUnitOpen(true);
+                              }}
+                              className="flex w-full items-center justify-between gap-3 px-2 py-2.5 text-right transition hover:bg-blue-50"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-xs font-black text-slate-950">
+                                  {product.displayName || product.name || 'منتج بدون اسم'}
+                                </span>
+                                <span className="mt-0.5 block truncate text-[10px] font-bold text-slate-400">
+                                  {product.code || product.barcode || product.sku || 'بدون كود'}
+                                </span>
+                              </span>
+                              <span className="shrink-0 rounded-full bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">اختيار</span>
+                            </button>
+                          )) : (
+                            <p className="px-3 py-5 text-center text-xs font-bold text-slate-500">لا توجد منتجات مطابقة للبحث.</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -3175,8 +3251,10 @@ export function PaperworkDocumentSheet({ open, onOpenChange, tenantId, userId, o
         onOpenChange={setQuickUnitOpen}
         tenantId={tenantId}
         userId={userId}
+        initialProductProductId={selectedNewProduct?.productProductId || selectedNewProduct?.id}
         initialChassisNumber={chassisNumber}
         initialEngineNumber={engineNumber}
+        lockProductSelection
         registrationMode="jawab"
         side="bottom"
         onSaved={async (result) => {
