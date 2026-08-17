@@ -43,7 +43,7 @@ register(['/app/old_cashbox', '/app/old-cashbox', '/apps/old-cashbox'], 'oldCash
 register(['/app/showroom_point', '/app/showroom_point/new', '/app/showroom_point/customers', '/app/showroom_point/settings'], 'showroomSell', 'ShowroomSellPage');
 register(['/app/moto-customer-care', '/app/moto-customer-care/dashboard', '/app/moto-customer-care/sales', '/apps/moto-customer-care', '/apps/moto-customer-care/dashboard', '/apps/moto-customer-care/sales'], 'customerCareList', 'MotoCustomerCareSalesFollowUpListPage');
 register(['/app/receivables', '/app/receivables/installments', '/apps/receivables', '/apps/receivables/installments'], 'receivables', 'ReceivablesPage');
-register(['/app/settings', '/app/settings/team', '/app/settings/permissions', '/app/team'], 'settings', 'SettingsPage');
+register(['/app/settings', '/app/settings/branches', '/app/settings/team', '/app/settings/permissions', '/app/team'], 'settings', 'SettingsPage');
 register(['/app/settings/accounting/cash-locations'], 'cashLocationsSettings', 'CashLocationsSettingsPage');
 
 export const MENU_COMPONENTS = routes;

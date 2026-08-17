@@ -3255,6 +3255,7 @@ export const motoCustomerCareService = {
   async receivePaperworkRequestsFromProcessor({
     tenantId,
     requestIds = [],
+    ownerNamesByRequestId = {},
     imagesByRequestId = {},
   } = {}) {
     requireTenantId(tenantId);
@@ -3266,6 +3267,21 @@ export const motoCustomerCareService = {
 
     const client = requireSupabase();
     const results = await Promise.allSettled(ids.map(async (requestId) => {
+      const ownerName = normalizeOptionalText(ownerNamesByRequestId[requestId]);
+      if (ownerName) {
+        const { error: ownerError } = await client
+          .from('paperwork_requests')
+          .update({
+            document_owner_name: ownerName,
+            document_owner_status: 'known',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('tenant_id', tenantId)
+          .eq('id', requestId);
+
+        if (ownerError) throw ownerError;
+      }
+
       const { data, error } = await client.rpc('receive_paperwork_request_from_processor', {
         p_tenant_id: tenantId,
         p_request_id: requestId,

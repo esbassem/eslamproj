@@ -4,13 +4,14 @@ import { ROUTES } from '@/core/config/routes.config';
 import { useI18n } from '@/core/i18n/useI18n';
 import { SettingsLayout } from '@/features/settings/components/SettingsLayout';
 import { AccountingSettings } from '@/features/settings/sections/accounting/AccountingSettings';
+import { BranchesSettings } from '@/features/settings/sections/branches/BranchesSettings';
 import { CompanySettings } from '@/features/settings/sections/general/CompanySettings';
 import { PermissionsSettings } from '@/features/settings/sections/permissions/PermissionsSettings';
 import { PosSettings } from '@/features/settings/sections/pos/PosSettings';
 import { TeamManagementPage } from '@/features/team/pages/TeamManagementPage';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
-const validSections = new Set(['general', 'accounting', 'pos', 'payments', 'team', 'permissions']);
+const validSections = new Set(['general', 'branches', 'accounting', 'pos', 'payments', 'team', 'permissions']);
 const validAccountingTabs = new Set(['methods', 'rules', 'journals', 'journal-methods']);
 
 export function SettingsPage() {
@@ -22,24 +23,27 @@ export function SettingsPage() {
   const normalizedPath = location.pathname.replace(/\/+$/, '');
   const isTeamPath = normalizedPath === ROUTES.settingsTeam;
   const isPermissionsPath = normalizedPath === ROUTES.settingsPermissions;
+  const isBranchesPath = normalizedPath === ROUTES.settingsBranches;
   const isOwner = tenantUser?.role === 'owner';
   const requestedSection = searchParams.get('section');
   const requestedTab = searchParams.get('tab');
   const normalizedRequestedSection = requestedSection === 'payments' ? 'accounting' : requestedSection;
-  const activeSection = isPermissionsPath
-    ? 'permissions'
-    : isTeamPath
-      ? 'team'
-      : validSections.has(requestedSection)
-        ? normalizedRequestedSection
-        : 'general';
+  const activeSection = isBranchesPath
+    ? 'branches'
+    : isPermissionsPath
+      ? 'permissions'
+      : isTeamPath
+        ? 'team'
+        : validSections.has(requestedSection)
+          ? normalizedRequestedSection
+          : 'general';
   const activeAccountingTab = validAccountingTabs.has(requestedTab) ? requestedTab : 'methods';
 
   useEffect(() => {
     const nextParams = new URLSearchParams(searchParams);
     let shouldReplace = false;
 
-    if ((isTeamPath || isPermissionsPath) && (requestedSection || requestedTab)) {
+    if ((isTeamPath || isPermissionsPath || isBranchesPath) && (requestedSection || requestedTab)) {
       nextParams.delete('section');
       nextParams.delete('tab');
       shouldReplace = true;
@@ -68,10 +72,15 @@ export function SettingsPage() {
     if (shouldReplace) {
       setSearchParams(nextParams, { replace: true });
     }
-  }, [activeSection, isPermissionsPath, isTeamPath, requestedSection, requestedTab, searchParams, setSearchParams]);
+  }, [activeSection, isBranchesPath, isPermissionsPath, isTeamPath, requestedSection, requestedTab, searchParams, setSearchParams]);
 
   const handleSectionChange = (section) => {
-    if (!['general', 'accounting', 'pos', 'team', 'permissions'].includes(section)) return;
+    if (!['general', 'branches', 'accounting', 'pos', 'team', 'permissions'].includes(section)) return;
+
+    if (section === 'branches') {
+      navigate(ROUTES.settingsBranches);
+      return;
+    }
 
     if (section === 'team') {
       navigate(ROUTES.settingsTeam);
@@ -93,7 +102,7 @@ export function SettingsPage() {
       nextParams.delete('tab');
     }
 
-    if (isTeamPath || isPermissionsPath) {
+    if (isTeamPath || isPermissionsPath || isBranchesPath) {
       navigate(`${ROUTES.settings}?${nextParams.toString()}`);
     } else {
       setSearchParams(nextParams);
@@ -110,25 +119,29 @@ export function SettingsPage() {
   };
 
   const pageTitle =
-    activeSection === 'accounting'
-      ? 'إعدادات المحاسبة'
-      : activeSection === 'pos'
-        ? 'إعدادات نقاط البيع'
-      : activeSection === 'team'
-        ? 'المستخدمون والفريق'
-        : activeSection === 'permissions'
-          ? 'الأدوار والصلاحيات'
-          : t('settings.title');
+    activeSection === 'branches'
+      ? 'الفروع'
+      : activeSection === 'accounting'
+        ? 'إعدادات المحاسبة'
+        : activeSection === 'pos'
+          ? 'إعدادات نقاط البيع'
+          : activeSection === 'team'
+            ? 'المستخدمون والفريق'
+            : activeSection === 'permissions'
+              ? 'الأدوار والصلاحيات'
+              : t('settings.title');
   const pageDescription =
-    activeSection === 'accounting'
-      ? 'إعدادات الدفع المحاسبية داخل settings كمصدر واحد.'
-      : activeSection === 'pos'
-        ? 'إعدادات نقاط البيع منفصلة عن المحاسبة.'
-        : activeSection === 'team'
-          ? 'إدارة المستخدمين وأعضاء الفريق داخل تطبيق الإعدادات.'
-          : activeSection === 'permissions'
-            ? 'إدارة جروبات الصلاحيات وربط الموظفين بها.'
-          : t('settings.description');
+    activeSection === 'branches'
+      ? 'إدارة تعريف فروع الشركة الحالية دون ربطها بالمخزون.'
+      : activeSection === 'accounting'
+        ? 'إعدادات الدفع المحاسبية داخل settings كمصدر واحد.'
+        : activeSection === 'pos'
+          ? 'إعدادات نقاط البيع منفصلة عن المحاسبة.'
+          : activeSection === 'team'
+            ? 'إدارة المستخدمين وأعضاء الفريق داخل تطبيق الإعدادات.'
+            : activeSection === 'permissions'
+              ? 'إدارة جروبات الصلاحيات وربط الموظفين بها.'
+              : t('settings.description');
 
   return (
     <SettingsLayout
@@ -141,6 +154,7 @@ export function SettingsPage() {
       onAccountingTabChange={handleAccountingTabChange}
     >
       {activeSection === 'accounting' ? <AccountingSettings activeTab={activeAccountingTab} onTabChange={handleAccountingTabChange} /> : null}
+      {activeSection === 'branches' ? <BranchesSettings /> : null}
       {activeSection === 'pos' ? <PosSettings /> : null}
       {activeSection === 'team' ? <TeamManagementPage embedded /> : null}
       {activeSection === 'permissions' ? <PermissionsSettings /> : null}

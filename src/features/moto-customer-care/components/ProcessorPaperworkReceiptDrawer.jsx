@@ -48,6 +48,7 @@ export function ProcessorPaperworkReceiptDrawer({
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [receiptStep, setReceiptStep] = useState(0);
   const [receiptImages, setReceiptImages] = useState({});
+  const [receiptOwnerNames, setReceiptOwnerNames] = useState({});
   const [isReceiving, setIsReceiving] = useState(false);
   const [receiveError, setReceiveError] = useState('');
   const closeTimerRef = useRef(null);
@@ -71,6 +72,7 @@ export function ProcessorPaperworkReceiptDrawer({
       setConfirmationOpen(false);
       setReceiptStep(0);
       setReceiptImages({});
+      setReceiptOwnerNames({});
       setReceiveError('');
       setVisible(false);
       setMounted(true);
@@ -157,6 +159,16 @@ export function ProcessorPaperworkReceiptDrawer({
   const confirmReceipt = async () => {
     if (isReceiving || !selectedIds.length) return;
 
+    const missingOwner = selectedRequests.find((request) => (
+      !(request.documentOwnerName || request.documentOwner?.name)
+      && !String(receiptOwnerNames[request.id] || '').trim()
+    ));
+    if (missingOwner) {
+      setReceiptStep(selectedRequests.findIndex((request) => request.id === missingOwner.id));
+      setReceiveError('اكتب اسم صاحب الجواب أولًا.');
+      return;
+    }
+
     setIsReceiving(true);
     setReceiveError('');
 
@@ -164,6 +176,7 @@ export function ProcessorPaperworkReceiptDrawer({
       const result = await motoCustomerCareService.receivePaperworkRequestsFromProcessor({
         tenantId,
         requestIds: selectedIds,
+        ownerNamesByRequestId: receiptOwnerNames,
         imagesByRequestId: Object.fromEntries(
           Object.entries(receiptImages).map(([requestId, image]) => [requestId, image.file]),
         ),
@@ -408,6 +421,26 @@ export function ProcessorPaperworkReceiptDrawer({
               </div>
 
               <div className="mt-4">
+                {!(selectedRequests[receiptStep]?.documentOwnerName
+                  || selectedRequests[receiptStep]?.documentOwner?.name) ? (
+                    <label className="mb-4 block rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <span className="block text-xs font-black text-slate-800">اسم صاحب الجواب</span>
+                      <span className="mt-1 block text-[10px] font-bold text-slate-500">الاسم المكتوب على الجواب المستلم</span>
+                      <input
+                        type="text"
+                        value={receiptOwnerNames[selectedRequests[receiptStep]?.id] || ''}
+                        onChange={(event) => {
+                          const requestId = selectedRequests[receiptStep]?.id;
+                          setReceiptOwnerNames((current) => ({ ...current, [requestId]: event.target.value }));
+                          setReceiveError('');
+                        }}
+                        autoFocus
+                        disabled={isReceiving}
+                        placeholder="اكتب الاسم"
+                        className="mt-3 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-black text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                      />
+                    </label>
+                  ) : null}
                 {receiptImages[selectedRequests[receiptStep]?.id]?.previewUrl ? (
                   <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
                     <img
@@ -485,7 +518,18 @@ export function ProcessorPaperworkReceiptDrawer({
                 {receiptStep < selectedRequests.length - 1 ? (
                   <button
                     type="button"
-                    onClick={() => setReceiptStep((current) => current + 1)}
+                    onClick={() => {
+                      const request = selectedRequests[receiptStep];
+                      const ownerName = request.documentOwnerName
+                        || request.documentOwner?.name
+                        || receiptOwnerNames[request.id];
+                      if (!String(ownerName || '').trim()) {
+                        setReceiveError('اكتب اسم صاحب الجواب أولًا.');
+                        return;
+                      }
+                      setReceiveError('');
+                      setReceiptStep((current) => current + 1);
+                    }}
                     disabled={isReceiving}
                     className="flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 text-xs font-black text-white transition hover:bg-blue-700 disabled:opacity-60"
                   >
