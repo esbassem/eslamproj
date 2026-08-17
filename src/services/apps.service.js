@@ -132,7 +132,7 @@ function normalizeMenu(menu, app) {
   };
 }
 
-export function buildAppMenusFromWorkspace(appCode, apps, installedMenus) {
+export function buildAppMenusFromWorkspace(appCode, apps, installedMenus, options = {}) {
   const normalizedAppCode = normalizeAppCode(appCode);
   const app = (apps ?? []).find((item) => normalizeAppCode(item.code) === normalizedAppCode);
   if (!app) return [];
@@ -142,10 +142,14 @@ export function buildAppMenusFromWorkspace(appCode, apps, installedMenus) {
     .map((menu) => normalizeMenu(menu, app))
     .filter(Boolean);
 
-  return buildMenuTree(filterMenusByAppRules(menus, normalizedAppCode).sort(compareBySortOrder));
+  return buildMenuTree(filterMenusByAppRules(menus, normalizedAppCode, options).sort(compareBySortOrder));
 }
 
-function filterMenusByAppRules(menus, appCode) {
+function filterMenusByAppRules(menus, appCode, options = {}) {
+  if (appCode === 'settings' && options.userRole !== 'owner') {
+    return menus.filter((menu) => menu.active !== false && menu.code !== 'settings.branches');
+  }
+
   if (appCode === 'photos') {
     return menus.filter((menu) => menu.active !== false);
   }
@@ -316,6 +320,7 @@ export async function getAppMenus(appCode, options = {}) {
   const menus = filterMenusByAppRules(
     (data ?? []).map((menu) => normalizeMenu(menu, app)).filter(Boolean),
     normalizedAppCode,
+    options,
   ).sort(compareBySortOrder);
   return buildMenuTree(menus);
 }

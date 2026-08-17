@@ -20,8 +20,8 @@ export function AppProvider({ children }) {
   const appsLoadRunRef = useRef(0);
   const menusLoadRunRef = useRef(0);
   const menusByAppCode = useMemo(() => Object.fromEntries(
-    apps.map((app) => [app.code, buildAppMenusFromWorkspace(app.code, apps, installedMenus)]),
-  ), [apps, installedMenus]);
+    apps.map((app) => [app.code, buildAppMenusFromWorkspace(app.code, apps, installedMenus, { userRole })]),
+  ), [apps, installedMenus, userRole]);
 
   useEffect(() => {
     let mounted = true;
