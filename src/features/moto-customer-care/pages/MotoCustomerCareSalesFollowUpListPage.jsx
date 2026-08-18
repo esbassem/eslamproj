@@ -40,6 +40,9 @@ import {
   paperworkRequestMatchesFollowUpSearch,
   saleMatchesFollowUpSearch,
 } from '@/features/moto-customer-care/utils/followUpSearch';
+import {
+  buildPaperworkProductSearchResults,
+} from '@/features/moto-customer-care/utils/paperworkDocumentSearch';
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('ar-EG-u-nu-latn', {
@@ -402,6 +405,52 @@ function FollowUpSectionsPanel({
         </div>
       </div>
     </aside>
+  );
+}
+
+function PaperworkSidebarSearchResults({ results = [], onOpenRequest }) {
+  return (
+    <div className="px-4 sm:px-10 lg:px-0">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-xs font-black text-slate-800">نتائج المنتجات</h2>
+        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-700">{results.length}</span>
+      </div>
+      {results.length ? (
+        <div className="space-y-2">
+          {results.map(({ sale, item, request, document }, index) => {
+            const itemName = item.displayName || item.name || item.description || `منتج ${index + 1}`;
+            const ownerName = document?.documentOwnerName || document?.owner?.name || request?.documentOwnerName;
+            const statusLabel = request
+              ? getPaperworkStatusLabel(request)
+              : document ? 'الورق موجود بالخزنة' : getPaperworkStatusLabel(null);
+            const statusColor = request || document ? 'text-emerald-700' : 'text-red-600';
+
+            return (
+              <button
+                key={`${sale.id}-${item.id || index}`}
+                type="button"
+                disabled={!request}
+                onClick={() => request && onOpenRequest?.(request)}
+                className="block w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-right shadow-sm transition enabled:hover:border-blue-200 enabled:hover:bg-blue-50"
+              >
+                <span className="block truncate text-xs font-black text-slate-950">{itemName}</span>
+                <span className="mt-1 block truncate text-[10px] font-bold text-slate-500">{sale.customer?.name || request?.customerName || 'عميل غير مسجل'}</span>
+                <TrackingIdentifiersInline item={item} />
+                <span className={`mt-2 flex items-center gap-1.5 text-[11px] font-black ${statusColor}`}>
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${request || document ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                  <span className="truncate">{statusLabel}</span>
+                </span>
+                {ownerName ? <span className="mt-1 block truncate text-[10px] font-bold text-slate-500">باسم: {ownerName}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-7 text-center">
+          <p className="text-xs font-black text-slate-700">لا توجد منتجات مطابقة</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3552,6 +3601,7 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const [paperworkRequestStatusFilter, setPaperworkRequestStatusFilter] = useState('open');
   const [salesSearch, setSalesSearch] = useState('');
   const [paperworkRequestSearch, setPaperworkRequestSearch] = useState('');
+  const [paperworkDocumentSearch, setPaperworkDocumentSearch] = useState('');
   const [activeReportFilter, setActiveReportFilter] = useState(null);
   const [isReportFilterLoading, setIsReportFilterLoading] = useState(false);
   const [trackingSheetItem, setTrackingSheetItem] = useState(null);
@@ -3648,6 +3698,13 @@ export function MotoCustomerCareSalesFollowUpListPage() {
   const selectedPaperworkRequests = useMemo(() => displayedPaperworkRequests.filter((request) => (
     selectedPaperworkRequestIds.has(request.id)
   )), [displayedPaperworkRequests, selectedPaperworkRequestIds]);
+  const isPaperworkSearchActive = Boolean(paperworkDocumentSearch.trim());
+  const paperworkProductSearchResults = useMemo(() => buildPaperworkProductSearchResults({
+    sales,
+    requests: paperworkRequests,
+    documents: paperworkDocuments,
+    query: paperworkDocumentSearch,
+  }), [paperworkDocumentSearch, paperworkDocuments, paperworkRequests, sales]);
   const hasOpenSheet = Boolean(
     trackingSheetItem
       || licenseSheetItem
@@ -3708,6 +3765,9 @@ export function MotoCustomerCareSalesFollowUpListPage() {
     }
     setHasRequestedMobileData(true);
     setIsMobileContentOpen(true);
+  };
+  const handlePaperworkDocumentSearchChange = (event) => {
+    setPaperworkDocumentSearch(event.target.value);
   };
   const prefetchVaultPaperwork = useCallback(() => {
     if (!tenantId) return;
@@ -3903,8 +3963,8 @@ export function MotoCustomerCareSalesFollowUpListPage() {
         }
       `}</style>
       <div className="relative z-10 grid min-h-0 w-full max-w-none flex-1 gap-0 overflow-hidden bg-white lg:grid-cols-[28rem_minmax(0,1fr)] lg:items-stretch xl:grid-cols-[30rem_minmax(0,1fr)]">
-        <div className="customer-care-fade-up relative z-[90] h-full min-h-0 overflow-x-hidden overflow-y-auto border-l border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 px-0 pb-8 pt-16 text-right text-slate-950 shadow-[-12px_0_30px_rgba(15,23,42,0.12)] after:pointer-events-none after:absolute after:inset-y-8 after:left-[-1px] after:w-px after:bg-gradient-to-b after:from-transparent after:via-blue-400/70 after:to-transparent [-webkit-overflow-scrolling:touch] sm:px-0 sm:pt-20 lg:overflow-hidden lg:px-7 lg:pb-0 lg:pt-14 xl:px-8" style={{ animationDelay: '0s' }}>
-          <div className="relative mx-4 mt-4 sm:mx-10 lg:mx-0 lg:mt-4">
+        <div className="customer-care-fade-up relative z-[90] flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto border-l border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 px-0 pb-8 pt-16 text-right text-slate-950 shadow-[-12px_0_30px_rgba(15,23,42,0.12)] after:pointer-events-none after:absolute after:inset-y-8 after:left-[-1px] after:w-px after:bg-gradient-to-b after:from-transparent after:via-blue-400/70 after:to-transparent [-webkit-overflow-scrolling:touch] sm:px-0 sm:pt-20 lg:overflow-hidden lg:px-7 lg:pb-0 lg:pt-14 xl:px-8" style={{ animationDelay: '0s' }}>
+          <div className="relative mx-4 mt-4 shrink-0 sm:mx-10 lg:mx-0 lg:mt-4">
             <p className="mb-2 text-[11px] font-black text-blue-700">لوحة المتابعة</p>
             <h1 className="max-w-md text-2xl font-black leading-tight text-slate-950 sm:text-3xl">
               خدمة عملاء الموتوسيكلات
@@ -3912,34 +3972,54 @@ export function MotoCustomerCareSalesFollowUpListPage() {
             <p className="mt-2 max-w-md text-xs font-semibold leading-5 text-slate-600 sm:text-sm sm:leading-6">
               متابعة البيع، الأوراق، وحالة القطع بعد التسليم.
             </p>
-            <Button
-              type="button"
-              onClick={() => setPaperworkDocumentSheetOpen(true)}
-              className="mt-4 h-10 rounded-xl px-4 text-xs font-black shadow-sm"
-            >
-              <PackagePlus className="ml-2 h-4 w-4" />
-              استلام ورق جديد
-            </Button>
+            <div className="mt-4 flex flex-col items-stretch gap-2">
+              <div className="relative w-44 max-w-full self-start">
+                <Search className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <Input
+                  type="search"
+                  placeholder="بحث..."
+                  aria-label="بحث"
+                  value={paperworkDocumentSearch}
+                  onChange={handlePaperworkDocumentSearchChange}
+                  className="h-8 rounded-lg border-slate-300 bg-white pr-8 text-base font-semibold shadow-sm placeholder:text-slate-400"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={() => setPaperworkDocumentSheetOpen(true)}
+                className="h-10 self-start rounded-xl px-4 text-xs font-black shadow-sm"
+              >
+                <PackagePlus className="ml-2 h-4 w-4" />
+                استلام ورق جديد
+              </Button>
+            </div>
           </div>
-          <div className="relative mt-6 min-h-0">
-            <FollowUpSectionsPanel
-              activeSection={activeSection}
-              activeReportFilter={activeReportFilter}
-              onSectionChange={handleSectionChange}
-              onReportFilterChange={handleReportFilterChange}
-              paperworkReports={paperworkReports}
-              isReportsLoading={isReportsLoading}
-              sales={sales}
-              paperworkRequests={paperworkRequests}
-              paperworkDocuments={paperworkDocuments}
-              isMobileContentOpen={isMobileContentOpen}
-              isLoading={isLoading}
-              isFiltering={isReportFilterLoading}
-              onRegisterTrackingUnit={setTrackingUnitPickerItem}
-              onCreatePaperworkRequest={handleOpenPaperworkStatus}
-              onOpenPaperworkRequest={setPaperworkRequestDetails}
-              onPrefetchVault={prefetchVaultPaperwork}
-            />
+          <div className="relative mt-6 min-h-0 flex-1 overflow-y-auto pb-8 [scrollbar-gutter:stable]">
+            {isPaperworkSearchActive ? (
+              <PaperworkSidebarSearchResults
+                results={paperworkProductSearchResults}
+                onOpenRequest={setPaperworkRequestDetails}
+              />
+            ) : (
+              <FollowUpSectionsPanel
+                activeSection={activeSection}
+                activeReportFilter={activeReportFilter}
+                onSectionChange={handleSectionChange}
+                onReportFilterChange={handleReportFilterChange}
+                paperworkReports={paperworkReports}
+                isReportsLoading={isReportsLoading}
+                sales={sales}
+                paperworkRequests={paperworkRequests}
+                paperworkDocuments={paperworkDocuments}
+                isMobileContentOpen={isMobileContentOpen}
+                isLoading={isLoading}
+                isFiltering={isReportFilterLoading}
+                onRegisterTrackingUnit={setTrackingUnitPickerItem}
+                onCreatePaperworkRequest={handleOpenPaperworkStatus}
+                onOpenPaperworkRequest={setPaperworkRequestDetails}
+                onPrefetchVault={prefetchVaultPaperwork}
+              />
+            )}
           </div>
         </div>
 
