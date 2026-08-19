@@ -3273,7 +3273,6 @@ export const motoCustomerCareService = {
           .from('paperwork_requests')
           .update({
             document_owner_name: ownerName,
-            document_owner_status: 'known',
             updated_at: new Date().toISOString(),
           })
           .eq('tenant_id', tenantId)
