@@ -1,0 +1,7 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { buildPermissionCatalogView, catalogStats } from './permissionCatalogView.js';
+const modules=[{technical_name:'products',name:'المخزون'}]; const permissions=[{id:'1',name:'الوصول',code:'products.access',description:'',module_code:'products',permission_type:'app_access',sort_order:10,active:true},{id:'2',name:'عرض',code:'products.read',description:'',module_code:'products',permission_type:'action',sort_order:20,active:true},{id:'3',name:'قديم',code:'legacy.do',description:'',module_code:'missing',permission_type:'action',sort_order:1,active:true}];
+test('classifies, groups and preserves unknown permissions',()=>{const view=buildPermissionCatalogView({permissions,modules});assert.equal(view.length,2);assert.equal(view.find(x=>x.code==='__unclassified').actions[0].code,'legacy.do')});
+test('filters module and permission type',()=>{const view=buildPermissionCatalogView({permissions,modules,moduleFilter:'products',typeFilter:'app_access'});assert.equal(view[0].appAccess.length,1);assert.equal(view[0].actions.length,0)});
+test('search includes application display name through its section',()=>{const view=buildPermissionCatalogView({permissions,modules,term:'المخزون'});assert.equal(view[0].actions.length,1)});
+test('stats are derived from catalog data',()=>assert.deepEqual(catalogStats(permissions,modules),{total:3,appAccess:1,actions:2,apps:1,unclassified:1}));
