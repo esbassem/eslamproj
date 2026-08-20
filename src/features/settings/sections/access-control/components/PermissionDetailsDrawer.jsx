@@ -1,0 +1,9 @@
+import { Badge } from '@/core/ui/badge';
+import { Sheet,SheetBody,SheetContent,SheetDescription,SheetDismissButton,SheetHeader,SheetTitle } from '@/core/ui/sheet';
+
+export function PermissionDetailsDrawer({permission,moduleName,usage,onClose}) {
+  return <Sheet open={Boolean(permission)} onOpenChange={open=>!open&&onClose()}><SheetContent side="left" dir="rtl"><SheetDismissButton/><SheetHeader><SheetTitle>{permission?.name}</SheetTitle><SheetDescription>{permission?.description||'لا يوجد وصف لهذه الصلاحية.'}</SheetDescription></SheetHeader><SheetBody className="space-y-4 bg-slate-50">
+    {permission?<><Info label="الكود التقني" value={permission.code}/><Info label="التطبيق" value={moduleName}/><Info label="النوع" value={permission.permission_type==='app_access'?'الوصول للتطبيق':'عملية داخل التطبيق'}/><Info label="الحالة" value={permission.active?'نشطة':'غير نشطة'}/><section className="rounded-xl border bg-white p-4"><div className="flex items-center justify-between"><h3 className="font-black">تُمنح عبر المجموعات</h3><Badge>{usage?.groups.length||0} مجموعة</Badge></div><p className="mt-1 text-xs text-slate-500">{usage?.userCount||0} مستخدم فعلي دون تكرار</p><div className="mt-3 space-y-2">{usage?.groups.length?usage.groups.map(group=><div key={group.id} className="flex items-center justify-between rounded-lg border px-3 py-2"><div><p className="text-sm font-bold">{group.name}</p><p className="text-[10px] text-slate-400">{group.code}</p></div>{group.tenant_id===null?<Badge>نظام</Badge>:null}</div>):<p className="py-4 text-center text-sm text-slate-500">لا تمنحها أي مجموعة حاليًا.</p>}</div></section></>:null}
+  </SheetBody></SheetContent></Sheet>;
+}
+function Info({label,value}){return <div className="rounded-xl border bg-white p-4"><p className="text-xs font-bold text-slate-400">{label}</p><p className="mt-1 break-words text-sm font-black text-slate-800">{value||'غير محدد'}</p></div>}

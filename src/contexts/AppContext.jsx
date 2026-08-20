@@ -2,11 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { appsService, buildAppMenusFromWorkspace } from '@/services/apps.service';
 import { resolveCurrentApp } from '@/utils/appResolver';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
+import { useAuthorization } from '@/core/authorization/useAuthorization';
 
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
   const { tenant, tenantUser, ready, installedModules, installedMenus, modulesStatus } = useWorkspace();
+  const { permissionCodes, status: authorizationStatus } = useAuthorization();
   const tenantId = tenant?.id ?? null;
   const userRole = tenantUser?.role ?? null;
   const canManageApps = userRole === 'owner';
@@ -26,7 +28,7 @@ export function AppProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
-    if (!ready || (tenantId && !userRole)) {
+    if (!ready || authorizationStatus === 'loading' || (tenantId && !userRole)) {
       setAppsStatus('idle');
       return undefined;
     }
@@ -36,7 +38,7 @@ export function AppProvider({ children }) {
     setAppsError(null);
 
     appsService
-      .getApps({ tenantId, userRole })
+      .getApps({ tenantId, userRole, permissionCodes })
       .then((loadedApps) => {
         if (!mounted || appsLoadRunRef.current !== runId) {
           return;
@@ -58,7 +60,7 @@ export function AppProvider({ children }) {
     return () => {
       mounted = false;
     };
-  }, [ready, tenantId, userRole]);
+  }, [authorizationStatus, permissionCodes, ready, tenantId, userRole]);
 
   const setActiveApp = useCallback(
     (appOrCode) => {
@@ -90,7 +92,7 @@ export function AppProvider({ children }) {
       setMenusStatus('loading');
 
       try {
-        const menus = await appsService.getAppMenus(appCode, { tenantId, userRole });
+        const menus = await appsService.getAppMenus(appCode, { tenantId, userRole, permissionCodes });
 
         if (menusLoadRunRef.current !== runId) {
           return menus;
@@ -110,7 +112,7 @@ export function AppProvider({ children }) {
         return [];
       }
     },
-    [apps, installedModules, menusByAppCode, modulesStatus, tenantId, userRole],
+    [apps, installedModules, menusByAppCode, modulesStatus, permissionCodes, tenantId, userRole],
   );
 
   const uninstallApp = useCallback(

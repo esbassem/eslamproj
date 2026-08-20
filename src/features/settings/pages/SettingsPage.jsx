@@ -6,7 +6,7 @@ import { SettingsLayout } from '@/features/settings/components/SettingsLayout';
 import { AccountingSettings } from '@/features/settings/sections/accounting/AccountingSettings';
 import { BranchesSettings } from '@/features/settings/sections/branches/BranchesSettings';
 import { CompanySettings } from '@/features/settings/sections/general/CompanySettings';
-import { PermissionsSettings } from '@/features/settings/sections/permissions/PermissionsSettings';
+import { AccessControlSettings } from '@/features/settings/sections/access-control';
 import { PosSettings } from '@/features/settings/sections/pos/PosSettings';
 import { TeamManagementPage } from '@/features/team/pages/TeamManagementPage';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
@@ -140,7 +140,7 @@ export function SettingsPage() {
           : activeSection === 'team'
             ? 'إدارة المستخدمين وأعضاء الفريق داخل تطبيق الإعدادات.'
             : activeSection === 'permissions'
-              ? 'إدارة جروبات الصلاحيات وربط الموظفين بها.'
+              ? 'إدارة أدوار المستخدمين ونطاق العمل والإعدادات الافتراضية.'
               : t('settings.description');
 
   return (
@@ -157,7 +157,7 @@ export function SettingsPage() {
       {activeSection === 'branches' ? <BranchesSettings /> : null}
       {activeSection === 'pos' ? <PosSettings /> : null}
       {activeSection === 'team' ? <TeamManagementPage embedded /> : null}
-      {activeSection === 'permissions' ? <PermissionsSettings /> : null}
+      {activeSection === 'permissions' ? <AccessControlSettings /> : null}
       {activeSection === 'general' ? <CompanySettings /> : null}
     </SettingsLayout>
   );

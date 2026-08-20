@@ -1,8 +1,8 @@
 import { fallbackAppNavigation } from '@/core/config/navigation.config';
 import { ROUTES } from '@/core/config/routes.config';
 import { requireSupabase } from '@/core/lib/supabase';
-import { listCurrentUserAllowedModuleIds } from '@/features/modules/appPermissions.api';
 import { normalizeModuleRoute } from '@/features/modules/modules.navigation';
+import { filterAccessibleInstalledApps } from '@/core/authorization/appAccess';
 import { getAppBasePath, normalizeAppCode } from '@/utils/appResolver';
 
 const APP_COLUMNS = 'id, technical_name, name, description, icon, icon_color, route_path, application, technical, installable, is_removable, active, sequence';
@@ -257,38 +257,13 @@ async function getInstalledApplicationRows(tenantId) {
   return (data ?? []).filter((row) => row.module?.application !== false && row.module?.technical !== true);
 }
 
-async function getAllowedInstalledApplicationRows(tenantId) {
-  if (!tenantId) {
-    return [];
-  }
-
-  const client = requireSupabase();
-  const moduleIds = await listCurrentUserAllowedModuleIds(tenantId);
-
-  if (!moduleIds.length) {
-    return [];
-  }
-
-  const { data, error } = await client
-    .from('tenant_modules')
-    .select(`id, tenant_id, module_id, state, module:ir_modules(${APP_COLUMNS})`)
-    .eq('tenant_id', tenantId)
-    .eq('state', 'installed')
-    .in('module_id', moduleIds);
-
-  if (error) {
-    throw error;
-  }
-
-  return data ?? [];
-}
-
 export async function getApps(options = {}) {
-  const rows = isOwnerRole(options.userRole)
-    ? await getInstalledApplicationRows(options.tenantId)
-    : await getAllowedInstalledApplicationRows(options.tenantId);
-  const apps = rows.map(normalizeApp).filter((app) => app && isStandaloneApp(app)).sort(compareBySortOrder);
-  return apps;
+  const rows = await getInstalledApplicationRows(options.tenantId);
+  const installedApps = rows.map(normalizeApp).filter((app) => app && isStandaloneApp(app)).map(app => ({...app,isInstalled:true}));
+  return filterAccessibleInstalledApps(installedApps, {
+    ownerOverride: isOwnerRole(options.userRole),
+    permissions: new Set(options.permissionCodes || []),
+  }).sort(compareBySortOrder);
 }
 
 export async function getAppMenus(appCode, options = {}) {

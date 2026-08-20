@@ -1,0 +1,9 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { canAccessInstalledApp, filterAccessibleInstalledApps, getAppAccessPermission } from './appAccess.js';
+const app={code:'moto-customer-care',isInstalled:true};
+test('app access permission follows normalized registry code',()=>assert.equal(getAppAccessPermission(app.code),'moto_customer_care.access'));
+test('not installed plus permission remains hidden',()=>assert.equal(canAccessInstalledApp({...app,isInstalled:false},{permissions:new Set(['moto_customer_care.access'])}),false));
+test('installed without permission remains hidden',()=>assert.equal(canAccessInstalledApp(app,{permissions:new Set()}),false));
+test('installed with permission is visible',()=>assert.equal(canAccessInstalledApp(app,{permissions:new Set(['moto_customer_care.access'])}),true));
+test('owner can access installed applications only',()=>{assert.equal(canAccessInstalledApp(app,{ownerOverride:true}),true);assert.equal(canAccessInstalledApp({...app,isInstalled:false},{ownerOverride:true}),false)});
+test('generic filtering handles every application code',()=>assert.deepEqual(filterAccessibleInstalledApps([{code:'crm',isInstalled:true},{code:'photos',isInstalled:true}],{permissions:new Set(['photos.access'])}).map(x=>x.code),['photos']));
