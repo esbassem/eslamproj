@@ -39,9 +39,18 @@ begin
     on tu.tenant_id = pr.tenant_id
    and tu.is_active = true
    and tu.auth_user_id is not null
+   and tu.role = 'owner'
   where pr.status = 'open'
     and pr.current_stage = 'sent_to_processor'
     and pr.customer_id is not null
+    and exists (
+      select 1 from public.tenant_modules tenant_module
+      join public.ir_modules module on module.id = tenant_module.module_id
+      where tenant_module.tenant_id = pr.tenant_id
+        and tenant_module.state = 'installed'
+        and module.technical_name = 'paperwork'
+        and module.active = true
+    )
     and not exists (
       select 1 from public.paperwork_documents pd
       where pd.tenant_id = pr.tenant_id

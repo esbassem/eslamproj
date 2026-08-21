@@ -145,7 +145,7 @@ function PaperworkOwnerSection({
 
                 <div className="mt-3 grid grid-cols-[8rem_minmax(0,1fr)] items-start gap-3 sm:grid-cols-[11rem_minmax(0,1fr)]">
                   {identityPreviewUrl ? (
-                  <div className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="relative aspect-[85.6/54] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <button
                       type="button"
                       onClick={onIdentitySelectRequest}
@@ -167,14 +167,14 @@ function PaperworkOwnerSection({
                     <img
                       src={identityPreviewUrl}
                       alt="صورة البطاقة"
-                      className="aspect-[5/3] w-full object-cover"
+                      className="h-full w-full object-cover"
                     />
                   </div>
                 ) : (
                   <button
                     type="button"
                     onClick={onIdentitySelectRequest}
-                    className="flex h-24 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white text-slate-600 transition hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-4 focus:ring-blue-50"
+                    className="flex aspect-[85.6/54] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-white text-slate-600 transition hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-4 focus:ring-blue-50"
                   >
                     <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100">
                       <PlusCircle className="h-5 w-5" />
@@ -386,6 +386,7 @@ function TrackingAttachmentPickerSheet({
   const [libraryStatus, setLibraryStatus] = useState('idle');
   const [libraryPhotos, setLibraryPhotos] = useState([]);
   const [libraryError, setLibraryError] = useState('');
+  const isIdentityPhoto = targetType?.documentType === IDENTITY_ATTACHMENT_TYPE.documentType;
 
   useEffect(() => {
     let mounted = true;
@@ -584,6 +585,19 @@ function TrackingAttachmentPickerSheet({
                   {cameraError ? <p className="text-xs font-bold leading-5 text-slate-500">{cameraError}</p> : null}
                 </div>
               )}
+              {isIdentityPhoto && cameraStatus === 'ready' ? (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-5 pb-16 pt-4">
+                  <div className="relative aspect-[85.6/54] w-full rounded-[18px] border-2 border-white shadow-[0_0_0_999px_rgba(15,23,42,0.38),0_0_0_1px_rgba(15,23,42,0.25)]">
+                    <span className="absolute inset-x-3 -top-8 text-center text-xs font-black text-white drop-shadow-md">
+                      ضع البطاقة بالكامل داخل الإطار
+                    </span>
+                    <span className="absolute -left-0.5 -top-0.5 h-5 w-5 rounded-tl-[16px] border-l-4 border-t-4 border-amber-300" />
+                    <span className="absolute -right-0.5 -top-0.5 h-5 w-5 rounded-tr-[16px] border-r-4 border-t-4 border-amber-300" />
+                    <span className="absolute -bottom-0.5 -left-0.5 h-5 w-5 rounded-bl-[16px] border-b-4 border-l-4 border-amber-300" />
+                    <span className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-br-[16px] border-b-4 border-r-4 border-amber-300" />
+                  </div>
+                </div>
+              ) : null}
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-slate-950/75 via-slate-950/25 to-transparent" />
               <div className="absolute inset-x-3 bottom-3 flex items-center justify-center gap-2">
                 <button

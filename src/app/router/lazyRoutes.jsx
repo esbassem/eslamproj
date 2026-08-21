@@ -9,20 +9,50 @@ function lazyNamed(loader, exportName) {
 }
 
 const {
-  publicLayout: loadPublicLayout, authLayout: loadAuthLayout, appLayout: loadAppLayout,
-  landing: loadLandingPage, signup: loadSignupPage, forgotPassword: loadForgotPasswordPage,
-  notFound: loadNotFoundPage, onboarding: loadOnboardingPage, dashboard: loadDashboardPage,
-  partners: loadPartnersPage, products: loadProductsPage, inventoryOverview: loadInventoryOverviewPage,
-  pos: loadPosPage, invoices: loadInvoicesPage, payments: loadPaymentsPage,
-  contracts: loadContractsPage, settings: loadSettingsPage, team: loadTeamManagementPage,
-  showroomLayout: loadShowroomWorkspaceLayout, showroomCockpit: loadShowroomCockpitPage,
-  showroomSell: loadShowroomSellPage, showroomDetails: loadShowroomSaleDetailsPage,
-  customerCareLayout: loadMotoCustomerCareWorkspaceLayout, customerCareList: loadMotoCustomerCareSalesFollowUpListPage,
-  customerCareDetails: loadMotoCustomerCareSaleFollowUpDetailsPage, receivables: loadReceivablesPage,
-  accountant: loadAccountantHomePage, crmLayout: loadCrmWorkspaceLayout, crmHome: loadCrmHomePage,
-  crmPlaceholder: loadCrmPlaceholderPage, crmLeads: loadCrmLeadsPage, crmLeadDetails: loadCrmLeadDetailsPage,
-  crmSettings: loadCrmSettingsPage, crmFollowups: loadCrmFollowupsPage,
-  crmInstallments: loadCrmInstallmentsPage, crmInstallmentDetails: loadCrmInstallmentDetailsPage,
+  publicLayout: loadPublicLayout,
+  authLayout: loadAuthLayout,
+  appLayout: loadAppLayout,
+  landing: loadLandingPage,
+  signup: loadSignupPage,
+  forgotPassword: loadForgotPasswordPage,
+  notFound: loadNotFoundPage,
+  onboarding: loadOnboardingPage,
+  dashboard: loadDashboardPage,
+  partners: loadPartnersPage,
+  products: loadProductsPage,
+  inventoryOverview: loadInventoryOverviewPage,
+  pos: loadPosPage,
+  invoices: loadInvoicesPage,
+  payments: loadPaymentsPage,
+  contracts: loadContractsPage,
+  settings: loadSettingsPage,
+  team: loadTeamManagementPage,
+  showroomLayout: loadShowroomWorkspaceLayout,
+  showroomCockpit: loadShowroomCockpitPage,
+  showroomSell: loadShowroomSellPage,
+  showroomDetails: loadShowroomSaleDetailsPage,
+  customerCareLayout: loadMotoCustomerCareWorkspaceLayout,
+  customerCareList: loadMotoCustomerCareSalesFollowUpListPage,
+  customerCareDetails: loadMotoCustomerCareSaleFollowUpDetailsPage,
+  receivables: loadReceivablesPage,
+  paperworkHome: loadPaperworkHomePage,
+  paperworkRequests: loadPaperworkRequestsPage,
+  paperworkRequestDetails: loadPaperworkRequestDetailsPage,
+  paperworkProcessors: loadPaperworkProcessorsPage,
+  paperworkProcessorDetails: loadPaperworkProcessorDetailsPage,
+  paperworkVault: loadPaperworkVaultPage,
+  paperworkDocuments: loadPaperworkDocumentsPage,
+  paperworkDocumentDetails: loadPaperworkDocumentDetailsPage,
+  accountant: loadAccountantHomePage,
+  crmLayout: loadCrmWorkspaceLayout,
+  crmHome: loadCrmHomePage,
+  crmPlaceholder: loadCrmPlaceholderPage,
+  crmLeads: loadCrmLeadsPage,
+  crmLeadDetails: loadCrmLeadDetailsPage,
+  crmSettings: loadCrmSettingsPage,
+  crmFollowups: loadCrmFollowupsPage,
+  crmInstallments: loadCrmInstallmentsPage,
+  crmInstallmentDetails: loadCrmInstallmentDetailsPage,
 } = routeLoaders;
 
 export const PublicLayout = lazyNamed(loadPublicLayout, 'PublicLayout');
@@ -49,6 +79,14 @@ export const ShowroomSaleDetailsPage = lazyNamed(loadShowroomSaleDetailsPage, 'S
 export const MotoCustomerCareWorkspaceLayout = lazyNamed(loadMotoCustomerCareWorkspaceLayout, 'MotoCustomerCareWorkspaceLayout');
 export const MotoCustomerCareSalesFollowUpListPage = lazyNamed(loadMotoCustomerCareSalesFollowUpListPage, 'MotoCustomerCareSalesFollowUpListPage');
 export const MotoCustomerCareSaleFollowUpDetailsPage = lazyNamed(loadMotoCustomerCareSaleFollowUpDetailsPage, 'MotoCustomerCareSaleFollowUpDetailsPage');
+export const PaperworkHomePage = lazyNamed(loadPaperworkHomePage, 'PaperworkHomePage');
+export const PaperworkRequestsPage = lazyNamed(loadPaperworkRequestsPage, 'PaperworkRequestsPage');
+export const PaperworkRequestDetailsPage = lazyNamed(loadPaperworkRequestDetailsPage, 'PaperworkRequestDetailsPage');
+export const PaperworkProcessorsPage = lazyNamed(loadPaperworkProcessorsPage, 'PaperworkProcessorsPage');
+export const PaperworkProcessorDetailsPage = lazyNamed(loadPaperworkProcessorDetailsPage, 'PaperworkProcessorDetailsPage');
+export const PaperworkVaultPage = lazyNamed(loadPaperworkVaultPage, 'PaperworkVaultPage');
+export const PaperworkDocumentsPage = lazyNamed(loadPaperworkDocumentsPage, 'PaperworkDocumentsPage');
+export const PaperworkDocumentDetailsPage = lazyNamed(loadPaperworkDocumentDetailsPage, 'PaperworkDocumentDetailsPage');
 export const ReceivablesPage = lazyNamed(loadReceivablesPage, 'ReceivablesPage');
 export const AccountantHomePage = lazyNamed(loadAccountantHomePage, 'AccountantHomePage');
 export const CrmWorkspaceLayout = lazyNamed(loadCrmWorkspaceLayout, 'CrmWorkspaceLayout');

@@ -14,7 +14,8 @@ declare
   v_rejected boolean;
   v_moves_before bigint;
   v_attachments_before bigint;
-  v_request_before jsonb;
+  v_request_id uuid;
+  v_request_status text;
 begin
   select tu.auth_user_id, tu.tenant_id, pd.id, latest_move.moved_at
   into v_owner_auth_id, v_owner_tenant_id, v_document_id, v_latest_in_at
@@ -47,7 +48,8 @@ begin
       select count(*) into v_moves_before from public.paperwork_document_moves where document_id = v_document_id;
       select count(*) into v_attachments_before from public.ir_attachments
       where related_model = 'paperwork_documents' and related_id = v_document_id;
-      select to_jsonb(pr) into v_request_before from public.paperwork_requests pr
+      select pr.id, pr.status into v_request_id, v_request_status
+      from public.paperwork_requests pr
       where pr.id = (select paperwork_request_id from public.paperwork_documents where id = v_document_id);
 
       v_result := public.record_previous_paperwork_document_delivery(
@@ -67,10 +69,19 @@ begin
           and movement.created_by is not null
       ) then raise exception 'TEST_FAILED: historical out move values are invalid'; end if;
       if (select count(*) from public.ir_attachments where related_model='paperwork_documents' and related_id=v_document_id) <> v_attachments_before then raise exception 'TEST_FAILED: attachments changed'; end if;
-      if v_request_before is distinct from (
-        select to_jsonb(pr) from public.paperwork_requests pr
-        where pr.id = (select paperwork_request_id from public.paperwork_documents where id=v_document_id)
-      ) then raise exception 'TEST_FAILED: paperwork request changed'; end if;
+      if v_request_id is not null and v_request_status = 'open' and not exists (
+        select 1 from public.paperwork_requests pr
+        where pr.id = v_request_id
+          and pr.status = 'done'
+          and pr.current_stage = 'delivered'
+          and pr.closed_at is not null
+      ) then raise exception 'TEST_FAILED: linked open request was not closed'; end if;
+      if v_request_id is not null and v_request_status = 'open' and not exists (
+        select 1 from public.paperwork_request_events event
+        where event.request_id = v_request_id
+          and event.new_status = 'done'
+          and event.new_stage = 'delivered'
+      ) then raise exception 'TEST_FAILED: linked request delivery event missing'; end if;
 
       raise exception using errcode='ZX001', message='ROLLBACK_CASE';
     exception when sqlstate 'ZX001' then null;
@@ -130,7 +141,8 @@ begin
   v_rejected := false;
   begin
     perform public.record_previous_paperwork_document_delivery(v_owner_tenant_id, v_document_id, v_latest_in_at + interval '1 minute', 'delivery_not_recorded', null);
-  exception when others then v_rejected := position('لمالك الشركة فقط' in sqlerrm) > 0;
+  exception when others then v_rejected := position('لمالك الشركة فقط' in sqlerrm) > 0
+    or position('PAPERWORK_APP_ACCESS_REQUIRED' in sqlerrm) > 0;
   end;
   if not v_rejected then raise exception 'TEST_FAILED: non-owner accepted'; end if;
 
@@ -140,7 +152,8 @@ begin
   v_rejected := false;
   begin
     perform public.record_previous_paperwork_document_delivery(v_other_owner_tenant_id, v_document_id, v_latest_in_at + interval '1 minute', 'delivery_not_recorded', null);
-  exception when others then v_rejected := position('غير موجود داخل هذه الشركة' in sqlerrm) > 0;
+  exception when others then v_rejected := position('غير موجود داخل هذه الشركة' in sqlerrm) > 0
+    or position('PAPERWORK_APP_ACCESS_REQUIRED' in sqlerrm) > 0;
   end;
   if not v_rejected then raise exception 'TEST_FAILED: cross-tenant document accepted'; end if;
 

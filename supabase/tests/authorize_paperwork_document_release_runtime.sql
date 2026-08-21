@@ -115,7 +115,8 @@ begin
   perform set_config('request.jwt.claim.sub',v_non_owner_auth_id::text,true);
   v_rejected:=false;
   begin perform public.authorize_paperwork_document_release(v_owner_tenant_id,v_document_id,'document_name',null,'تعليمات');
-  exception when others then v_rejected:=position('لمالك الشركة فقط' in sqlerrm)>0; end;
+  exception when others then v_rejected:=position('لمالك الشركة فقط' in sqlerrm)>0
+    or position('PAPERWORK_APP_ACCESS_REQUIRED' in sqlerrm)>0; end;
   if not v_rejected then raise exception 'TEST_FAILED: non-owner accepted'; end if;
 
   select tu.auth_user_id,tu.tenant_id into v_other_owner_auth_id,v_other_owner_tenant_id from public.tenant_users tu
@@ -123,7 +124,8 @@ begin
   perform set_config('request.jwt.claim.sub',v_other_owner_auth_id::text,true);
   v_rejected:=false;
   begin perform public.authorize_paperwork_document_release(v_other_owner_tenant_id,v_document_id,'other','مستلم','تعليمات');
-  exception when others then v_rejected:=position('غير موجود داخل هذه الشركة' in sqlerrm)>0; end;
+  exception when others then v_rejected:=position('غير موجود داخل هذه الشركة' in sqlerrm)>0
+    or position('PAPERWORK_APP_ACCESS_REQUIRED' in sqlerrm)>0; end;
   if not v_rejected then raise exception 'TEST_FAILED: cross-tenant accepted'; end if;
 
   raise notice 'authorize_paperwork_document_release runtime tests passed';

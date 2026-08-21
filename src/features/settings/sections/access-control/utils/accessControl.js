@@ -1,5 +1,3 @@
-export const roleLabel = (role) => ({ owner: 'مالك', admin: 'مدير', cashier: 'كاشير', sales: 'مبيعات', accountant: 'محاسب', staff: 'موظف' }[role] || role || 'موظف');
-
 export const memberName = (member) => member?.fullName || member?.email || member?.phone || 'مستخدم بدون اسم';
 
 export function friendlyAccessError(error, fallback = 'تعذر حفظ التغيير.') {

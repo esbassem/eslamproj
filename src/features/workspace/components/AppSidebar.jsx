@@ -31,7 +31,7 @@ function getRelativeLuminance([red, green, blue]) {
     return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
   });
 
-  return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
 }
 
 function getAccessibleAccentTextColor(color) {
@@ -42,7 +42,7 @@ function getAccessibleAccentTextColor(color) {
   let resolved = channels;
 
   for (let slateMix = 0; slateMix <= 0.8; slateMix += 0.05) {
-    resolved = channels.map((channel, index) => Math.round((channel * (1 - slateMix)) + (slate[index] * slateMix)));
+    resolved = channels.map((channel, index) => Math.round(channel * (1 - slateMix) + slate[index] * slateMix));
     const contrastOnWhite = 1.05 / (getRelativeLuminance(resolved) + 0.05);
     if (contrastOnWhite >= 4.5) break;
   }
@@ -53,7 +53,7 @@ function getAccessibleAccentTextColor(color) {
 function SidebarContent({ mobile = false }) {
   const { activeApp, activeMenus } = useAppContext();
   const rootMenu = activeMenus[0] ?? null;
-  const title = rootMenu?.name || activeApp?.name || 'التطبيق';
+  const title = (activeMenus.length === 1 ? rootMenu?.name : activeApp?.name) || activeApp?.name || 'التطبيق';
   const description = APP_DESCRIPTIONS[activeApp?.code] || 'قوائم وإجراءات التطبيق';
   const sidebarBgColor = activeApp?.iconColor || 'rgb(2 27 76)';
   const accentTextColor = getAccessibleAccentTextColor(sidebarBgColor);
@@ -63,11 +63,7 @@ function SidebarContent({ mobile = false }) {
       <div className="relative flex h-full flex-col">
         {mobile ? (
           <Dialog.Close asChild>
-            <button
-              type="button"
-              aria-label="إغلاق قائمة التطبيق"
-              className="absolute right-4 top-[-3rem] z-10 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-[0_6px_18px_rgba(15,23,42,0.08)] transition duration-100 active:scale-95 focus:outline-none focus:ring-4 focus:ring-slate-200 sm:right-8 sm:top-[-3.5rem]"
-            >
+            <button type="button" aria-label="إغلاق قائمة التطبيق" className="absolute right-4 top-[-3rem] z-10 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-[0_6px_18px_rgba(15,23,42,0.08)] transition duration-100 active:scale-95 focus:outline-none focus:ring-4 focus:ring-slate-200 sm:right-8 sm:top-[-3.5rem]">
               <X className="h-5 w-5" />
             </button>
           </Dialog.Close>
@@ -89,7 +85,9 @@ function SidebarContent({ mobile = false }) {
           <div className="min-w-0">
             <p className="mb-2 text-[11px] font-black text-slate-500">مساحة التطبيق</p>
             <div className="min-w-0">
-              <h1 className="max-w-md truncate text-2xl font-black leading-tight sm:text-3xl" style={{ color: accentTextColor }}>{title}</h1>
+              <h1 className="max-w-md truncate text-2xl font-black leading-tight sm:text-3xl" style={{ color: accentTextColor }}>
+                {title}
+              </h1>
               <p className="mt-2 max-w-md truncate text-xs font-semibold leading-5 text-slate-500 sm:text-sm sm:leading-6">{description}</p>
             </div>
           </div>
