@@ -132,7 +132,8 @@ begin
   begin
     perform public.cancel_paperwork_document(v_owner_tenant_id, v_document_id, 'test_record', null);
   exception when others then
-    v_rejected := position('لمالك الشركة فقط' in sqlerrm) > 0;
+    v_rejected := position('لمالك الشركة فقط' in sqlerrm) > 0
+      or position('PAPERWORK_APP_ACCESS_REQUIRED' in sqlerrm) > 0;
   end;
   if not v_rejected then raise exception 'TEST_FAILED: non-owner was not rejected'; end if;
 
@@ -148,7 +149,8 @@ begin
   begin
     perform public.cancel_paperwork_document(v_other_owner_tenant_id, v_document_id, 'test_record', null);
   exception when others then
-    v_rejected := position('غير موجود داخل هذه الشركة' in sqlerrm) > 0;
+    v_rejected := position('غير موجود داخل هذه الشركة' in sqlerrm) > 0
+      or position('PAPERWORK_APP_ACCESS_REQUIRED' in sqlerrm) > 0;
   end;
   if not v_rejected then raise exception 'TEST_FAILED: cross-tenant document was not rejected'; end if;
 

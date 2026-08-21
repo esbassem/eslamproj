@@ -6,44 +6,13 @@ import { modeRoutes } from '@/routes';
 import { CheckingSessionPage } from '@/pages/system/CheckingSessionPage';
 import { RouteLoadingFallback } from '@/pages/system/RouteLoadingFallback';
 import { DynamicAppPage } from '@/app/router/DynamicAppPage';
-import {
-  AppLayout,
-  AccountantHomePage,
-  AuthLayout,
-  CrmLeadDetailsPage,
-  CrmLeadsPage,
-  CrmSettingsPage,
-  CrmFollowupsPage,
-  CrmInstallmentsPage,
-  CrmInstallmentDetailsPage,
-  CrmPlaceholderPage,
-  CrmWorkspaceLayout,
-  ForgotPasswordPage,
-  LandingPage,
-  MotoCustomerCareSaleFollowUpDetailsPage,
-  MotoCustomerCareSalesFollowUpListPage,
-  MotoCustomerCareWorkspaceLayout,
-  NotFoundPage,
-  OnboardingPage,
-  PosPage,
-  PublicLayout,
-  ReceivablesPage,
-  ShowroomSaleDetailsPage,
-  ShowroomSellPage,
-  ShowroomWorkspaceLayout,
-  SignupPage,
-} from '@/app/router/lazyRoutes';
+import { AppLayout, AccountantHomePage, AuthLayout, CrmLeadDetailsPage, CrmLeadsPage, CrmSettingsPage, CrmFollowupsPage, CrmInstallmentsPage, CrmInstallmentDetailsPage, CrmPlaceholderPage, CrmWorkspaceLayout, ForgotPasswordPage, LandingPage, MotoCustomerCareSaleFollowUpDetailsPage, MotoCustomerCareSalesFollowUpListPage, MotoCustomerCareWorkspaceLayout, PaperworkHomePage, PaperworkRequestsPage, PaperworkRequestDetailsPage, PaperworkProcessorsPage, PaperworkProcessorDetailsPage, PaperworkVaultPage, PaperworkDocumentsPage, PaperworkDocumentDetailsPage, NotFoundPage, OnboardingPage, PosPage, PublicLayout, ReceivablesPage, ShowroomSaleDetailsPage, ShowroomSellPage, ShowroomWorkspaceLayout, SignupPage } from '@/app/router/lazyRoutes';
 
 function renderModeRoute(route) {
   return (
     <Route key={route.path} path={route.path} element={route.element}>
       {route.children?.map((child) => (
-        <Route
-          key={child.index ? `${route.path}-index` : `${route.path}-${child.path}`}
-          index={child.index}
-          path={child.path}
-          element={child.element}
-        />
+        <Route key={child.index ? `${route.path}-index` : `${route.path}-${child.path}`} index={child.index} path={child.path} element={child.element} />
       ))}
     </Route>
   );
@@ -52,17 +21,7 @@ function renderModeRoute(route) {
 function LegacyInventoryRedirect({ sourceBase, targetBase }) {
   const location = useLocation();
   const suffix = location.pathname.slice(sourceBase.length).replace(/^\/+/, '');
-  const mappedSuffix = suffix === 'attributes'
-    ? 'products/attributes'
-    : suffix === 'tracking-identifiers'
-      ? 'products/tracking-identifiers'
-      : suffix === 'serials'
-        ? 'unique-units'
-        : suffix === 'moves'
-          ? 'operations/moves'
-          : suffix === 'stock'
-            ? 'stock'
-            : suffix ? suffix : sourceBase.includes('products') ? 'products' : '';
+  const mappedSuffix = suffix === 'attributes' ? 'products/attributes' : suffix === 'tracking-identifiers' ? 'products/tracking-identifiers' : suffix === 'serials' ? 'unique-units' : suffix === 'moves' ? 'operations/moves' : suffix === 'stock' ? 'stock' : suffix ? suffix : sourceBase.includes('products') ? 'products' : '';
   return <Navigate to={`${targetBase}${mappedSuffix ? `/${mappedSuffix}` : ''}${location.search}`} replace />;
 }
 
@@ -95,44 +54,145 @@ export function AppRouter() {
               <Route path="/app" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/dashboard" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/team" element={<Navigate to={ROUTES.settingsTeam} replace />} />
-              <Route path="/app/showroom_point" element={<AppAccessRoute appCode="showroom_point"><ShowroomWorkspaceLayout /></AppAccessRoute>}>
+              <Route
+                path="/app/showroom_point"
+                element={
+                  <AppAccessRoute appCode="showroom_point">
+                    <ShowroomWorkspaceLayout />
+                  </AppAccessRoute>
+                }
+              >
                 <Route index element={<ShowroomSellPage />} />
                 <Route path="new" element={<ShowroomSellPage />} />
                 <Route path="customers" element={<ShowroomSellPage />} />
                 <Route path="settings" element={<Navigate to="/app/showroom_point" replace />} />
                 <Route path="sale/:saleId" element={<ShowroomSaleDetailsPage />} />
               </Route>
-              <Route path="/app/moto_customer_care" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
-              <Route path="/app/moto-customer-care" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
-              <Route path="/app/moto_customer_care/dashboard" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
-              <Route path="/app/moto-customer-care/dashboard" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
-              <Route path="/app/moto_customer_care/sales" element={<AppAccessRoute appCode="moto_customer_care"><Navigate to="/app/moto-customer-care/sales" replace /></AppAccessRoute>} />
-              <Route path="/app/moto_customer_care/sales/:saleId" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
+              <Route
+                path="/app/moto_customer_care"
+                element={
+                  <AppAccessRoute appCode="moto_customer_care">
+                    <Navigate to="/app/moto-customer-care/sales" replace />
+                  </AppAccessRoute>
+                }
+              />
+              <Route
+                path="/app/moto-customer-care"
+                element={
+                  <AppAccessRoute appCode="moto_customer_care">
+                    <Navigate to="/app/moto-customer-care/sales" replace />
+                  </AppAccessRoute>
+                }
+              />
+              <Route
+                path="/app/moto_customer_care/dashboard"
+                element={
+                  <AppAccessRoute appCode="moto_customer_care">
+                    <Navigate to="/app/moto-customer-care/sales" replace />
+                  </AppAccessRoute>
+                }
+              />
+              <Route
+                path="/app/moto-customer-care/dashboard"
+                element={
+                  <AppAccessRoute appCode="moto_customer_care">
+                    <Navigate to="/app/moto-customer-care/sales" replace />
+                  </AppAccessRoute>
+                }
+              />
+              <Route
+                path="/app/moto_customer_care/sales"
+                element={
+                  <AppAccessRoute appCode="moto_customer_care">
+                    <Navigate to="/app/moto-customer-care/sales" replace />
+                  </AppAccessRoute>
+                }
+              />
+              <Route
+                path="/app/moto_customer_care/sales/:saleId"
+                element={
+                  <AppAccessRoute appCode="moto_customer_care">
+                    <MotoCustomerCareWorkspaceLayout />
+                  </AppAccessRoute>
+                }
+              >
                 <Route index element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
-              <Route path="/app/moto-customer-care/sales" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
+              <Route
+                path="/app/moto-customer-care/sales"
+                element={
+                  <AppAccessRoute appCode="moto_customer_care">
+                    <MotoCustomerCareWorkspaceLayout />
+                  </AppAccessRoute>
+                }
+              >
                 <Route index element={<MotoCustomerCareSalesFollowUpListPage />} />
                 <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
+              </Route>
+              <Route
+                path="/apps/paperwork"
+                element={
+                  <AppAccessRoute appCode="paperwork">
+                    <AppLayout />
+                  </AppAccessRoute>
+                }
+              >
+                <Route index element={<PaperworkHomePage />} />
+                <Route path="requests" element={<PaperworkRequestsPage />} />
+                <Route path="requests/:requestId" element={<PaperworkRequestDetailsPage />} />
+                <Route path="processors" element={<PaperworkProcessorsPage />} />
+                <Route path="processors/:processorId" element={<PaperworkProcessorDetailsPage />} />
+                <Route path="vault" element={<PaperworkVaultPage />} />
+                <Route path="documents" element={<PaperworkDocumentsPage />} />
+                <Route path="documents/:documentId" element={<PaperworkDocumentDetailsPage />} />
               </Route>
               <Route path="/photos" element={<AppLayout />}>
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />
               </Route>
-              <Route path="/apps/moto-customer-care/sales" element={<AppAccessRoute appCode="moto_customer_care"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
+              <Route
+                path="/apps/moto-customer-care/sales"
+                element={
+                  <AppAccessRoute appCode="moto_customer_care">
+                    <MotoCustomerCareWorkspaceLayout />
+                  </AppAccessRoute>
+                }
+              >
                 <Route index element={<MotoCustomerCareSalesFollowUpListPage />} />
                 <Route path=":saleId" element={<MotoCustomerCareSaleFollowUpDetailsPage />} />
               </Route>
-              <Route path="/app/receivables" element={<AppAccessRoute appCode="receivables"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
+              <Route
+                path="/app/receivables"
+                element={
+                  <AppAccessRoute appCode="receivables">
+                    <MotoCustomerCareWorkspaceLayout />
+                  </AppAccessRoute>
+                }
+              >
                 <Route index element={<ReceivablesPage />} />
                 <Route path="installments" element={<ReceivablesPage />} />
               </Route>
               <Route path="/apps/receivables" element={<Navigate to="/app/receivables" replace />} />
               <Route path="/apps/receivables/installments" element={<Navigate to="/app/receivables/installments" replace />} />
-              <Route path="/apps/accountant" element={<AppAccessRoute appCode="accountant_app"><MotoCustomerCareWorkspaceLayout /></AppAccessRoute>}>
+              <Route
+                path="/apps/accountant"
+                element={
+                  <AppAccessRoute appCode="accountant_app">
+                    <MotoCustomerCareWorkspaceLayout />
+                  </AppAccessRoute>
+                }
+              >
                 <Route index element={<AccountantHomePage />} />
                 <Route path="payments" element={<AccountantHomePage />} />
               </Route>
-              <Route path="/apps/crm" element={<AppAccessRoute appCode="crm"><CrmWorkspaceLayout /></AppAccessRoute>}>
+              <Route
+                path="/apps/crm"
+                element={
+                  <AppAccessRoute appCode="crm">
+                    <CrmWorkspaceLayout />
+                  </AppAccessRoute>
+                }
+              >
                 <Route index element={<Navigate to="/apps/crm/leads" replace />} />
                 <Route path="leads" element={<CrmLeadsPage />} />
                 <Route path="leads/:leadId" element={<CrmLeadDetailsPage />} />
@@ -152,7 +212,14 @@ export function AppRouter() {
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />
               </Route>
-              <Route path="/app/pos/:posId/session/:sessionId/sell" element={<AppAccessRoute appCode="pos"><PosPage /></AppAccessRoute>} />
+              <Route
+                path="/app/pos/:posId/session/:sessionId/sell"
+                element={
+                  <AppAccessRoute appCode="pos">
+                    <PosPage />
+                  </AppAccessRoute>
+                }
+              />
               <Route path="/app/:appCode" element={<AppLayout />}>
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />

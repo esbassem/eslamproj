@@ -3,10 +3,13 @@ const loaderPromises = new Map();
 function cached(key, importer) {
   return () => {
     if (!loaderPromises.has(key)) {
-      loaderPromises.set(key, importer().catch((error) => {
-        loaderPromises.delete(key);
-        throw error;
-      }));
+      loaderPromises.set(
+        key,
+        importer().catch((error) => {
+          loaderPromises.delete(key);
+          throw error;
+        }),
+      );
     }
     return loaderPromises.get(key);
   };
@@ -55,6 +58,14 @@ export const routeLoaders = {
   customerCareLayout: cached('customerCareLayout', () => import('@/features/moto-customer-care/layouts/MotoCustomerCareWorkspaceLayout')),
   customerCareList: cached('customerCareList', () => import('@/features/moto-customer-care/pages/MotoCustomerCareSalesFollowUpListPage')),
   customerCareDetails: cached('customerCareDetails', () => import('@/features/moto-customer-care/pages/MotoCustomerCareSaleFollowUpDetailsPage')),
+  paperworkHome: cached('paperworkHome', () => import('@/features/paperwork/pages/PaperworkHomePage')),
+  paperworkRequests: cached('paperworkRequests', () => import('@/features/paperwork/pages/PaperworkRequestsPage')),
+  paperworkRequestDetails: cached('paperworkRequestDetails', () => import('@/features/paperwork/pages/PaperworkRequestDetailsPage')),
+  paperworkProcessors: cached('paperworkProcessors', () => import('@/features/paperwork/pages/PaperworkProcessorsPage')),
+  paperworkProcessorDetails: cached('paperworkProcessorDetails', () => import('@/features/paperwork/pages/PaperworkProcessorDetailsPage')),
+  paperworkVault: cached('paperworkVault', () => import('@/features/paperwork/pages/PaperworkVaultPage')),
+  paperworkDocuments: cached('paperworkDocuments', () => import('@/features/paperwork/pages/PaperworkDocumentsPage')),
+  paperworkDocumentDetails: cached('paperworkDocumentDetails', () => import('@/features/paperwork/pages/PaperworkDocumentDetailsPage')),
   receivables: cached('receivables', () => import('@/features/receivables/pages/ReceivablesPage')),
   accountant: cached('accountant', () => import('@/features/accountant/pages/AccountantHomePage')),
   crmLayout: cached('crmLayout', () => import('@/features/crm/layouts/CrmWorkspaceLayout')),
@@ -70,21 +81,58 @@ export const routeLoaders = {
 
 export const appRouteRegistry = [
   { appCode: 'dashboard', path: '/admin', loader: routeLoaders.dashboard },
-  { appCode: 'showroom_point', path: '/app/showroom_point', loader: routeLoaders.showroomSell },
-  { appCode: 'accountant_app', path: '/apps/accountant', loader: routeLoaders.accountant },
-  { appCode: 'moto_customer_care', path: '/app/moto-customer-care/sales', loader: routeLoaders.customerCareList },
-  { appCode: 'receivables', path: '/app/receivables', loader: routeLoaders.receivables },
+  {
+    appCode: 'showroom_point',
+    path: '/app/showroom_point',
+    loader: routeLoaders.showroomSell,
+  },
+  {
+    appCode: 'accountant_app',
+    path: '/apps/accountant',
+    loader: routeLoaders.accountant,
+  },
+  {
+    appCode: 'moto_customer_care',
+    path: '/app/moto-customer-care/sales',
+    loader: routeLoaders.customerCareList,
+  },
+  {
+    appCode: 'paperwork',
+    path: '/apps/paperwork',
+    loader: routeLoaders.paperworkHome,
+  },
+  {
+    appCode: 'receivables',
+    path: '/app/receivables',
+    loader: routeLoaders.receivables,
+  },
   { appCode: 'crm', path: '/apps/crm', loader: routeLoaders.crmLeads },
   { appCode: 'photos', path: '/photos', loader: routeLoaders.photosHome },
   { appCode: 'settings', path: '/app/settings', loader: routeLoaders.settings },
   { appCode: 'partners', path: '/app/partners', loader: routeLoaders.partners },
-  { appCode: 'products', path: '/apps/inventory', loader: routeLoaders.inventoryOverview },
+  {
+    appCode: 'products',
+    path: '/apps/inventory',
+    loader: routeLoaders.inventoryOverview,
+  },
   { appCode: 'pos', path: '/app/pos', loader: routeLoaders.pos },
   { appCode: 'sales', path: '/app/sales', loader: routeLoaders.invoices },
-  { appCode: 'accounting', path: '/apps/accounting', loader: routeLoaders.payments },
-  { appCode: 'contracts', path: '/app/contracts', loader: routeLoaders.contracts },
+  {
+    appCode: 'accounting',
+    path: '/apps/accounting',
+    loader: routeLoaders.payments,
+  },
+  {
+    appCode: 'contracts',
+    path: '/app/contracts',
+    loader: routeLoaders.contracts,
+  },
   { appCode: 'team', path: '/app/team', loader: routeLoaders.settings },
-  { appCode: 'old_cashbox', path: '/apps/old-cashbox', loader: routeLoaders.oldCashbox },
+  {
+    appCode: 'old_cashbox',
+    path: '/apps/old-cashbox',
+    loader: routeLoaders.oldCashbox,
+  },
 ].map((entry) => ({ ...entry, preload: entry.loader }));
 
 export function getAppRoute(appCode) {
