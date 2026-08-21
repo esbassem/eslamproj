@@ -58,7 +58,6 @@ export const paperworkRequestsService = {
           tenantId,
           requests.flatMap((request) => [
             request.created_by,
-            request.customer_notified_by,
           ]).filter(Boolean),
         )
         : Promise.resolve(new Map()),

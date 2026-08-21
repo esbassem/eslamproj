@@ -1,6 +1,5 @@
 import { requireSupabase } from "@/core/lib/supabase";
 import { buildShowroomAccountingSnapshot } from "@/features/showroom/services/showroomAccounting";
-import { invokePaperworkNotification } from "@/core/notifications/paperworkNotifications";
 import { resolveCurrentTenantUserId } from "@/features/workspace/api/currentTenantUser.api";
 
 const TENANT_FILES_BUCKET = "tenant-files";
@@ -2043,7 +2042,7 @@ export const showroomService = {
 
     try {
       const { data, error } = await client.rpc(
-        "confirm_sale_paperwork_request",
+        "confirm_sale_paperwork_request_with_processor",
         {
           p_tenant_id: tenantId,
           p_branch_id:
@@ -2067,48 +2066,14 @@ export const showroomService = {
           p_tracking_photos_ignored: Boolean(trackingPhotosIgnored),
           p_tracking_photos_ignore_reason:
             String(trackingPhotosIgnoreReason || "").trim() || null,
+          p_processor_partner_id: processorPartnerId || null,
         },
       );
 
       if (error) throw error;
 
       const requestId = data?.id || null;
-      const trackingUnitId =
-        item.trackingUnitId ||
-        item.tracking_unit_id ||
-        item.trackingUnit?.id ||
-        null;
       const safeProcessorPartnerId = processorPartnerId || null;
-
-      if (safeProcessorPartnerId && requestId) {
-        const { error: requestProcessorError } = await client
-          .from("paperwork_requests")
-          .update({
-            processor_partner_id: safeProcessorPartnerId,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("tenant_id", tenantId)
-          .eq("id", requestId);
-
-        if (requestProcessorError) throw requestProcessorError;
-
-        if (trackingUnitId) {
-          const { error: trackingProcessorError } = await client
-            .from("stock_tracking_units")
-            .update({
-              paperwork_processor_partner_id: safeProcessorPartnerId,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("tenant_id", tenantId)
-            .eq("id", trackingUnitId);
-
-          if (trackingProcessorError) throw trackingProcessorError;
-        }
-      }
-
-      if (requestId && data?.created) {
-        await invokePaperworkNotification(client, requestId);
-      }
 
       return {
         id: requestId,

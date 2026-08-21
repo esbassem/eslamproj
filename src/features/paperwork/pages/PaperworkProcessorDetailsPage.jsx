@@ -15,6 +15,8 @@ import {
   StatusBadge,
 } from "@/features/paperwork/shared/PaperworkUI";
 import { PAPERWORK_ROUTES } from "@/features/paperwork/routes/paperworkRoutes";
+import { useAuthorization } from "@/core/authorization/useAuthorization";
+import { PAPERWORK_PERMISSIONS } from "@/features/paperwork/authorization/paperworkPermissions";
 
 const BulkReceipt = lazy(() =>
   import("@/features/paperwork/processors/BulkReceiptFlow").then((module) => ({
@@ -25,6 +27,8 @@ const BulkReceipt = lazy(() =>
 export function PaperworkProcessorDetailsPage() {
   const { processorId } = useParams();
   const tenantId = usePaperworkTenant();
+  const { can } = useAuthorization();
+  const canReceive = can(PAPERWORK_PERMISSIONS.RECEIVE);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const query = usePaperworkQuery(
     () =>
@@ -61,7 +65,7 @@ export function PaperworkProcessorDetailsPage() {
             <ArrowRight className="h-4 w-4" />
             رجوع
           </Link>
-          <button
+          {canReceive ? <button
             type="button"
             disabled={!query.data?.items.length}
             onClick={() => setReceiptOpen(true)}
@@ -69,7 +73,7 @@ export function PaperworkProcessorDetailsPage() {
           >
             <CheckSquare className="h-4 w-4" />
             استلام أوراق
-          </button>
+          </button> : null}
         </>
       }
     >
@@ -102,7 +106,7 @@ export function PaperworkProcessorDetailsPage() {
           ))}
         </div>
       )}
-      {receiptOpen ? (
+      {canReceive && receiptOpen ? (
         <Suspense fallback={null}>
           <BulkReceipt
             processor={processor}

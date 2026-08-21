@@ -2,7 +2,6 @@ import { getPaperworkDocumentStatusLabel, getPaperworkStageLabel } from '@/featu
 
 export const REQUEST_FILTERS = Object.freeze([
   { id: 'all', label: 'الكل' },
-  { id: 'action', label: 'يحتاج إجراء' },
   { id: 'preparation', label: 'تجهيز' },
   { id: 'sent_to_processor', label: 'عند الجهة' },
   { id: 'received_from_processor', label: 'وصل' },

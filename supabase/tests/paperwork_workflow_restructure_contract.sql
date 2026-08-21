@@ -70,7 +70,6 @@ declare
 begin
   foreach v_signature in array array[
     'public.send_paperwork_request_to_processor(uuid,uuid,text)',
-    'public.notify_paperwork_customer(uuid,uuid,text,text)',
     'public.receive_paperwork_request_from_processor(uuid,uuid)',
     'public.deliver_paperwork_to_customer(uuid,uuid)'
   ] loop
@@ -81,6 +80,11 @@ begin
 
   if to_regprocedure('public.mark_paperwork_processor_ready(uuid,uuid,text)') is not null then
     raise exception 'Removed processor-ready RPC is still callable.';
+  end if;
+
+  if to_regprocedure('public.notify_paperwork_customer(uuid,uuid,text,text)') is not null
+     or to_regprocedure('public.notify_paperwork_customer(uuid,uuid)') is not null then
+    raise exception 'Removed customer-notification RPC is still callable.';
   end if;
 end;
 $$;
