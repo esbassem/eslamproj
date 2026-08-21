@@ -1,6 +1,5 @@
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
-import { useAuth } from "@/features/auth/hooks/useAuth";
 import { DocumentActions } from "@/features/paperwork/documents/DocumentActions";
 import { DocumentContext } from "@/features/paperwork/documents/DocumentContext";
 import { paperworkService } from "@/features/paperwork/services/paperwork.service";
@@ -29,7 +28,6 @@ const row = (label, value) => (
 export function PaperworkDocumentDetailsPage() {
   const { documentId } = useParams();
   const tenantId = usePaperworkTenant();
-  const { tenant_user: tenantUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const sourceRoute = location.state?.paperworkBackTo;
@@ -64,7 +62,6 @@ export function PaperworkDocumentDetailsPage() {
             <DocumentActions
               document={document}
               tenantId={tenantId}
-              isOwner={tenantUser?.role === "owner"}
               onChanged={query.retry}
             />
           ) : null}

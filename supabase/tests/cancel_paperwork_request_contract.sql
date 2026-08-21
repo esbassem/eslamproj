@@ -19,8 +19,9 @@ begin
   if position('paperwork_request_events' in v_definition) = 0 then
     raise exception 'TEST_FAILED: cancellation audit event is missing';
   end if;
-  if position('is_tenant_owner' in v_definition) = 0 then
-    raise exception 'TEST_FAILED: owner authorization is missing';
+  if position('require_paperwork_action(p_tenant_id, ''paperwork.cancel'')' in v_definition) = 0
+     or position('is_tenant_owner' in v_definition) > 0 then
+    raise exception 'TEST_FAILED: paperwork.cancel authorization is missing';
   end if;
 end;
 $$;

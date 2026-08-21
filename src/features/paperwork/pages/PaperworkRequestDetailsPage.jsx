@@ -3,7 +3,6 @@ import { ArrowRight } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { paperworkService } from "@/features/paperwork/services/paperwork.service";
 import { RequestActions } from "@/features/paperwork/requests/RequestActions";
-import { useAuth } from "@/features/auth/hooks/useAuth";
 import {
   usePaperworkQuery,
   usePaperworkTenant,
@@ -41,7 +40,6 @@ const row = (label, value) => (
 export function PaperworkRequestDetailsPage() {
   const { requestId } = useParams();
   const tenantId = usePaperworkTenant();
-  const { tenant_user: tenantUser } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState("overview");
   const query = usePaperworkQuery(
@@ -73,7 +71,6 @@ export function PaperworkRequestDetailsPage() {
             <RequestActions
               request={request}
               tenantId={tenantId}
-              isOwner={tenantUser?.role === "owner"}
               onChanged={query.retry}
             />
           ) : null}

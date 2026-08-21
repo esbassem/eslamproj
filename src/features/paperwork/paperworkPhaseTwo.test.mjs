@@ -45,6 +45,12 @@ test('list routes use summary contracts rather than workspace data', () => {
   for (const source of [requests, vault, documents]) assert.doesNotMatch(source, /usePaperworkWorkspaceData|listPaperworkDocuments/);
 });
 
+test('requests filters do not expose the needs-action tab', () => {
+  const viewModels = read('./adapters/paperworkViewModels.js');
+  const filters = viewModels.match(/REQUEST_FILTERS[\s\S]*?\]\);/)?.[0] || '';
+  assert.doesNotMatch(filters, /id:\s*['"]action['"]|يحتاج إجراء/);
+});
+
 test('details and manual receipt are composed and legacy workspace is removed', () => {
   const requestDetails = read('./pages/PaperworkRequestDetailsPage.jsx');
   for (const component of ['RequestDocumentsTab', 'RequestActivityTab', 'DeliveryBalanceSummary']) assert.match(requestDetails, new RegExp(component));

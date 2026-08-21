@@ -264,7 +264,7 @@ function SaleSheetContent({
                               </div>
                               <p className="mt-0.5 font-bold opacity-75">{paperworkInfo.statusLabel}</p>
                             </div>
-                          ) : (
+                          ) : onPaperworkRequestOpen ? (
                             <button
                               type="button"
                               onClick={() => onPaperworkRequestOpen?.(sale)}
@@ -272,7 +272,7 @@ function SaleSheetContent({
                             >
                               طلب الورق غير محدد — اضغط لتحديده
                             </button>
-                          )}
+                          ) : null}
                         </div>
                         <p className="shrink-0 font-mono text-[0.72rem] font-bold text-slate-500">{formatMoney(itemTotal)}</p>
                       </div>

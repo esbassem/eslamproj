@@ -532,100 +532,6 @@ export const paperworkDocumentsService = {
     });
   },
 
-  async createPaperworkDocument({
-    tenantId,
-    documentType = 'jawab',
-    documentTitle,
-    documentOwnerName,
-    sourceType = 'manual',
-    ownerPartnerId = null,
-    trackingUnitId = null,
-    paperworkRequestId = null,
-    initialLocation = '',
-    notes = '',
-  } = {}) {
-    requireTenantId(tenantId);
-
-    if (!trackingUnitId) {
-      throw new Error('اختر القطعة المسجلة المرتبطة بالجواب.');
-    }
-
-    const client = requireSupabase();
-    const { data: trackingUnit, error: trackingUnitError } = await client
-      .from('stock_tracking_units')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('id', trackingUnitId)
-      .maybeSingle();
-
-    if (trackingUnitError) {
-      throw trackingUnitError;
-    }
-
-    if (!trackingUnit) {
-      throw new Error('القطعة المسجلة غير موجودة.');
-    }
-
-    const safeTitle = normalizeOptionalText(documentTitle);
-    const safeOwnerName = normalizeOptionalText(documentOwnerName);
-    if (!safeTitle) {
-      throw new Error('عنوان المستند مطلوب.');
-    }
-    if (documentType === 'jawab' && !safeOwnerName) {
-      throw new Error('اسم صاحب الجواب مطلوب.');
-    }
-    const currentTenantUserId = await resolveCurrentTenantUserId(client, { tenantId });
-    const status = 'in_custody';
-
-    const { data: document, error: documentError } = await client
-      .from('paperwork_documents')
-      .insert({
-        tenant_id: tenantId,
-        document_type: 'jawab',
-        document_title: safeTitle,
-        document_owner_name: safeOwnerName,
-        tracking_unit_id: trackingUnitId || null,
-        paperwork_request_id: paperworkRequestId || null,
-        owner_partner_id: ownerPartnerId || null,
-        source_type: sourceType || 'manual',
-        status,
-        notes: String(notes || '').trim() || null,
-        created_by: currentTenantUserId,
-      })
-      .select('id')
-      .single();
-
-    if (documentError) {
-      throw documentError;
-    }
-
-    const { error: moveError } = await client
-      .from('paperwork_document_moves')
-      .insert({
-        tenant_id: tenantId,
-        document_id: document.id,
-        move_direction: 'in',
-        source_type: 'manual',
-        to_user_id: currentTenantUserId,
-        to_location: String(initialLocation || '').trim() || null,
-        moved_at: new Date().toISOString(),
-        notes: String(notes || '').trim() || null,
-        created_by: currentTenantUserId,
-      });
-
-    if (moveError) {
-      await client
-        .from('paperwork_documents')
-        .delete()
-        .eq('tenant_id', tenantId)
-        .eq('id', document.id);
-      throw moveError;
-    }
-
-    invalidateVaultPaperworkCache({ tenantId });
-    return document.id;
-  },
-
   async createManualPaperworkReceipt({
     tenantId,
     trackingUnitId,
@@ -667,45 +573,6 @@ export const paperworkDocumentsService = {
 
     invalidateVaultPaperworkCache({ tenantId });
     return data?.document_id || null;
-  },
-
-  async deletePaperworkDocumentRollback({ tenantId, documentId } = {}) {
-    const client = requireSupabase();
-    requireTenantId(tenantId);
-    if (!documentId) return false;
-
-    const { error: attachmentsError } = await client
-      .from('ir_attachments')
-      .delete()
-      .eq('tenant_id', tenantId)
-      .eq('related_model', 'paperwork_documents')
-      .eq('related_id', documentId);
-
-    if (attachmentsError) {
-      throw attachmentsError;
-    }
-
-    const { error: movesError } = await client
-      .from('paperwork_document_moves')
-      .delete()
-      .eq('tenant_id', tenantId)
-      .eq('document_id', documentId);
-
-    if (movesError) {
-      throw movesError;
-    }
-
-    const { error: documentError } = await client
-      .from('paperwork_documents')
-      .delete()
-      .eq('tenant_id', tenantId)
-      .eq('id', documentId);
-
-    if (documentError) {
-      throw documentError;
-    }
-
-    return true;
   },
 
   async savePaperworkDocumentAttachment({ tenantId, documentId, documentType = 'jawab_photo', file, userId } = {}) {
@@ -764,59 +631,6 @@ export const paperworkDocumentsService = {
     }
 
     return { path, bucket: TENANT_FILES_BUCKET, documentType };
-  },
-
-  async linkExistingPaperworkDocumentAttachment({
-    tenantId,
-    documentId,
-    documentType = 'jawab_photo',
-    source,
-    userId,
-  } = {}) {
-    const client = requireSupabase();
-    requireTenantId(tenantId);
-    if (!documentId) throw new Error('تعذر تحديد الجواب.');
-    if (!source?.path) throw new Error('اختر صورة موجودة أولاً.');
-
-    const path = normalizeStoragePath(source.path);
-    if (!path.startsWith(`${tenantId}/`)) {
-      throw new Error('لا يمكن ربط صورة من مساحة شركة أخرى.');
-    }
-
-    const { data: document, error: documentError } = await client
-      .from('paperwork_documents')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('id', documentId)
-      .maybeSingle();
-
-    if (documentError) {
-      throw documentError;
-    }
-
-    if (!document) {
-      throw new Error('الجواب غير موجود.');
-    }
-
-    const createdBy = userId || await resolveCurrentTenantUserId(client, { tenantId });
-    const { error: attachmentError } = await client.from('ir_attachments').insert({
-      tenant_id: tenantId,
-      bucket_name: source.bucket || source.bucketName || TENANT_FILES_BUCKET,
-      file_path: path,
-      document_type: documentType,
-      related_model: 'paperwork_documents',
-      related_id: documentId,
-      original_file_name: source.name || source.originalFileName || path.split('/').pop() || null,
-      mime_type: source.mimeType || null,
-      file_size: source.size || null,
-      created_by: createdBy,
-    });
-
-    if (attachmentError) {
-      throw new Error(attachmentError.message || 'تعذر ربط الصورة الموجودة بالجواب.');
-    }
-
-    return { path, bucket: source.bucket || source.bucketName || TENANT_FILES_BUCKET, documentType };
   },
 
   async listTenantImageFiles({ tenantId, limit = 120 } = {}) {

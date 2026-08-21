@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowRight, Building2, Camera, Check, FileText, ImagePlus, Trash2, X } from 'lucide-react';
 import { paperworkService } from '@/features/paperwork/services/paperwork.service';
+import { getPaperworkErrorMessage } from '@/features/paperwork/authorization/paperworkPermissions';
 
 function findIdentifier(request, pattern) {
   return (request?.trackingIdentifiers || []).find((identifier) => (
@@ -205,7 +206,7 @@ export function BulkReceiptFlow({
         onOpenChange(false);
       }
     } catch (error) {
-      setReceiveError(error?.message || 'تعذر استلام الأوراق.');
+      setReceiveError(getPaperworkErrorMessage(error, 'تعذر استلام الأوراق.'));
     } finally {
       setIsReceiving(false);
     }

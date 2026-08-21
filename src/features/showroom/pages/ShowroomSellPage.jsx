@@ -42,6 +42,8 @@ import { useShowroomConfig } from "@/features/showroom/context/ShowroomConfigCon
 import { showroomService } from "@/features/showroom/services/showroom.service";
 import { crmService } from "@/features/crm/services/crm.service";
 import { useWorkspace } from "@/features/workspace/hooks/useWorkspace";
+import { useAuthorization } from "@/core/authorization/useAuthorization";
+import { PAPERWORK_PERMISSIONS } from "@/features/paperwork/authorization/paperworkPermissions";
 
 const loadPaperworkRequestPromptSheet = () =>
   import("@/features/showroom/components/PaperworkRequestPromptSheet").then(
@@ -655,6 +657,9 @@ export function ShowroomSellPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { tenant } = useWorkspace();
+  const { can } = useAuthorization();
+  const canAccessPaperwork = can(PAPERWORK_PERMISSIONS.ACCESS)
+    && can(PAPERWORK_PERMISSIONS.SEND);
   const {
     configs,
     activeConfigs,
@@ -828,7 +833,7 @@ export function ShowroomSellPage() {
   }, [loadSales]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
+    if (!canAccessPaperwork || typeof window === "undefined") return undefined;
 
     let timeoutId = null;
     let idleId = null;
@@ -846,10 +851,10 @@ export function ShowroomSellPage() {
       if (idleId) window.cancelIdleCallback?.(idleId);
       if (timeoutId) window.clearTimeout(timeoutId);
     };
-  }, []);
+  }, [canAccessPaperwork]);
 
   useEffect(() => {
-    if (isSalesLoading || paperworkPromptSale) {
+    if (!canAccessPaperwork || isSalesLoading || paperworkPromptSale) {
       return;
     }
 
@@ -864,6 +869,7 @@ export function ShowroomSellPage() {
     }
   }, [
     dismissedPaperworkPromptSaleId,
+    canAccessPaperwork,
     isSalesLoading,
     paperworkPromptSale,
     sales,
@@ -921,7 +927,7 @@ export function ShowroomSellPage() {
         ...current.filter((item) => item.id !== savedSale.id),
       ]);
       setDismissedPaperworkPromptSaleId(null);
-      if (getSalePendingPaperworkLines(savedSale).length) {
+      if (canAccessPaperwork && getSalePendingPaperworkLines(savedSale).length) {
         setPaperworkPromptSale(savedSale);
       }
       if (crmContext?.lead?.id) {
@@ -1345,7 +1351,7 @@ export function ShowroomSellPage() {
               isLoading={isSalesLoading}
               error={salesError}
               onInvoiceSelect={handleInvoiceSelect}
-              onPaperworkRequestSelect={(saleToUpdate) => {
+              onPaperworkRequestSelect={canAccessPaperwork ? (saleToUpdate) => {
                 if (
                   saleToUpdate &&
                   getSalePendingPaperworkLines(saleToUpdate).length
@@ -1353,7 +1359,7 @@ export function ShowroomSellPage() {
                   setDismissedPaperworkPromptSaleId(null);
                   setPaperworkPromptSale(saleToUpdate);
                 }
-              }}
+              } : undefined}
             />
           </div>
         </div>
@@ -1364,7 +1370,7 @@ export function ShowroomSellPage() {
         onClose={() => setSelectedSale(null)}
         onDeleted={handleSaleDeleted}
         onCancelled={handleSaleCancelled}
-        onPaperworkRequestOpen={(saleToUpdate) => {
+        onPaperworkRequestOpen={canAccessPaperwork ? (saleToUpdate) => {
           if (
             saleToUpdate &&
             getSalePendingPaperworkLines(saleToUpdate).length
@@ -1373,9 +1379,9 @@ export function ShowroomSellPage() {
             setSelectedSale(null);
             setPaperworkPromptSale(saleToUpdate);
           }
-        }}
+        } : undefined}
       />
-      {paperworkPromptSale ? (
+      {canAccessPaperwork && paperworkPromptSale ? (
         <Suspense fallback={null}>
           <PaperworkRequestPromptSheet
             open={Boolean(paperworkPromptSale)}

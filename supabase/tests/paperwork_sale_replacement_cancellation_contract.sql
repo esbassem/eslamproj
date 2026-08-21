@@ -26,8 +26,10 @@ begin
      or position('processor_cancellation_confirmed_at' in v_confirm)=0 then
     raise exception 'TEST_FAILED: atomic processor cancellation confirmation is incomplete';
   end if;
-  if position('can_manage_paperwork_requests' in v_confirm)=0 then
-    raise exception 'TEST_FAILED: processor cancellation permission check is missing';
+  if position('require_paperwork_action(p_tenant_id, ''paperwork.cancel'')' in v_confirm)=0
+     or position('is_tenant_owner' in v_confirm)>0
+     or position('can_manage_paperwork_requests' in v_confirm)>0 then
+    raise exception 'TEST_FAILED: processor cancellation must require paperwork.cancel';
   end if;
   if not exists(
     select 1 from pg_constraint c

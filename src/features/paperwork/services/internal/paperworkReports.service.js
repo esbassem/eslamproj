@@ -39,7 +39,6 @@ export const paperworkReportsService = {
       requestsCountResult,
       vaultDocumentsResult,
       sentPendingReceiptResult,
-      pendingNotificationResult,
     ] = await Promise.all([
       loadActiveSaleLineIds(),
       client
@@ -62,13 +61,6 @@ export const paperworkReportsService = {
         .eq('tenant_id', tenantId)
         .eq('status', 'open')
         .eq('current_stage', 'sent_to_processor'),
-      client
-        .from('paperwork_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'open')
-        .eq('current_stage', 'received_from_processor')
-        .is('customer_notified_at', null),
     ]);
 
     if (requestsResult.error) {
@@ -84,7 +76,6 @@ export const paperworkReportsService = {
     }
 
     if (sentPendingReceiptResult.error) throw sentPendingReceiptResult.error;
-    if (pendingNotificationResult.error) throw pendingNotificationResult.error;
 
     const requests = requestsResult.data || [];
     const requestedSaleLineIds = new Set();
@@ -107,7 +98,6 @@ export const paperworkReportsService = {
       totalRequests: requestsCountResult.count || 0,
       vault: vaultDocumentsResult.count || 0,
       sentPendingReceipt: sentPendingReceiptResult.count || 0,
-      pendingNotification: pendingNotificationResult.count || 0,
     };
   },
 
