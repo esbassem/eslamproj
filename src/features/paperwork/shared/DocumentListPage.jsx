@@ -1,4 +1,4 @@
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { DOCUMENT_FILTERS } from "@/features/paperwork/adapters/paperworkViewModels";
 import { paperworkReadService } from "@/features/paperwork/services/queries/paperworkRead.service";
@@ -17,15 +17,19 @@ import {
   StatusBadge,
 } from "@/features/paperwork/shared/PaperworkUI";
 import { PAPERWORK_ROUTES } from "@/features/paperwork/routes/paperworkRoutes";
+import { createPaperworkNavigationState } from "@/features/paperwork/routes/paperworkNavigation";
+import { usePaperworkListScroll } from "@/features/paperwork/hooks/usePaperworkListScroll";
+import { PaperworkDocumentsNavigation } from "@/features/paperwork/shared/PaperworkDocumentsNavigation";
 
-export function DocumentListPage({ vault = false }) {
+export function DocumentListContent({ vault = false }) {
   const location = useLocation();
   const tenantId = usePaperworkTenant();
   const [params, setParams] = useSearchParams();
   const filter = vault ? "in_custody" : params.get("filter") || "all";
   const requestId = params.get("request") || null;
   const page = Math.max(Number(params.get("page")) || 0, 0);
-  const [search, setSearch] = useState(params.get("q") || "");
+  const querySearch = params.get("q") || "";
+  const [search, setSearch] = useState(querySearch);
   const deferredSearch = useDeferredValue(search);
   const query = usePaperworkQuery(
     () =>
@@ -41,30 +45,23 @@ export function DocumentListPage({ vault = false }) {
         : Promise.resolve(null),
     [tenantId, filter, deferredSearch, page, vault, requestId],
   );
-  const update = (next) =>
+  const update = (next, options) =>
     setParams((current) => {
       Object.entries(next).forEach(([key, value]) =>
         value ? current.set(key, value) : current.delete(key),
       );
       return current;
-    });
+    }, options);
+  useEffect(() => setSearch(querySearch), [querySearch]);
+  usePaperworkListScroll(location, !query.loading);
   return (
-    <PaperworkPage
-      title={vault ? "الخزنة" : requestId ? "مستندات الطلب" : "المستندات"}
-      description={
-        vault
-          ? "الحيازة التشغيلية الحالية للمستندات الموجودة داخل الخزنة."
-          : requestId
-            ? "المستندات المرتبطة بهذا الطلب فقط."
-            : "السجل التاريخي الكامل لكل مستندات أوراق الملكية."
-      }
-    >
+    <>
       <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 sm:flex-row">
         <SearchInput
           value={search}
           onChange={(value) => {
             setSearch(value);
-            update({ q: value, page: "" });
+            update({ q: value, page: "" }, { replace: true });
           }}
           placeholder="بحث بالعميل أو صاحب الورق أو المنتج أو أرقام التتبع"
         />
@@ -97,9 +94,7 @@ export function DocumentListPage({ vault = false }) {
               <Link
                 key={item.id}
                 to={PAPERWORK_ROUTES.documentDetails(item.id)}
-                state={{
-                  paperworkBackTo: `${location.pathname}${location.search}`,
-                }}
+                state={createPaperworkNavigationState(location, { returnLabel: vault ? "الخزنة" : "المستندات" })}
                 className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-blue-200"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -142,6 +137,18 @@ export function DocumentListPage({ vault = false }) {
           </div>
         </>
       )}
+    </>
+  );
+}
+
+export function DocumentListPage({ vault = false }) {
+  return (
+    <PaperworkPage
+      title={vault ? "الخزنة" : "المستندات"}
+      description={vault ? "الحيازة التشغيلية الحالية للمستندات الموجودة داخل الخزنة." : "السجل التاريخي الكامل لكل مستندات أوراق الملكية."}
+    >
+      <PaperworkDocumentsNavigation />
+      <DocumentListContent vault={vault} />
     </PaperworkPage>
   );
 }

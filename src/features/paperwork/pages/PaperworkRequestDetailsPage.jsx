@@ -1,13 +1,11 @@
-import { useState } from "react";
-import { ArrowRight } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { paperworkService } from "@/features/paperwork/services/paperwork.service";
 import { RequestActions } from "@/features/paperwork/requests/RequestActions";
 import {
   usePaperworkQuery,
   usePaperworkTenant,
 } from "@/features/paperwork/hooks/usePaperworkQuery";
-import { PaperworkPage } from "@/features/paperwork/shared/PaperworkPage";
+import { PaperworkDetailPage } from "@/features/paperwork/shared/PaperworkDetailPage";
 import {
   DetailSection,
   EmptyState,
@@ -22,6 +20,7 @@ import {
   DeliveryBalanceSummary,
 } from "@/features/paperwork/requests/RequestDetailsTabs";
 import { PAPERWORK_ROUTES } from "@/features/paperwork/routes/paperworkRoutes";
+import { resolvePaperworkReturnContext } from "@/features/paperwork/routes/paperworkNavigation";
 
 const tabs = [
   { id: "overview", label: "نظرة عامة" },
@@ -40,8 +39,11 @@ const row = (label, value) => (
 export function PaperworkRequestDetailsPage() {
   const { requestId } = useParams();
   const tenantId = usePaperworkTenant();
-  const navigate = useNavigate();
-  const [tab, setTab] = useState("overview");
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const requestedTab = params.get("tab");
+  const tab = tabs.some((item) => item.id === requestedTab) ? requestedTab : "overview";
+  const returnContext = resolvePaperworkReturnContext(location, PAPERWORK_ROUTES.requests, "الطلبات");
   const query = usePaperworkQuery(
     () =>
       tenantId
@@ -51,31 +53,20 @@ export function PaperworkRequestDetailsPage() {
   );
   const request = query.data;
   return (
-    <PaperworkPage
+    <PaperworkDetailPage
       title={
         request
           ? `طلب #${request.id.slice(0, 8).toUpperCase()}`
           : "تفاصيل الطلب"
       }
-      actions={
-        <>
-          <button
-            type="button"
-            onClick={() => navigate(PAPERWORK_ROUTES.requests)}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black"
-          >
-            <ArrowRight className="h-4 w-4" />
-            رجوع
-          </button>
-          {request ? (
+      returnContext={returnContext}
+      actions={request ? (
             <RequestActions
               request={request}
               tenantId={tenantId}
               onChanged={query.retry}
             />
           ) : null}
-        </>
-      }
     >
       {query.loading ? (
         <PageSkeleton />
@@ -117,7 +108,10 @@ export function PaperworkRequestDetailsPage() {
                 key={item.id}
                 role="tab"
                 aria-selected={tab === item.id}
-                onClick={() => setTab(item.id)}
+                onClick={() => setParams((current) => {
+                  item.id === "overview" ? current.delete("tab") : current.set("tab", item.id);
+                  return current;
+                }, { state: location.state })}
                 className={`border-b-2 px-4 py-3 text-sm font-black ${tab === item.id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500"}`}
               >
                 {item.label}
@@ -154,12 +148,16 @@ export function PaperworkRequestDetailsPage() {
               </DetailSection>
             </div>
           ) : tab === "documents" ? (
-            <RequestDocumentsTab tenantId={tenantId} requestId={request.id} />
+            <RequestDocumentsTab
+              tenantId={tenantId}
+              requestId={request.id}
+              returnLabel={`الطلب #${request.id.slice(0, 8).toUpperCase()}`}
+            />
           ) : (
             <RequestActivityTab tenantId={tenantId} requestId={request.id} />
           )}
         </>
       )}
-    </PaperworkPage>
+    </PaperworkDetailPage>
   );
 }

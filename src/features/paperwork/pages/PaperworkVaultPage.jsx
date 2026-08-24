@@ -1,8 +1,8 @@
 import { useDeferredValue, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { paperworkService } from "@/features/paperwork/services/paperwork.service";
-import { loadVaultPaperworkFirstPage } from "@/features/paperwork/services/vaultPaperworkCache";
+import { loadVaultPaperworkFirstPage, setVaultPaperworkCacheSnapshot } from "@/features/paperwork/services/vaultPaperworkCache";
 import { paperworkReadService } from "@/features/paperwork/services/queries/paperworkRead.service";
 import { usePaperworkTenant } from "@/features/paperwork/hooks/usePaperworkQuery";
 import { PaperworkPage } from "@/features/paperwork/shared/PaperworkPage";
@@ -15,11 +15,17 @@ import {
   StatusBadge,
 } from "@/features/paperwork/shared/PaperworkUI";
 import { PAPERWORK_ROUTES } from "@/features/paperwork/routes/paperworkRoutes";
+import { createPaperworkNavigationState } from "@/features/paperwork/routes/paperworkNavigation";
+import { usePaperworkListScroll } from "@/features/paperwork/hooks/usePaperworkListScroll";
+import { PaperworkDocumentsNavigation } from "@/features/paperwork/shared/PaperworkDocumentsNavigation";
 
 export function PaperworkVaultPage() {
   const tenantId = usePaperworkTenant();
   const { tenant_user: tenantUser } = useAuth();
-  const [search, setSearch] = useState("");
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const querySearch = params.get("q") || "";
+  const [search, setSearch] = useState(querySearch);
   const deferredSearch = useDeferredValue(search);
   const [documents, setDocuments] = useState([]);
   const [cursor, setCursor] = useState(null);
@@ -70,12 +76,22 @@ export function PaperworkVaultPage() {
   useEffect(() => {
     void load();
   }, [tenantId, tenantUser?.id, deferredSearch]);
+  useEffect(() => setSearch(querySearch), [querySearch]);
+  usePaperworkListScroll(location, !loading);
   const loadMore = async () => {
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
     try {
       const result = await fetchCursorPage({ pageSize: 30, cursor });
-      setDocuments((current) => [...current, ...(result.documents || [])]);
+      setDocuments((current) => {
+        const nextDocuments = [...current, ...(result.documents || [])];
+        setVaultPaperworkCacheSnapshot({ tenantId, userId: tenantUser?.id, search: "", pageSize: 30 }, {
+          documents: nextDocuments,
+          cursor: result.cursor,
+          hasMore: result.hasMore,
+        });
+        return nextDocuments;
+      });
       setCursor(result.cursor);
       setHasMore(result.hasMore);
     } catch (nextError) {
@@ -103,10 +119,17 @@ export function PaperworkVaultPage() {
       title="الخزنة"
       description="الحيازة التشغيلية الحالية؛ أول صفحة مخزنة بمعزل عن الشركة والمستخدم."
     >
+      <PaperworkDocumentsNavigation />
       <div className="mb-4 rounded-2xl border bg-white p-3">
         <SearchInput
           value={search}
-          onChange={setSearch}
+          onChange={(value) => {
+            setSearch(value);
+            setParams((current) => {
+              value ? current.set("q", value) : current.delete("q");
+              return current;
+            }, { replace: true });
+          }}
           placeholder="بحث بالشاسيه أو الموتور أو القطعة أو العميل أو صاحب الورق"
         />
       </div>
@@ -128,7 +151,9 @@ export function PaperworkVaultPage() {
                 >
                   <Link
                     to={PAPERWORK_ROUTES.documentDetails(document.id)}
-                    state={{ paperworkBackTo: PAPERWORK_ROUTES.vault }}
+                    state={createPaperworkNavigationState(location, {
+                      returnLabel: "الخزنة",
+                    })}
                     className="block"
                   >
                     <div className="flex items-start justify-between gap-3">

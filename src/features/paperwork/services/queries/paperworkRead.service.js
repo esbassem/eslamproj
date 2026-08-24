@@ -2,7 +2,7 @@ import { requireSupabase } from '@/core/lib/supabase';
 import { requireTenantId } from '@/features/paperwork/services/internal/paperworkDataSupport';
 import { requestSummaryViewModel, documentSummaryViewModel } from '@/features/paperwork/adapters/paperworkViewModels';
 
-const REQUEST_SUMMARY_COLUMNS = 'id,tenant_id,branch_id,tracking_unit_id,customer_id,document_owner_partner_id,document_owner_name,processor_partner_id,current_stage,stage_entered_at,status,updated_at';
+const REQUEST_SUMMARY_COLUMNS = 'id,tenant_id,branch_id,tracking_unit_id,customer_id,document_owner_partner_id,document_owner_name,processor_partner_id,current_stage,stage_entered_at,status,created_at,updated_at';
 const DOCUMENT_SUMMARY_COLUMNS = 'id,tenant_id,document_type,document_title,document_owner_name,tracking_unit_id,paperwork_request_id,owner_partner_id,manual_item_description,status,created_at,updated_at';
 
 function escapeLike(value) {
@@ -67,6 +67,7 @@ async function resolveSearchCandidates(client, tenantId, search) {
 
 function applyRequestFilter(query, filter) {
   if (filter === 'action') return query.eq('status', 'open').in('current_stage', ['preparation', 'received_from_processor', 'pending_processor_cancellation']);
+  if (filter === 'review') return query.eq('status', 'open').or('blocked_reason.not.is.null,current_stage.eq.pending_processor_cancellation');
   if (filter === 'cancelled') return query.eq('status', 'cancelled');
   if (filter === 'delivered') return query.eq('current_stage', 'delivered');
   if (filter && filter !== 'all') return query.eq('current_stage', filter);
@@ -111,15 +112,21 @@ export const paperworkReadService = {
   async getHomeSummary({ tenantId } = {}) {
     requireTenantId(tenantId);
     const client = requireSupabase();
-    const [action, processors, vault, review, activity] = await Promise.all([
-      client.from('paperwork_requests').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'open').in('current_stage', ['preparation', 'received_from_processor', 'pending_processor_cancellation']),
+    const [action, processors, vault, recentRequests] = await Promise.all([
+      client.from('paperwork_requests').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'open').eq('current_stage', 'preparation'),
       client.from('paperwork_requests').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'open').eq('current_stage', 'sent_to_processor'),
       client.from('paperwork_documents').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'in_custody'),
-      client.from('paperwork_requests').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'open').or('blocked_reason.not.is.null,current_stage.eq.pending_processor_cancellation'),
-      client.from('paperwork_request_events').select('id,request_id,event_type,new_stage,notes,created_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(6),
+      client.from('paperwork_requests').select(REQUEST_SUMMARY_COLUMNS).eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(6),
     ]);
-    for (const result of [action, processors, vault, review, activity]) if (result.error) throw result.error;
-    return { actionCount: action.count || 0, processorCount: processors.count || 0, vaultCount: vault.count || 0, reviewCount: review.count || 0, activity: activity.data || [] };
+    for (const result of [action, processors, vault, recentRequests]) if (result.error) throw result.error;
+    const rows = recentRequests.data || [];
+    const maps = await loadSummaryMaps(client, tenantId, rows);
+    return {
+      actionCount: action.count || 0,
+      processorCount: processors.count || 0,
+      vaultCount: vault.count || 0,
+      recentRequests: rows.map((row) => requestSummaryViewModel(row, maps)),
+    };
   },
 
   async listRequestSummaries({ tenantId, filter = 'all', search = '', page = 0, pageSize = 30, processorId = null } = {}) {

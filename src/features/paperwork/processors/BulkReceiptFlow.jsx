@@ -5,22 +5,32 @@ import { paperworkService } from '@/features/paperwork/services/paperwork.servic
 import { getPaperworkErrorMessage } from '@/features/paperwork/authorization/paperworkPermissions';
 
 function findIdentifier(request, pattern) {
-  return (request?.trackingIdentifiers || []).find((identifier) => (
-    pattern.test(`${identifier.code || ''} ${identifier.label || ''}`)
-  ));
+  return (request?.trackingIdentifiers || []).find((identifier) =>
+    pattern.test(`${identifier.code || ''} ${identifier.label || ''}`),
+  );
 }
 
 function getGuardianshipLabel(note) {
-  const value = String(note || '').match(/حالة الوصاية:\s*([^\n]+)/)?.[1]?.trim();
-  return {
-    father_guardian: 'وصاية والده',
-    mother_guardian: 'وصاية والدته',
-    none: 'بدون وصاية',
-  }[value] || value || '';
+  const value = String(note || '')
+    .match(/حالة الوصاية:\s*([^\n]+)/)?.[1]
+    ?.trim();
+  return (
+    {
+      father_guardian: 'وصاية والده',
+      mother_guardian: 'وصاية والدته',
+      none: 'بدون وصاية',
+    }[value] ||
+    value ||
+    ''
+  );
 }
 
 function getSaleBlockNotes(note) {
-  return String(note || '').match(/ملاحظات حظر البيع:\s*([^\n]+)/)?.[1]?.trim() || '';
+  return (
+    String(note || '')
+      .match(/ملاحظات حظر البيع:\s*([^\n]+)/)?.[1]
+      ?.trim() || ''
+  );
 }
 
 function formatSentAt(value) {
@@ -36,13 +46,7 @@ function formatSentAt(value) {
   }).format(date);
 }
 
-export function BulkReceiptFlow({
-  processor,
-  open,
-  onOpenChange,
-  tenantId,
-  onReceived,
-}) {
+export function BulkReceiptFlow({ processor, open, onOpenChange, tenantId, onReceived }) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -100,22 +104,30 @@ export function BulkReceiptFlow({
     const handleKeyDown = (event) => {
       if (event.key !== 'Escape') return;
       if (confirmationOpen) setConfirmationOpen(false);
-      else onOpenChange(false);
+      else attemptClose();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [confirmationOpen, mounted, onOpenChange]);
 
+  useEffect(() => {
+    if (!mounted || (!selectedIds.length && !Object.keys(receiptImages).length)) return undefined;
+    const warn = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [mounted, receiptImages, selectedIds.length]);
+
   if (!mounted || !processor) return null;
 
   const allSelected = requests.length > 0 && selectedIds.length === requests.length;
   const toggleRequest = (requestId) => {
-    setSelectedIds((current) => (
-      current.includes(requestId)
-        ? current.filter((id) => id !== requestId)
-        : [...current, requestId]
-    ));
+    setSelectedIds((current) =>
+      current.includes(requestId) ? current.filter((id) => id !== requestId) : [...current, requestId],
+    );
   };
   const clearReceiptImages = () => {
     Object.values(receiptImages).forEach((image) => {
@@ -123,6 +135,13 @@ export function BulkReceiptFlow({
     });
     setReceiptImages({});
   };
+  function attemptClose(force = false) {
+    const hasUnsavedChanges =
+      selectedIds.length > 0 || Object.keys(receiptImages).length > 0 || Object.values(receiptOwnerNames).some(Boolean);
+    if (!force && hasUnsavedChanges && !window.confirm('لديك بيانات استلام غير محفوظة. هل تريد إلغاء العملية؟')) return;
+    clearReceiptImages();
+    onOpenChange(false);
+  }
   const closeReceiptWizard = () => {
     if (isReceiving) return;
     clearReceiptImages();
@@ -160,10 +179,11 @@ export function BulkReceiptFlow({
   const confirmReceipt = async () => {
     if (isReceiving || !selectedIds.length) return;
 
-    const missingOwner = selectedRequests.find((request) => (
-      !(request.documentOwnerName || request.documentOwner?.name)
-      && !String(receiptOwnerNames[request.id] || '').trim()
-    ));
+    const missingOwner = selectedRequests.find(
+      (request) =>
+        !(request.documentOwnerName || request.documentOwner?.name) &&
+        !String(receiptOwnerNames[request.id] || '').trim(),
+    );
     if (missingOwner) {
       setReceiptStep(selectedRequests.findIndex((request) => request.id === missingOwner.id));
       setReceiveError('اكتب اسم صاحب الجواب أولًا.');
@@ -184,14 +204,8 @@ export function BulkReceiptFlow({
       });
 
       if (result.failed.length || result.imageFailed.length) {
-        const failureText = [...result.failed, ...result.imageFailed]
-          .map((failure) => failure.message)
-          .join('، ');
-        setReceiveError(
-          result.succeeded.length
-            ? `تم استلام ${result.succeeded.length}. ${failureText}`
-            : failureText,
-        );
+        const failureText = [...result.failed, ...result.imageFailed].map((failure) => failure.message).join('، ');
+        setReceiveError(result.succeeded.length ? `تم استلام ${result.succeeded.length}. ${failureText}` : failureText);
       }
 
       if (result.succeeded.length) {
@@ -203,7 +217,7 @@ export function BulkReceiptFlow({
       if (!result.failed.length) {
         clearReceiptImages();
         setConfirmationOpen(false);
-        onOpenChange(false);
+        attemptClose(true);
       }
     } catch (error) {
       setReceiveError(getPaperworkErrorMessage(error, 'تعذر استلام الأوراق.'));
@@ -216,7 +230,7 @@ export function BulkReceiptFlow({
     <div className={`fixed inset-0 z-[140] ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} dir="rtl">
       <button
         type="button"
-        onClick={() => onOpenChange(false)}
+        onClick={() => attemptClose()}
         className={`absolute inset-0 bg-slate-950/35 transition-opacity duration-200 ${
           visible ? 'opacity-100' : 'opacity-0'
         }`}
@@ -242,7 +256,7 @@ export function BulkReceiptFlow({
             </div>
             <button
               type="button"
-              onClick={() => onOpenChange(false)}
+              onClick={() => attemptClose()}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200"
               aria-label="إغلاق"
             >
@@ -261,11 +275,10 @@ export function BulkReceiptFlow({
                 {selectedIds.length} من {requests.length} محددة
               </span>
             </span>
-            <span className={`flex h-6 w-6 items-center justify-center rounded-md border transition ${
-              allSelected
-                ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-slate-300 bg-white text-transparent'
-            }`}
+            <span
+              className={`flex h-6 w-6 items-center justify-center rounded-md border transition ${
+                allSelected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'
+              }`}
             >
               <Check className="h-4 w-4" />
             </span>
@@ -288,11 +301,10 @@ export function BulkReceiptFlow({
                     selected ? 'bg-blue-50/55' : 'hover:bg-slate-50'
                   }`}
                 >
-                  <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition ${
-                    selected
-                      ? 'border-blue-600 bg-blue-600 text-white'
-                      : 'border-slate-300 bg-white text-transparent'
-                  }`}
+                  <span
+                    className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition ${
+                      selected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'
+                    }`}
                   >
                     <Check className="h-4 w-4" />
                   </span>
@@ -303,9 +315,10 @@ export function BulkReceiptFlow({
                         {request.productName || 'طلب أوراق'}
                       </span>
                       <span className="shrink-0 text-[10px] font-bold text-slate-500">
-                        باسم: {request.documentOwnerName
-                          || request.documentOwner?.name
-                          || (request.documentOwnerStatus === 'later' ? 'يُحدد لاحقًا' : 'غير محدد')}
+                        باسم:{' '}
+                        {request.documentOwnerName ||
+                          request.documentOwner?.name ||
+                          (request.documentOwnerStatus === 'later' ? 'يُحدد لاحقًا' : 'غير محدد')}
                       </span>
                       {request.documentOwnerStatus !== 'later' && getGuardianshipLabel(request.documentOwnerNote) ? (
                         <span className="shrink-0 text-[9px] font-bold text-slate-400">
@@ -314,10 +327,9 @@ export function BulkReceiptFlow({
                       ) : null}
                     </span>
                     <span className="mt-1 block truncate text-[10px] font-bold text-slate-400">
-                      {[
-                        chassis?.value ? `شاسيه ${chassis.value}` : '',
-                        engine?.value ? `موتور ${engine.value}` : '',
-                      ].filter(Boolean).join(' · ') || 'لا توجد أرقام تعريف'}
+                      {[chassis?.value ? `شاسيه ${chassis.value}` : '', engine?.value ? `موتور ${engine.value}` : '']
+                        .filter(Boolean)
+                        .join(' · ') || 'لا توجد أرقام تعريف'}
                     </span>
                     {getSaleBlockNotes(request.documentOwnerNote) ? (
                       <span className="mt-1.5 block rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black text-red-800">
@@ -325,14 +337,13 @@ export function BulkReceiptFlow({
                       </span>
                     ) : null}
                     <span className="mt-1.5 block truncate text-[9px] font-bold text-blue-500">
-                      أُرسل للجهة: {formatSentAt(
+                      أُرسل للجهة:{' '}
+                      {formatSentAt(
                         [...(request.events || [])]
                           .reverse()
-                          .find((event) => (
-                            event.eventType === 'sent_to_supplier'
-                            || event.newStage === 'sent_to_processor'
-                          ))?.createdAt
-                        || request.stageEnteredAt,
+                          .find(
+                            (event) => event.eventType === 'sent_to_supplier' || event.newStage === 'sent_to_processor',
+                          )?.createdAt || request.stageEnteredAt,
                       )}
                     </span>
                   </span>
@@ -377,16 +388,17 @@ export function BulkReceiptFlow({
                       {selectedRequests[receiptStep]?.productName || 'طلب أوراق'}
                     </h3>
                     <span className="shrink-0 text-[10px] font-bold text-slate-500">
-                      الجواب باسم: {selectedRequests[receiptStep]?.documentOwnerName
-                        || selectedRequests[receiptStep]?.documentOwner?.name
-                        || (selectedRequests[receiptStep]?.documentOwnerStatus === 'later' ? 'يُحدد لاحقًا' : 'غير محدد')}
+                      الجواب باسم:{' '}
+                      {selectedRequests[receiptStep]?.documentOwnerName ||
+                        selectedRequests[receiptStep]?.documentOwner?.name ||
+                        (selectedRequests[receiptStep]?.documentOwnerStatus === 'later' ? 'يُحدد لاحقًا' : 'غير محدد')}
                     </span>
-                    {selectedRequests[receiptStep]?.documentOwnerStatus !== 'later'
-                      && getGuardianshipLabel(selectedRequests[receiptStep]?.documentOwnerNote) ? (
-                        <span className="shrink-0 text-[9px] font-bold text-slate-400">
-                          · {getGuardianshipLabel(selectedRequests[receiptStep]?.documentOwnerNote)}
-                        </span>
-                      ) : null}
+                    {selectedRequests[receiptStep]?.documentOwnerStatus !== 'later' &&
+                    getGuardianshipLabel(selectedRequests[receiptStep]?.documentOwnerNote) ? (
+                      <span className="shrink-0 text-[9px] font-bold text-slate-400">
+                        · {getGuardianshipLabel(selectedRequests[receiptStep]?.documentOwnerNote)}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1 truncate text-[10px] font-bold text-slate-400">
                     {[
@@ -396,7 +408,9 @@ export function BulkReceiptFlow({
                       findIdentifier(selectedRequests[receiptStep], /engine|motor|موتور|محرك/i)?.value
                         ? `موتور ${findIdentifier(selectedRequests[receiptStep], /engine|motor|موتور|محرك/i).value}`
                         : '',
-                    ].filter(Boolean).join(' · ') || 'لا توجد أرقام تعريف'}
+                    ]
+                      .filter(Boolean)
+                      .join(' · ') || 'لا توجد أرقام تعريف'}
                   </p>
                 </div>
                 <button
@@ -414,34 +428,38 @@ export function BulkReceiptFlow({
                 {selectedRequests.map((request, index) => (
                   <span
                     key={request.id}
-                    className={`h-1 flex-1 rounded-full ${
-                      index <= receiptStep ? 'bg-blue-600' : 'bg-slate-200'
-                    }`}
+                    className={`h-1 flex-1 rounded-full ${index <= receiptStep ? 'bg-blue-600' : 'bg-slate-200'}`}
                   />
                 ))}
               </div>
 
               <div className="mt-4">
-                {!(selectedRequests[receiptStep]?.documentOwnerName
-                  || selectedRequests[receiptStep]?.documentOwner?.name) ? (
-                    <label className="mb-4 block rounded-xl border border-amber-200 bg-amber-50 p-3">
-                      <span className="block text-xs font-black text-slate-800">اسم صاحب الجواب</span>
-                      <span className="mt-1 block text-[10px] font-bold text-slate-500">الاسم المكتوب على الجواب المستلم</span>
-                      <input
-                        type="text"
-                        value={receiptOwnerNames[selectedRequests[receiptStep]?.id] || ''}
-                        onChange={(event) => {
-                          const requestId = selectedRequests[receiptStep]?.id;
-                          setReceiptOwnerNames((current) => ({ ...current, [requestId]: event.target.value }));
-                          setReceiveError('');
-                        }}
-                        autoFocus
-                        disabled={isReceiving}
-                        placeholder="اكتب الاسم"
-                        className="mt-3 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-black text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
-                      />
-                    </label>
-                  ) : null}
+                {!(
+                  selectedRequests[receiptStep]?.documentOwnerName || selectedRequests[receiptStep]?.documentOwner?.name
+                ) ? (
+                  <label className="mb-4 block rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <span className="block text-xs font-black text-slate-800">اسم صاحب الجواب</span>
+                    <span className="mt-1 block text-[10px] font-bold text-slate-500">
+                      الاسم المكتوب على الجواب المستلم
+                    </span>
+                    <input
+                      type="text"
+                      value={receiptOwnerNames[selectedRequests[receiptStep]?.id] || ''}
+                      onChange={(event) => {
+                        const requestId = selectedRequests[receiptStep]?.id;
+                        setReceiptOwnerNames((current) => ({
+                          ...current,
+                          [requestId]: event.target.value,
+                        }));
+                        setReceiveError('');
+                      }}
+                      autoFocus
+                      disabled={isReceiving}
+                      placeholder="اكتب الاسم"
+                      className="mt-3 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-black text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                    />
+                  </label>
+                ) : null}
                 {receiptImages[selectedRequests[receiptStep]?.id]?.previewUrl ? (
                   <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
                     <img
@@ -521,9 +539,8 @@ export function BulkReceiptFlow({
                     type="button"
                     onClick={() => {
                       const request = selectedRequests[receiptStep];
-                      const ownerName = request.documentOwnerName
-                        || request.documentOwner?.name
-                        || receiptOwnerNames[request.id];
+                      const ownerName =
+                        request.documentOwnerName || request.documentOwner?.name || receiptOwnerNames[request.id];
                       if (!String(ownerName || '').trim()) {
                         setReceiveError('اكتب اسم صاحب الجواب أولًا.');
                         return;

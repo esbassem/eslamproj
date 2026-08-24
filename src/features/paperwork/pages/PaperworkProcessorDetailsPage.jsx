@@ -1,12 +1,12 @@
 import { lazy, Suspense, useState } from "react";
-import { ArrowRight, CheckSquare } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { CheckSquare } from "lucide-react";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { paperworkReadService } from "@/features/paperwork/services/queries/paperworkRead.service";
 import {
   usePaperworkQuery,
   usePaperworkTenant,
 } from "@/features/paperwork/hooks/usePaperworkQuery";
-import { PaperworkPage } from "@/features/paperwork/shared/PaperworkPage";
+import { PaperworkDetailPage } from "@/features/paperwork/shared/PaperworkDetailPage";
 import {
   EmptyState,
   PageError,
@@ -17,6 +17,7 @@ import {
 import { PAPERWORK_ROUTES } from "@/features/paperwork/routes/paperworkRoutes";
 import { useAuthorization } from "@/core/authorization/useAuthorization";
 import { PAPERWORK_PERMISSIONS } from "@/features/paperwork/authorization/paperworkPermissions";
+import { createPaperworkNavigationState, resolvePaperworkReturnContext } from "@/features/paperwork/routes/paperworkNavigation";
 
 const BulkReceipt = lazy(() =>
   import("@/features/paperwork/processors/BulkReceiptFlow").then((module) => ({
@@ -27,6 +28,7 @@ const BulkReceipt = lazy(() =>
 export function PaperworkProcessorDetailsPage() {
   const { processorId } = useParams();
   const tenantId = usePaperworkTenant();
+  const location = useLocation();
   const { can } = useAuthorization();
   const canReceive = can(PAPERWORK_PERMISSIONS.RECEIVE);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -42,6 +44,7 @@ export function PaperworkProcessorDetailsPage() {
     [tenantId, processorId],
   );
   const processorName = query.data?.items[0]?.processorName || "جهة الإصدار";
+  const returnContext = resolvePaperworkReturnContext(location, PAPERWORK_ROUTES.processors, "عند الجهات");
   const processor = query.data
     ? {
         id: processorId,
@@ -53,19 +56,11 @@ export function PaperworkProcessorDetailsPage() {
       }
     : null;
   return (
-    <PaperworkPage
+    <PaperworkDetailPage
       title={processorName}
       description="الطلبات الموجودة حاليًا لدى هذه الجهة."
-      actions={
-        <>
-          <Link
-            to={PAPERWORK_ROUTES.processors}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black"
-          >
-            <ArrowRight className="h-4 w-4" />
-            رجوع
-          </Link>
-          {canReceive ? <button
+      returnContext={returnContext}
+      actions={canReceive ? <button
             type="button"
             disabled={!query.data?.items.length}
             onClick={() => setReceiptOpen(true)}
@@ -74,8 +69,6 @@ export function PaperworkProcessorDetailsPage() {
             <CheckSquare className="h-4 w-4" />
             استلام أوراق
           </button> : null}
-        </>
-      }
     >
       {query.loading ? (
         <PageSkeleton />
@@ -89,6 +82,9 @@ export function PaperworkProcessorDetailsPage() {
             <Link
               key={item.id}
               to={PAPERWORK_ROUTES.requestDetails(item.id)}
+              state={createPaperworkNavigationState(location, {
+                returnLabel: processorName,
+              })}
               className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
@@ -117,6 +113,6 @@ export function PaperworkProcessorDetailsPage() {
           />
         </Suspense>
       ) : null}
-    </PaperworkPage>
+    </PaperworkDetailPage>
   );
 }

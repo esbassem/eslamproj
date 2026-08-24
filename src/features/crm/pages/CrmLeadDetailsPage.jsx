@@ -12,6 +12,8 @@ import { Badge } from "@/core/ui/badge";
 import { Button } from "@/core/ui/button";
 import { Card, CardContent } from "@/core/ui/card";
 import { EmptyState } from "@/core/ui/empty-state";
+import { AppBreadcrumbs } from "@/core/ui/app-breadcrumbs";
+import { getCanonicalBreadcrumbs } from "@/core/navigation/platformNavigation";
 import { AddLeadActivitySheet } from "@/features/crm/components/AddLeadActivitySheet";
 import { CreateInstallmentApplicationSheet } from "@/features/crm/components/CreateInstallmentApplicationSheet";
 import { CrmActivityTimeline } from "@/features/crm/components/CrmActivityTimeline";
@@ -195,6 +197,10 @@ export function CrmLeadDetailsPage() {
   };
   return (
     <section>
+      <AppBreadcrumbs
+        className="mb-4"
+        items={getCanonicalBreadcrumbs(`/apps/crm/leads/${leadId}`, { currentLabel: lead.customer_name })}
+      />
       {notice ? (
         <div className="fixed left-4 top-4 z-[80] rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg">
           {notice}

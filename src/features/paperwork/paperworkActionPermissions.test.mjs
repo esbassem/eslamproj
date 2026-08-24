@@ -23,10 +23,10 @@ test('request and document actions use action permissions instead of owner rende
 });
 
 test('receive UI and Showroom creation use the approved capabilities',()=>{
-  const home=read('src/features/paperwork/pages/PaperworkHomePage.jsx');
+  const manualReceipt=read('src/features/paperwork/manual-receipt/PaperworkManualReceipt.jsx');
   const processor=read('src/features/paperwork/pages/PaperworkProcessorDetailsPage.jsx');
   const showroom=read('src/features/showroom/pages/ShowroomSellPage.jsx');
-  assert.match(home,/PAPERWORK_PERMISSIONS\.RECEIVE/);
+  assert.match(manualReceipt,/PAPERWORK_PERMISSIONS\.RECEIVE/);
   assert.match(processor,/PAPERWORK_PERMISSIONS\.RECEIVE/);
   assert.match(showroom,/PAPERWORK_PERMISSIONS\.ACCESS/);
   assert.match(showroom,/PAPERWORK_PERMISSIONS\.SEND/);

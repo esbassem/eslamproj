@@ -6,6 +6,7 @@ import { useI18n } from '@/core/i18n/useI18n';
 import { cn } from '@/core/utils/cn';
 import { useAppContext } from '@/contexts/AppContext';
 import { getFirstChildRoutePath, resolveModuleIcon } from '@/features/modules/modules.navigation';
+import { getPlatformRouteMetadata } from '@/core/navigation/platformNavigation';
 
 function getMenuNavigationItem(menu) {
   const children = menu.children ?? [];
@@ -120,8 +121,11 @@ export function SidebarNav() {
       collectRouteItems(item.children);
     });
   collectRouteItems(navigationItems);
-  const activeHref =
-    routeItems
+  const metadata = getPlatformRouteMetadata(currentPath);
+  const primaryHref = normalizeActivePath(metadata?.section?.primaryTo || metadata?.section?.to || '');
+  const activeHref = routeItems.some((item) => normalizeActivePath(item.href) === primaryHref)
+    ? primaryHref
+    : routeItems
       .map((item) => normalizeActivePath(item.href))
       .filter((href) => currentPath === href || currentPath.startsWith(`${href}/`))
       .sort((left, right) => right.length - left.length)[0] || '';

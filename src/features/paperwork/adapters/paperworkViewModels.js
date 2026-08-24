@@ -48,6 +48,7 @@ export function requestSummaryViewModel(row, maps = {}) {
     trackingNumber: unit?.tracking_number || '',
     identifiers,
     branchId: row.branch_id,
+    createdAt: row.created_at,
     updatedAt: row.updated_at,
     stageEnteredAt: row.stage_entered_at,
   };

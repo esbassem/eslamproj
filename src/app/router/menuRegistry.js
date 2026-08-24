@@ -43,7 +43,6 @@ register(['/app/old_cashbox', '/app/old-cashbox', '/apps/old-cashbox'], 'oldCash
 register(['/app/showroom_point', '/app/showroom_point/new', '/app/showroom_point/customers', '/app/showroom_point/settings'], 'showroomSell', 'ShowroomSellPage');
 register(['/app/moto-customer-care', '/app/moto-customer-care/dashboard', '/app/moto-customer-care/sales', '/apps/moto-customer-care', '/apps/moto-customer-care/dashboard', '/apps/moto-customer-care/sales'], 'customerCareList', 'MotoCustomerCareSalesFollowUpListPage');
 register(['/apps/paperwork'], 'paperworkHome', 'PaperworkHomePage');
-register(['/apps/paperwork/requests'], 'paperworkRequests', 'PaperworkRequestsPage');
 register(['/apps/paperwork/processors'], 'paperworkProcessors', 'PaperworkProcessorsPage');
 register(['/apps/paperwork/documents'], 'paperworkDocuments', 'PaperworkDocumentsPage');
 register(['/apps/paperwork/vault'], 'paperworkVault', 'PaperworkVaultPage');

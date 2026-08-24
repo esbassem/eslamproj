@@ -146,6 +146,21 @@ export function buildAppMenusFromWorkspace(appCode, apps, installedMenus, option
 }
 
 function filterMenusByAppRules(menus, appCode, options = {}) {
+  if (appCode === 'paperwork') {
+    const primaryCodes = new Set(['paperwork.root', 'paperwork.requests', 'paperwork.documents']);
+    return menus
+      .filter((menu) => primaryCodes.has(menu.code))
+      .map((menu) => {
+        if (menu.code === 'paperwork.requests') {
+          return { ...menu, name: 'طلبات الأوراق', href: '/apps/paperwork', routePath: '/apps/paperwork', active: true };
+        }
+        if (menu.code === 'paperwork.documents') {
+          return { ...menu, name: 'المستندات', href: '/apps/paperwork/documents', routePath: '/apps/paperwork/documents', active: true };
+        }
+        return menu;
+      });
+  }
+
   if (appCode === 'settings' && options.userRole !== 'owner') {
     return menus.filter((menu) => menu.active !== false && menu.code !== 'settings.branches');
   }

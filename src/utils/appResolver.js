@@ -1,4 +1,5 @@
-import { ROUTES } from '@/core/config/routes.config';
+import { getAppRoute } from '../app/router/appRouteRegistry.js';
+import { ROUTES } from '../core/config/routes.config.js';
 
 const APP_CODE_ALIASES = {
   accountant: 'accountant_app',
@@ -44,27 +45,8 @@ export function getAppCodeFromPathname(pathname = '') {
 
 export function getAppBasePath(appCode) {
   const normalizedAppCode = normalizeAppCode(appCode);
-  if (normalizedAppCode === 'products') {
-    return '/apps/inventory';
-  }
-  if (normalizedAppCode === 'crm') {
-    return '/apps/crm';
-  }
-  if (normalizedAppCode === 'accounting') {
-    return '/apps/accounting';
-  }
-  if (normalizedAppCode === 'accountant_app') {
-    return '/apps/accountant';
-  }
-  if (normalizedAppCode === 'moto_customer_care') {
-    return '/app/moto-customer-care/sales';
-  }
-  if (normalizedAppCode === 'old_cashbox') {
-    return '/apps/old-cashbox';
-  }
-  if (normalizedAppCode === 'photos') {
-    return '/photos';
-  }
+  const registeredRoute = getAppRoute(normalizedAppCode)?.path;
+  if (registeredRoute) return registeredRoute;
   return normalizedAppCode ? `/app/${normalizedAppCode}` : ROUTES.dashboard;
 }
 

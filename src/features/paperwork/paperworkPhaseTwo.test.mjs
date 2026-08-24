@@ -23,10 +23,10 @@ test('Paperwork navigation is owned by the central app shell', () => {
 });
 
 test('detail pages use deterministic Paperwork back routes', () => {
-  assert.match(read('./pages/PaperworkRequestDetailsPage.jsx'), /PAPERWORK_ROUTES\.requests/);
-  assert.match(read('./pages/PaperworkProcessorDetailsPage.jsx'), /PAPERWORK_ROUTES\.processors/);
+  assert.match(read('./pages/PaperworkRequestDetailsPage.jsx'), /resolvePaperworkReturnContext[\s\S]*PAPERWORK_ROUTES\.requests/);
+  assert.match(read('./pages/PaperworkProcessorDetailsPage.jsx'), /resolvePaperworkReturnContext[\s\S]*PAPERWORK_ROUTES\.processors/);
   const documentDetails = read('./pages/PaperworkDocumentDetailsPage.jsx');
-  assert.match(documentDetails, /paperworkBackTo/);
+  assert.match(documentDetails, /resolvePaperworkReturnContext/);
   assert.match(documentDetails, /PAPERWORK_ROUTES\.documents/);
   for (const source of [
     read('./pages/PaperworkRequestDetailsPage.jsx'),
@@ -49,6 +49,13 @@ test('requests filters do not expose the needs-action tab', () => {
   const viewModels = read('./adapters/paperworkViewModels.js');
   const filters = viewModels.match(/REQUEST_FILTERS[\s\S]*?\]\);/)?.[0] || '';
   assert.doesNotMatch(filters, /id:\s*['"]action['"]|يحتاج إجراء/);
+});
+
+test('home needs-action card targets preparation requests only', () => {
+  const home = read('./pages/PaperworkHomePage.jsx');
+  const queries = read('./services/queries/paperworkRead.service.js');
+  assert.match(home, /withPaperworkSearch\(PAPERWORK_ROUTES\.requests, \{ filter: 'preparation' \}\)/);
+  assert.match(queries, /action[\s\S]*current_stage', 'preparation'/);
 });
 
 test('details and manual receipt are composed and legacy workspace is removed', () => {

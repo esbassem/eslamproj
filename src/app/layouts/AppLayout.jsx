@@ -1,9 +1,9 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { ArrowRight, Menu } from 'lucide-react';
-import { Link, useLocation, useOutlet } from 'react-router-dom';
+import { Menu } from 'lucide-react';
+import { useLocation, useOutlet } from 'react-router-dom';
 import { uiExperiments } from '@/core/config/app.config';
-import { ROUTES } from '@/core/config/routes.config';
 import { AppContentFallback } from '@/core/ui/app-content-fallback';
+import { PlatformHomeLink } from '@/core/ui/platform-home-link';
 import { PageTransition } from '@/core/ui/page-transition';
 import { useAppContext } from '@/contexts/AppContext';
 import { AppSidebar } from '@/features/workspace/components/AppSidebar';
@@ -141,7 +141,7 @@ export function AppLayout() {
 
   return (
     <div
-      className={`transition-colors duration-150 ease-out ${isFullBleedApp ? 'min-h-screen bg-transparent' : isLauncherHome ? 'min-h-screen bg-[radial-gradient(circle_at_50%_36%,#ffffff_0%,#f7f7f8_42%,#eceef1_100%)]' : 'h-screen overflow-hidden bg-[#f8fafc]'}`}
+      className={`transition-colors duration-150 ease-out ${isFullBleedApp ? 'min-h-screen bg-transparent' : isLauncherHome ? 'min-h-screen bg-[radial-gradient(circle_at_50%_36%,#ffffff_0%,#f7f7f8_42%,#eceef1_100%)]' : 'h-screen overflow-hidden bg-white'}`}
       style={rootStyle}
     >
       <style>{`
@@ -170,13 +170,7 @@ export function AppLayout() {
           dir="rtl"
         >
           <div className="grid h-14 grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center gap-3 px-4 sm:px-6">
-            <Link
-              to={ROUTES.dashboard}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition duration-100 hover:bg-slate-100 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200"
-              aria-label="العودة للوحة التحكم"
-            >
-              <ArrowRight className="h-5 w-5" />
-            </Link>
+            <PlatformHomeLink className="text-slate-600 transition duration-100 hover:bg-slate-100 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200" />
             <div className="min-w-0 text-center">
               <p className="truncate text-sm font-black text-slate-950">{activeApp?.name || 'التطبيق'}</p>
               <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">مساحة التطبيق</p>
@@ -192,7 +186,7 @@ export function AppLayout() {
           </div>
         </header>
       ) : null}
-      <div className={`${isFullBleedApp ? 'min-h-screen' : isLauncherHome ? 'min-h-0' : 'h-full min-h-0'} ${shouldShowSidebar ? 'grid gap-0 lg:grid-cols-[28rem_minmax(0,1fr)] xl:grid-cols-[30rem_minmax(0,1fr)]' : 'block'}`}>
+      <div className={`${isFullBleedApp ? 'min-h-screen' : isLauncherHome ? 'min-h-0' : 'h-full min-h-0'} ${shouldShowSidebar ? 'grid gap-0 lg:grid-cols-[22rem_minmax(0,1fr)] xl:grid-cols-[24rem_minmax(0,1fr)]' : 'block'}`}>
         {shouldShowSidebar ? (
           <div className={shouldAnimateAppOpen ? 'platform-app-sidebar-in' : ''}>
             <AppSidebar />

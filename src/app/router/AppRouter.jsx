@@ -25,6 +25,11 @@ function LegacyInventoryRedirect({ sourceBase, targetBase }) {
   return <Navigate to={`${targetBase}${mappedSuffix ? `/${mappedSuffix}` : ''}${location.search}`} replace />;
 }
 
+function LegacyPaperworkRedirect() {
+  const location = useLocation();
+  return <Navigate to={`/apps/paperwork${location.search}`} replace />;
+}
+
 export function AppRouter() {
   return (
     <BrowserRouter>
@@ -51,6 +56,7 @@ export function AppRouter() {
               <Route path="/app/products/*" element={<LegacyInventoryRedirect sourceBase="/app/products" targetBase="/apps/inventory" />} />
               <Route path="/apps/products/*" element={<LegacyInventoryRedirect sourceBase="/apps/products" targetBase="/apps/inventory" />} />
               <Route path="/app/inventory/*" element={<LegacyInventoryRedirect sourceBase="/app/inventory" targetBase="/apps/inventory" />} />
+              <Route path="/app/paperwork" element={<LegacyPaperworkRedirect />} />
               <Route path="/app" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/dashboard" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/team" element={<Navigate to={ROUTES.settingsTeam} replace />} />

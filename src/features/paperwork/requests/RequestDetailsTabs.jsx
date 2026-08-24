@@ -10,8 +10,9 @@ import {
   StatusBadge,
 } from "@/features/paperwork/shared/PaperworkUI";
 import { PAPERWORK_ROUTES } from "@/features/paperwork/routes/paperworkRoutes";
+import { createPaperworkNavigationState } from "@/features/paperwork/routes/paperworkNavigation";
 
-export function RequestDocumentsTab({ tenantId, requestId }) {
+export function RequestDocumentsTab({ tenantId, requestId, returnLabel }) {
   const location = useLocation();
   const query = usePaperworkQuery(
     () =>
@@ -36,9 +37,7 @@ export function RequestDocumentsTab({ tenantId, requestId }) {
             <Link
               key={document.id}
               to={PAPERWORK_ROUTES.documentDetails(document.id)}
-              state={{
-                paperworkBackTo: `${location.pathname}${location.search}`,
-              }}
+              state={createPaperworkNavigationState(location, { returnLabel })}
               className="rounded-xl border p-4"
             >
               <div className="flex justify-between gap-3">

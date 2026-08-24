@@ -38,6 +38,10 @@ export function loadVaultPaperworkFirstPage({ fetchPage, force = false, ...optio
   return request;
 }
 
+export function setVaultPaperworkCacheSnapshot(options, snapshot) {
+  vaultCache.set(buildKey(options), { ...snapshot, fetchedAt: Date.now() });
+}
+
 export function invalidateVaultPaperworkCache({ tenantId, userId } = {}) {
   const keys = new Set([...vaultCache.keys(), ...inFlightRequests.keys()]);
   for (const key of keys) {
