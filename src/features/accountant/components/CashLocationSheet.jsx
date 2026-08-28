@@ -56,7 +56,7 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
     try {
       const nextOperations = await accountantService.listCashLocationOperations({
         tenantId,
-        accountId: location.id,
+        accountId: location.accountId || location.id,
       });
       setOperations(nextOperations);
     } catch (error) {
@@ -163,13 +163,14 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
         tenantId,
         saleId: selectedInvoice.id,
         amount: safeAmount,
-        mode: 'account',
-        destinationAccountId: location.id,
+        mode: location.destinationId ? 'cash' : 'account',
+        moneyDestinationId: location.destinationId || null,
+        destinationAccountId: location.destinationId ? null : location.accountId || location.id,
         notes: collectionNote,
       });
       await Promise.all([
         loadSheetData(),
-        onOperationCreated?.(location.id),
+        onOperationCreated?.(location.accountId || location.id),
       ]);
       setIsInvoicePickerOpen(false);
       setCompletedReceipt({

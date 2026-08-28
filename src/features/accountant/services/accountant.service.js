@@ -1,5 +1,9 @@
 import { requireSupabase } from '@/core/lib/supabase';
 import { resolveFunctionalAccount } from '@/features/finance/accounts/api/functionalAccounts.api';
+import {
+  getAllowedCollectionDestinations,
+  getMoneyDestinationSelection,
+} from '@/features/finance/money-destinations/moneyDestinations.service';
 
 const TENANT_FILES_BUCKET = 'tenant-files';
 
@@ -86,6 +90,7 @@ function assertImage(file) {
 }
 
 export const accountantService = {
+  getAllowedCollectionDestinations,
   async getTemporaryAccounts({ tenantId } = {}) {
     requireTenantId(tenantId);
 
@@ -264,16 +269,28 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    const { data, error } = await client
+    const [selection, legacyResult] = await Promise.all([
+      getMoneyDestinationSelection({
+        tenantId,
+        permissionCode: 'financial.audit.view',
+        accessType: 'view',
+        destinationTypes: [
+          'cashbox', 'bank', 'employee_cash_custody', 'pos_drawer', 'wallet',
+        ],
+      }),
+      client
       .from('account_accounts')
       .select('id, code, name, account_type, active, responsible_user_id')
       .eq('tenant_id', tenantId)
       .eq('active', true)
-      .order('code', { ascending: true });
+      .is('money_destination_id', null)
+      .order('code', { ascending: true }),
+    ]);
+    if (legacyResult.error) throw legacyResult.error;
 
-    if (error) throw error;
-
-    const cashAccounts = (data || [])
+    // Explicit reporting adapter: preserve visible historical balances until
+    // controlled tenant-by-tenant legacy cutover.
+    const legacyAccounts = (legacyResult.data || [])
       .filter((account) => {
         const code = String(account.code || '').trim();
         const type = String(account.account_type || '').toLowerCase();
@@ -281,12 +298,26 @@ export const accountantService = {
       })
       .map((account) => ({
         ...account,
+        accountId: account.id,
+        destinationId: null,
+        source: 'legacy',
         kind: account.code === '111001'
           ? 'main'
           : account.responsible_user_id
             ? 'custody'
             : 'cash',
       }));
+    const canonicalAccounts = selection.destinations.map((destination) => ({
+      id: destination.destination_id,
+      accountId: destination.ledger_account_id,
+      destinationId: destination.destination_id,
+      code: null,
+      name: destination.destination_name,
+      responsible_user_id: destination.responsible_user_id,
+      source: 'canonical',
+      kind: destination.destination_type,
+    }));
+    const cashAccounts = [...canonicalAccounts, ...legacyAccounts];
 
     if (!cashAccounts.length) {
       return { totalBalance: 0, locations: [] };
@@ -296,7 +327,7 @@ export const accountantService = {
       .from('account_move_lines')
       .select('id, account_id, debit, credit, account_move:account_moves!inner(state)')
       .eq('tenant_id', tenantId)
-      .in('account_id', cashAccounts.map((account) => account.id))
+      .in('account_id', cashAccounts.map((account) => account.accountId))
       .eq('account_move.state', 'posted')
       .order('id', { ascending: true })));
 
@@ -308,11 +339,14 @@ export const accountantService = {
 
     const locations = cashAccounts.map((account) => ({
       id: account.id,
+      accountId: account.accountId,
+      destinationId: account.destinationId,
+      source: account.source,
       code: account.code,
       name: account.name,
       kind: account.kind,
       responsibleUserId: account.responsible_user_id || null,
-      balance: Math.round((balancesByAccountId.get(account.id) || 0) * 100) / 100,
+      balance: Math.round((balancesByAccountId.get(account.accountId) || 0) * 100) / 100,
     }));
 
     return {
@@ -483,6 +517,7 @@ export const accountantService = {
     saleId,
     amount,
     mode,
+    moneyDestinationId = null,
     destinationAccountId = null,
     openCreditAllocations = [],
     notes = '',
@@ -513,13 +548,21 @@ export const accountantService = {
       return data;
     }
 
-    const { data, error } = await client.rpc('settle_showroom_sale_balance', {
-      p_sale_id: saleId,
-      p_amount: safeAmount,
-      p_mode: mode,
-      p_destination_account_id: mode === 'account' ? destinationAccountId : null,
-      p_notes: String(notes || '').trim() || null,
-    });
+    const canonicalDestinationMode = mode === 'cash' && Boolean(moneyDestinationId);
+    const { data, error } = canonicalDestinationMode
+      ? await client.rpc('settle_showroom_sale_balance_to_destination', {
+          p_sale_id: saleId,
+          p_amount: safeAmount,
+          p_money_destination_id: moneyDestinationId,
+          p_notes: String(notes || '').trim() || null,
+        })
+      : await client.rpc('settle_showroom_sale_balance', {
+          p_sale_id: saleId,
+          p_amount: safeAmount,
+          p_mode: mode,
+          p_destination_account_id: mode === 'account' ? destinationAccountId : null,
+          p_notes: String(notes || '').trim() || null,
+        });
 
     if (error) throw new Error(error.message || 'تعذر تسجيل التسوية.');
     return data;

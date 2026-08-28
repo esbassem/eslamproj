@@ -1,6 +1,10 @@
 import { requireSupabase } from "@/core/lib/supabase";
 import { buildShowroomAccountingSnapshot } from "@/features/showroom/services/showroomAccounting";
 import { resolveFunctionalAccount } from "@/features/finance/accounts/api/functionalAccounts.api";
+import {
+  getAllowedCollectionDestinations,
+  getMoneyDestinationSelection,
+} from "@/features/finance/money-destinations/moneyDestinations.service";
 import { resolveCurrentTenantUserId } from "@/features/workspace/api/currentTenantUser.api";
 
 const TENANT_FILES_BUCKET = "tenant-files";
@@ -1461,32 +1465,54 @@ async function loadReconciledSalePayments(client, tenantId, sale) {
     );
 }
 export const showroomService = {
+  getAllowedCollectionDestinations,
   async getCashOverview({ tenantId } = {}) {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    const { data: accountRows, error: accountsError } = await client
+    const [selection, legacyResult] = await Promise.all([
+      getMoneyDestinationSelection({
+        tenantId,
+        permissionCode: "financial.audit.view",
+        accessType: "view",
+        destinationTypes: ["cashbox", "bank", "employee_cash_custody", "pos_drawer", "wallet"],
+      }),
+      client
       .from("account_accounts")
       .select("id, code, name, responsible_user_id")
       .eq("tenant_id", tenantId)
-      .eq("active", true);
+      .eq("active", true)
+      .is("money_destination_id", null),
+    ]);
+    if (legacyResult.error) throw legacyResult.error;
 
-    if (accountsError) throw accountsError;
-
-    const accounts = (accountRows || [])
+    // Explicit reporting adapter only. Runtime destination selection uses the
+    // central Money Destination contract above.
+    const legacyAccounts = (legacyResult.data || [])
       .filter(
         (account) =>
           account.code === "111001" || Boolean(account.responsible_user_id),
       )
       .filter(
         (account) => !["111003", "119001", "111002"].includes(account.code),
-      );
+      )
+      .map((account) => ({ ...account, accountId: account.id, source: "legacy" }));
+    const canonicalAccounts = selection.destinations.map((destination) => ({
+      id: destination.destination_id,
+      accountId: destination.ledger_account_id,
+      code: null,
+      name: destination.destination_name,
+      responsible_user_id: destination.responsible_user_id,
+      destinationType: destination.destination_type,
+      source: "canonical",
+    }));
+    const accounts = [...canonicalAccounts, ...legacyAccounts];
 
     if (!accounts.length) {
       return { total: 0, accounts: [] };
     }
 
-    const accountIds = accounts.map((account) => account.id);
+    const accountIds = accounts.map((account) => account.accountId);
     const lines = await fetchAllPages(() =>
       client
         .from("account_move_lines")
@@ -1511,13 +1537,15 @@ export const showroomService = {
     const normalizedAccounts = accounts
       .map((account) => ({
         id: account.id,
+        accountId: account.accountId,
+        source: account.source,
         code: account.code || "",
         name:
           account.name ||
           (account.code === "111001" ? "الخزنة الرئيسية" : "حساب عهدة موظف"),
         responsibleUserId: account.responsible_user_id || null,
         balance:
-          Math.round(toMoney(balancesByAccountId.get(account.id)) * 100) / 100,
+          Math.round(toMoney(balancesByAccountId.get(account.accountId)) * 100) / 100,
       }))
       .sort((first, second) => {
         if (first.code === "111001") return -1;
@@ -2715,6 +2743,7 @@ export const showroomService = {
     amount,
     notes,
     paymentMethod = "cash",
+    moneyDestinationId = null,
     openCreditAllocations = [],
   }) {
     requireTenantId(tenantId);
@@ -2743,7 +2772,14 @@ export const showroomService = {
           p_sale_id: saleId,
           p_allocations: allocations,
         })
-      : await client.rpc("pay_showroom_sale_accounting", {
+      : moneyDestinationId
+        ? await client.rpc("settle_showroom_sale_balance_to_destination", {
+            p_sale_id: saleId,
+            p_amount: paymentAmount,
+            p_money_destination_id: moneyDestinationId,
+            p_notes: paymentNotes || null,
+          })
+        : await client.rpc("pay_showroom_sale_accounting", {
           p_sale_id: saleId,
           p_amount: paymentAmount,
           p_notes: paymentNotes,

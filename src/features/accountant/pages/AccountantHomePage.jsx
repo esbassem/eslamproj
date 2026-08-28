@@ -52,7 +52,9 @@ const partnerAvatarIconMap = {
   WalletCards,
 };
 
-function isCashAccount(account) {
+// Transitional display-only classifier for historical accounts. Canonical
+// collection choices come from Money Destinations, never from this helper.
+function isLegacyCashAccount(account) {
   const code = String(account?.code || '').trim();
   const type = String(account?.account_type || '').toLowerCase();
   return code.startsWith('111') || type === 'cash' || type === 'cash_equivalent';
@@ -751,6 +753,9 @@ function ApprovalOperationRow({ operation, compact = false }) {
 function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSettled }) {
   const [mode, setMode] = useState('cash');
   const [accounts, setAccounts] = useState([]);
+  const [moneyDestinations, setMoneyDestinations] = useState([]);
+  const [moneyDestinationId, setMoneyDestinationId] = useState('');
+  const [destinationSelectionState, setDestinationSelectionState] = useState('none');
   const [destinationAccountId, setDestinationAccountId] = useState('');
   const [openCredits, setOpenCredits] = useState([]);
   const [creditAmounts, setCreditAmounts] = useState({});
@@ -766,6 +771,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
 
     setMode(invoice?.preferredMode || 'cash');
     setDestinationAccountId('');
+    setMoneyDestinationId('');
     setCreditAmounts({});
     setAmount(String(invoice?.remainingAmount || ''));
     setNotes('');
@@ -777,9 +783,19 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
     if (!open || !tenantId) return undefined;
 
     setIsLoadingAccounts(true);
-    accountantService.listSettlementAccounts({ tenantId })
-      .then((records) => {
-        if (mounted) setAccounts(records);
+    Promise.all([
+      accountantService.listSettlementAccounts({ tenantId }),
+      accountantService.getAllowedCollectionDestinations({
+        tenantId,
+        branchId: invoice?.branchId || null,
+      }),
+    ])
+      .then(([records, selection]) => {
+        if (!mounted) return;
+        setAccounts(records);
+        setMoneyDestinations(selection.destinations);
+        setDestinationSelectionState(selection.selectionState);
+        setMoneyDestinationId(selection.autoSelectedDestinationId || '');
       })
       .catch((loadError) => {
         if (mounted) setError(loadError.message || 'تعذر تحميل حسابات التسوية.');
@@ -791,7 +807,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
     return () => {
       mounted = false;
     };
-  }, [open, tenantId]);
+  }, [invoice?.branchId, open, tenantId]);
 
   useEffect(() => {
     let mounted = true;
@@ -819,6 +835,9 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
   }, [invoice?.customerId, invoice?.preferredMode, invoice?.remainingAmount, open, tenantId]);
 
   const selectedAccount = accounts.find((account) => account.id === destinationAccountId) || null;
+  const selectedMoneyDestination = moneyDestinations.find(
+    (destination) => destination.destination_id === moneyDestinationId,
+  ) || null;
   const openCreditAllocations = openCredits
     .map((credit) => ({
       openCreditLineId: credit.openCreditLineId,
@@ -846,6 +865,10 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
       setError('اختر حساب التسوية.');
       return;
     }
+    if (mode === 'cash' && destinationSelectionState !== 'none' && !moneyDestinationId) {
+      setError('اختر المورد المالي الذي سيستقبل التحصيل.');
+      return;
+    }
     if (mode === 'advance_credit' && !openCreditAllocations.length) {
       setError('اختر اعتمادًا واحدًا على الأقل وحدد مبلغ الاستخدام.');
       return;
@@ -866,6 +889,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
         saleId: invoice.id,
         amount: safeAmount,
         mode,
+        moneyDestinationId: mode === 'cash' ? moneyDestinationId || null : null,
         destinationAccountId,
         openCreditAllocations,
         notes,
@@ -905,7 +929,16 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
 
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[
-                { id: 'cash', label: 'تحصيل نقدي', detail: 'إيداع في الخزنة الرئيسية 111001', icon: WalletCards },
+                {
+                  id: 'cash',
+                  label: 'تحصيل نقدي',
+                  detail: destinationSelectionState === 'single'
+                    ? selectedMoneyDestination?.destination_name || 'تم اختيار المورد المسموح تلقائيًا'
+                    : destinationSelectionState === 'multiple'
+                      ? `${moneyDestinations.length} موارد مسموحة`
+                      : 'مسار Legacy مؤقت — لا توجد Destinations مهيأة',
+                  icon: WalletCards,
+                },
                 { id: 'advance_credit', label: 'رصيد العميل', detail: isLoadingAdvanceBalances ? 'جاري التحميل...' : `${openCredits.length} اعتماد متاح`, icon: CreditCard },
                 { id: 'account', label: 'تسوية على حساب', detail: 'اختيار حساب مقابل', icon: Landmark },
               ].map((option) => {
@@ -1017,6 +1050,32 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
                 </div>
               ) : null}
 
+              {mode === 'cash' && destinationSelectionState !== 'none' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="money-destination" className="text-xs font-black text-slate-600">مورد التحصيل</Label>
+                  <select
+                    id="money-destination"
+                    value={moneyDestinationId}
+                    onChange={(event) => setMoneyDestinationId(event.target.value)}
+                    disabled={isLoadingAccounts || destinationSelectionState === 'single'}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option value="">اختر المورد المالي</option>
+                    {moneyDestinations.map((destination) => (
+                      <option key={destination.destination_id} value={destination.destination_id}>
+                        {destination.destination_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {mode === 'cash' && destinationSelectionState === 'none' ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                  لا توجد Money Destination مهيأة لهذا المستخدم؛ سيُستخدم Legacy Adapter مؤقتًا لهذه المؤسسة.
+                </p>
+              ) : null}
+
               <div className={`grid gap-3 ${mode === 'advance_credit' ? 'grid-cols-1' : 'grid-cols-[0.8fr_1.2fr]'}`}>
                 {mode !== 'advance_credit' ? <div className="min-w-0 space-y-2">
                   <Label htmlFor="settlement-amount" className="text-xs font-black text-slate-600">المبلغ</Label>
@@ -1054,7 +1113,9 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
                 </p>
               ) : <div className="mt-2 space-y-1.5 text-xs font-bold">
                 <div className="flex items-center justify-between gap-3 text-emerald-700">
-                  <span>مدين: {mode === 'cash' ? '111001 — الخزنة الرئيسية' : selectedAccount ? `${selectedAccount.code} — ${selectedAccount.name}` : 'حساب التسوية'}</span>
+                  <span>مدين: {mode === 'cash'
+                    ? selectedMoneyDestination?.destination_name || 'Legacy cash adapter'
+                    : selectedAccount ? `${selectedAccount.code} — ${selectedAccount.name}` : 'حساب التسوية'}</span>
                   <span>{formatCurrency(safeAmount)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-red-700">
@@ -1894,7 +1955,7 @@ export function AccountantHomePage() {
         setTemporaryAccountsData(nextTemporaryAccountsData);
         const temporaryAccountIds = new Set(nextTemporaryAccountsData.accounts.map((account) => account.id));
         setAccounts(nextAccounts.filter((account) => (
-          !isCashAccount(account)
+          !isLegacyCashAccount(account)
           && !isReceivableAccount(account)
           && !temporaryAccountIds.has(account.id)
         )));
@@ -2066,7 +2127,7 @@ export function AccountantHomePage() {
               ...current,
               accounts: [...current.accounts, account].sort((first, second) => String(first.code).localeCompare(String(second.code))),
             }));
-          } else if (account.active && isCashAccount(account)) {
+          } else if (account.active && isLegacyCashAccount(account)) {
             setCashSummary((current) => ({
               totalBalance: current?.totalBalance || 0,
               locations: [...(current?.locations || []), { ...account, kind: 'cash', balance: 0 }]
