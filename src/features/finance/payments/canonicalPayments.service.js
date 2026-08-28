@@ -38,6 +38,15 @@ export function confirmFinancialPayment({ tenantId, paymentId } = {}) {
   return call('confirm_financial_payment', { p_tenant_id: tenantId, p_payment_id: paymentId }, 'تعذر تأكيد الدفعة.');
 }
 
+export function postFinancialPayment({ tenantId, paymentId, paymentPurpose } = {}) {
+  requireTenantId(tenantId);
+  return call('post_financial_payment', {
+    p_tenant_id: tenantId,
+    p_payment_id: paymentId,
+    p_payment_purpose: paymentPurpose,
+  }, 'تعذر ترحيل الدفعة محاسبيًا.');
+}
+
 export function rejectFinancialPayment({ tenantId, paymentId, reason } = {}) {
   requireTenantId(tenantId);
   return call('reject_financial_payment', { p_tenant_id: tenantId, p_payment_id: paymentId, p_reason: reason }, 'تعذر رفض الدفعة.');
