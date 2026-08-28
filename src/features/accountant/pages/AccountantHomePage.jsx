@@ -931,7 +931,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
             <div className="mt-4 space-y-4">
               {mode === 'advance_credit' ? (
                 <div className="space-y-2">
-                  <Label className="text-xs font-black text-slate-600">الاعتمادات المفتوحة على 114001</Label>
+                  <Label className="text-xs font-black text-slate-600">الاعتمادات المفتوحة على ذمم العملاء</Label>
                   {isLoadingAdvanceBalances ? (
                     <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-slate-500">جاري تحميل الاعتمادات...</p>
                   ) : openCredits.length ? (
@@ -1050,7 +1050,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
               <p className="text-[10px] font-black text-slate-500">{mode === 'advance_credit' ? 'أثر التسوية' : 'معاينة القيد'}</p>
               {mode === 'advance_credit' ? (
                 <p className="mt-2 text-xs font-bold text-slate-700">
-                  لن يُنشأ قيد جديد. ستُنشأ مصالحة مباشرة بين سطر الفاتورة المدين وسطور الاعتمادات المفتوحة الدائنة على 114001 بقيمة {formatCurrency(safeAmount)}.
+                  لن يُنشأ قيد جديد. ستُنشأ مصالحة مباشرة بين سطر ذمم الفاتورة المدين وسطور الاعتمادات المفتوحة الدائنة بقيمة {formatCurrency(safeAmount)}.
                 </p>
               ) : <div className="mt-2 space-y-1.5 text-xs font-bold">
                 <div className="flex items-center justify-between gap-3 text-emerald-700">
@@ -1058,7 +1058,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
                   <span>{formatCurrency(safeAmount)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-red-700">
-                  <span>دائن: 114001 — ذمم العملاء</span>
+                  <span>دائن: حساب ذمم العملاء المهيأ</span>
                   <span>{formatCurrency(safeAmount)}</span>
                 </div>
               </div>}
@@ -1610,9 +1610,9 @@ function AccountantOperationsPanel({
 }) {
   const totalReceivables = Number(salesInvoiceSummary.total || 0) + Number(entityReceivableTotal || 0);
   const isLoadingReceivables = isLoadingSalesInvoiceSummary || isLoadingEntityReceivableTotal;
-  const customerReceivableAccount = receivableAccounts.find((account) => account.code === '114001');
-  const entityReceivableAccount = receivableAccounts.find((account) => account.code === '114002');
-  const otherReceivableAccounts = receivableAccounts.filter((account) => !['114001', '114002'].includes(account.code));
+  const customerReceivableAccount = receivableAccounts.find((account) => account.functional_role === 'customer_receivable');
+  const entityReceivableAccount = receivableAccounts.find((account) => account.functional_role === 'payment_entity_receivable');
+  const otherReceivableAccounts = receivableAccounts.filter((account) => !account.functional_role);
 
   return (
     <section className="customer-care-operations-window customer-care-fade-up min-h-0 p-2 pt-5 text-slate-950 sm:p-3 sm:pt-8 lg:relative lg:z-[80] lg:m-0 lg:flex lg:h-full lg:w-full lg:max-w-none lg:items-center lg:justify-center lg:justify-self-stretch lg:py-3 lg:pe-8 lg:ps-3 lg:pt-10 xl:pe-10 xl:ps-4">
@@ -1639,7 +1639,7 @@ function AccountantOperationsPanel({
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Receipt className="h-4 w-4" /></span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-black text-slate-900">{customerReceivableAccount?.name || 'ذمم فواتير المبيعات'}</p>
-                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{isLoadingSalesInvoiceSummary ? 'جاري التحميل...' : `${customerReceivableAccount?.code || '114001'} · ${salesInvoiceSummary.count} فاتورة مستحقة`}</p>
+                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{isLoadingSalesInvoiceSummary ? 'جاري التحميل...' : `${customerReceivableAccount?.code || 'حساب الذمم'} · ${salesInvoiceSummary.count} فاتورة مستحقة`}</p>
                 </div>
                 <p className="shrink-0 text-xs font-black text-slate-950">{isLoadingSalesInvoiceSummary ? '...' : formatCurrency(salesInvoiceSummary.total)}</p>
                 <ChevronRight className="h-4 w-4 shrink-0 rotate-180 text-slate-300" />
@@ -1649,7 +1649,7 @@ function AccountantOperationsPanel({
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700"><Landmark className="h-4 w-4" /></span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-black text-slate-900">{entityReceivableAccount?.name || 'ذمم لدى الجهات'}</p>
-                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{isLoadingEntityReceivableTotal ? 'جاري التحميل...' : `${entityReceivableAccount?.code || '114002'} · ${approvalOperations.length} عملية مستحقة`}</p>
+                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{isLoadingEntityReceivableTotal ? 'جاري التحميل...' : `${entityReceivableAccount?.code || 'ذمم الجهات'} · ${approvalOperations.length} عملية مستحقة`}</p>
                 </div>
                 <p className="shrink-0 text-xs font-black text-slate-950">{isLoadingEntityReceivableTotal ? '...' : formatCurrency(entityReceivableTotal)}</p>
                 <ChevronRight className="h-4 w-4 shrink-0 rotate-180 text-slate-300" />

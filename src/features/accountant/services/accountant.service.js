@@ -1,4 +1,5 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { resolveFunctionalAccount } from '@/features/finance/accounts/api/functionalAccounts.api';
 
 const TENANT_FILES_BUCKET = 'tenant-files';
 
@@ -238,13 +239,25 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    return fetchAllPages(() => client
+    const accounts = await fetchAllPages(() => client
       .from('account_accounts')
       .select('id, code, name, account_type')
       .eq('tenant_id', tenantId)
       .eq('active', true)
       .order('code', { ascending: true })
       .order('id', { ascending: true }));
+    const [customerResult, entityResult] = await Promise.allSettled([
+      resolveFunctionalAccount({ tenantId, role: 'customer_receivable' }),
+      resolveFunctionalAccount({ tenantId, role: 'payment_entity_receivable' }),
+    ]);
+    const rolesByAccountId = new Map([
+      [customerResult.status === 'fulfilled' ? customerResult.value : null, 'customer_receivable'],
+      [entityResult.status === 'fulfilled' ? entityResult.value : null, 'payment_entity_receivable'],
+    ].filter(([accountId]) => accountId));
+    return accounts.map((account) => ({
+      ...account,
+      functional_role: rolesByAccountId.get(account.id) || null,
+    }));
   },
 
   async getCashLocationsSummary({ tenantId } = {}) {
@@ -451,12 +464,16 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
+    const receivableAccountId = await resolveFunctionalAccount({
+      tenantId,
+      role: 'customer_receivable',
+    });
     return fetchAllPages(() => client
       .from('account_accounts')
       .select('id, code, name, account_type')
       .eq('tenant_id', tenantId)
       .eq('active', true)
-      .neq('code', '114001')
+      .neq('id', receivableAccountId)
       .order('code', { ascending: true })
       .order('id', { ascending: true }));
   },
@@ -526,7 +543,7 @@ export const accountantService = {
     const saleIds = invoices.map((invoice) => invoice.id);
     const linkedMoveIds = unique(invoices.map((invoice) => invoice.account_move_id));
     const saleRefs = saleIds.map((saleId) => `showroom_sale:${saleId}`);
-    const [moveIdResults, moveRefResults, receivableAccountsResult] = await Promise.all([
+    const [moveIdResults, moveRefResults, receivableAccountId] = await Promise.all([
       Promise.all(chunks(linkedMoveIds).map((ids) => fetchAllPages(() => client
         .from('account_moves')
         .select('id, ref')
@@ -543,15 +560,8 @@ export const accountantService = {
         .eq('state', 'posted')
         .in('ref', refs)
         .order('id', { ascending: true })))),
-      client
-        .from('account_accounts')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('code', '114001')
-        .eq('active', true),
+      resolveFunctionalAccount({ tenantId, role: 'customer_receivable' }),
     ]);
-
-    if (receivableAccountsResult.error) throw receivableAccountsResult.error;
 
     const accountingMoves = [...moveIdResults, ...moveRefResults].flat();
     const movesById = byId(accountingMoves);
@@ -564,7 +574,7 @@ export const accountantService = {
     });
 
     const postedMoveIds = unique([...moveBySaleId.values()].map((move) => move.id));
-    const receivableAccountIds = (receivableAccountsResult.data || []).map((account) => account.id);
+    const receivableAccountIds = [receivableAccountId];
     if (!postedMoveIds.length || !receivableAccountIds.length) {
       return { invoices: [], count: 0, total: 0 };
     }
@@ -678,22 +688,16 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    const { data: account, error: accountError } = await client
-      .from('account_accounts')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('code', '114002')
-      .eq('active', true)
-      .maybeSingle();
-
-    if (accountError) throw accountError;
-    if (!account?.id) return [];
+    const accountId = await resolveFunctionalAccount({
+      tenantId,
+      role: 'payment_entity_receivable',
+    });
 
     const { data: lines, error: linesError } = await client
       .from('account_move_lines')
       .select('id, move_id, partner_id, debit, credit, created_at, account_move:account_moves!inner(state)')
       .eq('tenant_id', tenantId)
-      .eq('account_id', account.id)
+      .eq('account_id', accountId)
       .eq('account_move.state', 'posted')
       .ilike('label', 'اعتماد دفعة من جهة%')
       .order('created_at', { ascending: false })
@@ -753,22 +757,16 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    const { data: account, error: accountError } = await client
-      .from('account_accounts')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('code', '114002')
-      .eq('active', true)
-      .maybeSingle();
-
-    if (accountError) throw accountError;
-    if (!account?.id) return 0;
+    const accountId = await resolveFunctionalAccount({
+      tenantId,
+      role: 'payment_entity_receivable',
+    });
 
     const { data: lines, error: linesError } = await client
       .from('account_move_lines')
       .select('debit, credit, account_move:account_moves!inner(state)')
       .eq('tenant_id', tenantId)
-      .eq('account_id', account.id)
+      .eq('account_id', accountId)
       .eq('account_move.state', 'posted')
       .ilike('label', 'اعتماد دفعة من جهة%');
 

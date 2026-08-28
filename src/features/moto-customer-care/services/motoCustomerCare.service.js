@@ -1,4 +1,5 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { resolveFunctionalAccount } from '@/features/finance/accounts/api/functionalAccounts.api';
 
 const SALE_COLUMNS = `
   id, tenant_id, branch_id, customer_id, sale_date, status, total_amount,
@@ -43,7 +44,7 @@ async function loadAccountingBalances(client, tenantId, sales) {
   if (!sales.length) return new Map();
   const saleIds = sales.map((sale) => sale.id);
   const moveIds = [...new Set(sales.map((sale) => sale.account_move_id).filter(Boolean))];
-  const [byIdResult, byRefResult, accountsResult] = await Promise.all([
+  const [byIdResult, byRefResult, receivableAccountId] = await Promise.all([
     moveIds.length
       ? client.from('account_moves').select('id, ref').eq('tenant_id', tenantId)
         .eq('move_type', 'sale').eq('state', 'posted').in('id', moveIds)
@@ -51,9 +52,9 @@ async function loadAccountingBalances(client, tenantId, sales) {
     client.from('account_moves').select('id, ref').eq('tenant_id', tenantId)
       .eq('move_type', 'sale').eq('state', 'posted')
       .in('ref', saleIds.map((saleId) => `showroom_sale:${saleId}`)),
-    client.from('account_accounts').select('id').eq('tenant_id', tenantId).eq('code', '114001'),
+    resolveFunctionalAccount({ tenantId, role: 'customer_receivable' }),
   ]);
-  const failed = [byIdResult, byRefResult, accountsResult].find((result) => result.error);
+  const failed = [byIdResult, byRefResult].find((result) => result.error);
   if (failed?.error) throw failed.error;
 
   const moves = [...(byIdResult.data || []), ...(byRefResult.data || [])];
@@ -64,7 +65,7 @@ async function loadAccountingBalances(client, tenantId, sales) {
     movesById.get(sale.account_move_id) || movesByRef.get(`showroom_sale:${sale.id}`) || null,
   ]));
   const linkedMoveIds = [...new Set([...moveBySale.values()].map((move) => move?.id).filter(Boolean))];
-  const accountIds = (accountsResult.data || []).map((account) => account.id);
+  const accountIds = [receivableAccountId];
   if (!linkedMoveIds.length || !accountIds.length) return new Map();
 
   const { data: lines, error: linesError } = await client

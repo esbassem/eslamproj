@@ -1,5 +1,6 @@
 import { requireSupabase } from "@/core/lib/supabase";
 import { buildShowroomAccountingSnapshot } from "@/features/showroom/services/showroomAccounting";
+import { resolveFunctionalAccount } from "@/features/finance/accounts/api/functionalAccounts.api";
 import { resolveCurrentTenantUserId } from "@/features/workspace/api/currentTenantUser.api";
 
 const TENANT_FILES_BUCKET = "tenant-files";
@@ -1168,15 +1169,11 @@ async function attachSaleAccountingStatus(client, tenantId, sales) {
             .in("ref", refs),
         ),
       ),
-      client
-        .from("account_accounts")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("code", "114001"),
+      resolveFunctionalAccount({ tenantId, role: "customer_receivable" }),
     ]);
 
   const moveResults = [...moveIdResults, ...refResults];
-  const failedResult = [...moveResults, receivableAccountsResult].find(
+  const failedResult = moveResults.find(
     (result) => result.error,
   );
   if (failedResult?.error) throw failedResult.error;
@@ -1198,9 +1195,7 @@ async function attachSaleAccountingStatus(client, tenantId, sales) {
   const linkedMoveIds = [
     ...new Set([...moveBySaleId.values()].map((move) => move.id)),
   ];
-  const receivableAccountIds = (receivableAccountsResult.data || []).map(
-    (account) => account.id,
-  );
+  const receivableAccountIds = [receivableAccountsResult];
   const lineResults =
     linkedMoveIds.length && receivableAccountIds.length
       ? await Promise.all(
@@ -1295,25 +1290,17 @@ async function loadReconciledSalePayments(client, tenantId, sale) {
         .order("created_at", { ascending: true })
         .limit(1)
         .maybeSingle(),
-      client
-        .from("account_accounts")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("code", "114001")
-        .eq("active", true),
+      resolveFunctionalAccount({ tenantId, role: "customer_receivable" }),
     ]);
   const failedLookup = [
     linkedMoveResult,
     referencedMoveResult,
-    receivableAccountResult,
   ].find((result) => result.error);
   if (failedLookup?.error) throw failedLookup.error;
 
   const saleMoveId =
     linkedMoveResult.data?.id || referencedMoveResult.data?.id || null;
-  const receivableAccountIds = (receivableAccountResult.data || []).map(
-    (account) => account.id,
-  );
+  const receivableAccountIds = [receivableAccountResult];
   if (!saleMoveId || !receivableAccountIds.length) return [];
 
   const { data: invoiceLines, error: invoiceLinesError } = await client
@@ -2402,18 +2389,13 @@ export const showroomService = {
     requireTenantId(tenantId);
     if (!customerId) return [];
     const client = requireSupabase();
-    const { data: account, error: accountError } = await client
-      .from("account_accounts")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("code", "114002")
-      .eq("active", true)
-      .maybeSingle();
-    if (accountError) throw accountError;
-    if (!account?.id) return [];
+    const paymentEntityReceivableId = await resolveFunctionalAccount({
+      tenantId,
+      role: "payment_entity_receivable",
+    });
 
     // The accountant app records the customer on account_moves.partner_id and
-    // the payment entity on the 114002 account_move_lines.partner_id.
+    // the payment entity on the configured receivable line partner_id.
     const { data: moves, error: movesError } = await client
       .from("account_moves")
       .select("id")
@@ -2428,7 +2410,7 @@ export const showroomService = {
       .from("account_move_lines")
       .select("partner_id, debit, credit, label")
       .eq("tenant_id", tenantId)
-      .eq("account_id", account.id)
+      .eq("account_id", paymentEntityReceivableId)
       .in("move_id", moveIds)
       .or("label.ilike.اعتماد دفعة من جهة%,label.ilike.استخدام دفعة مسبقة%");
     if (linesError) throw linesError;
@@ -2444,15 +2426,11 @@ export const showroomService = {
       );
     });
 
-    const { data: advanceAccount, error: advanceAccountError } = await client
-      .from("account_accounts")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("code", "212001")
-      .eq("active", true)
-      .maybeSingle();
-    if (advanceAccountError) throw advanceAccountError;
-    if (advanceAccount?.id) {
+    const customerAdvanceId = await resolveFunctionalAccount({
+      tenantId,
+      role: "customer_advance",
+    });
+    if (customerAdvanceId) {
       const { data: consumptionMoves, error: consumptionMovesError } =
         await client
           .from("account_moves")
@@ -2470,7 +2448,7 @@ export const showroomService = {
             .from("account_move_lines")
             .select("move_id, debit")
             .eq("tenant_id", tenantId)
-            .eq("account_id", advanceAccount.id)
+          .eq("account_id", customerAdvanceId)
             .eq("partner_id", customerId)
             .in("move_id", consumptionMoveIds);
         if (consumptionLinesError) throw consumptionLinesError;

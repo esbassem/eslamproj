@@ -1,4 +1,5 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { resolveFunctionalAccount } from '@/features/finance/accounts/api/functionalAccounts.api';
 import { invalidateVaultPaperworkCache } from '@/features/paperwork/services/vaultPaperworkCache';
 import * as Support from '@/features/paperwork/services/internal/paperworkDataSupport';
 
@@ -164,7 +165,7 @@ export const paperworkWorkflowService = {
     if (!data) throw new Error('الفاتورة المرتبطة بطلب الأوراق غير موجودة.');
 
     const totalAmount = toNumber(data.total_amount);
-    const [linkedMoveResult, referencedMoveResult, receivableAccountResult] = await Promise.all([
+    const [linkedMoveResult, referencedMoveResult, receivableAccountId] = await Promise.all([
       data.account_move_id
         ? client.from('account_moves').select('id').eq('tenant_id', tenantId)
           .eq('id', data.account_move_id).eq('move_type', 'sale').eq('state', 'posted').maybeSingle()
@@ -172,15 +173,14 @@ export const paperworkWorkflowService = {
       client.from('account_moves').select('id').eq('tenant_id', tenantId)
         .eq('ref', `showroom_sale:${saleId}`).eq('move_type', 'sale').eq('state', 'posted')
         .order('created_at', { ascending: true }).limit(1).maybeSingle(),
-      client.from('account_accounts').select('id').eq('tenant_id', tenantId)
-        .eq('code', '114001').eq('active', true),
+      resolveFunctionalAccount({ tenantId, role: 'customer_receivable' }),
     ]);
-    const failedLookup = [linkedMoveResult, referencedMoveResult, receivableAccountResult]
+    const failedLookup = [linkedMoveResult, referencedMoveResult]
       .find((result) => result.error);
     if (failedLookup?.error) throw failedLookup.error;
 
     const saleMoveId = linkedMoveResult.data?.id || referencedMoveResult.data?.id || null;
-    const receivableAccountIds = (receivableAccountResult.data || []).map((account) => account.id);
+    const receivableAccountIds = [receivableAccountId];
     let paidAmount = 0;
     if (saleMoveId && receivableAccountIds.length) {
       const { data: invoiceLines, error: invoiceLinesError } = await client

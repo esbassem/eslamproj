@@ -1,4 +1,5 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { resolveFunctionalAccount } from '@/features/finance/accounts/api/functionalAccounts.api';
 import { invokePaperworkNotification } from '@/core/notifications/paperworkNotifications';
 import { resolveCurrentTenantUserId } from '@/features/workspace/api/currentTenantUser.api';
 import { invalidateVaultPaperworkCache } from '@/features/paperwork/services/vaultPaperworkCache';
@@ -726,7 +727,7 @@ export async function loadSaleAccountingMap(client, tenantId, sales) {
     Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size))
   );
   const accountMoveIds = [...new Set(saleRows.map((sale) => sale?.account_move_id).filter(Boolean))];
-  const [moveIdResults, refResults, receivableAccountsResult] = await Promise.all([
+  const [moveIdResults, refResults, receivableAccountId] = await Promise.all([
     Promise.all(chunk(accountMoveIds).map((ids) => client
       .from('account_moves')
       .select('id, ref')
@@ -741,15 +742,11 @@ export async function loadSaleAccountingMap(client, tenantId, sales) {
       .eq('move_type', 'sale')
       .eq('state', 'posted')
       .in('ref', refs))),
-    client
-      .from('account_accounts')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('code', '114001'),
+    resolveFunctionalAccount({ tenantId, role: 'customer_receivable' }),
   ]);
 
   const moveResults = [...moveIdResults, ...refResults];
-  const failedResult = [...moveResults, receivableAccountsResult].find((result) => result.error);
+  const failedResult = moveResults.find((result) => result.error);
   if (failedResult?.error) throw failedResult.error;
 
   const accountingMoves = moveResults.flatMap((result) => result.data || []);
@@ -763,7 +760,7 @@ export async function loadSaleAccountingMap(client, tenantId, sales) {
   });
 
   const linkedMoveIds = [...new Set([...moveBySaleId.values()].map((move) => move.id))];
-  const receivableAccountIds = (receivableAccountsResult.data || []).map((account) => account.id);
+  const receivableAccountIds = [receivableAccountId];
   const lineResults = linkedMoveIds.length && receivableAccountIds.length
     ? await Promise.all(chunk(linkedMoveIds).map((ids) => client
       .from('account_move_lines')

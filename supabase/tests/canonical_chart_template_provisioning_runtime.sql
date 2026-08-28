@@ -77,7 +77,7 @@ begin
   where tenant_id = tenant_a and is_active;
   if group_count <> 16 then raise exception 'PROVISIONED_GROUP_COUNT_INVALID: %', group_count; end if;
   if account_count <> required_count then raise exception 'PROVISIONED_REQUIRED_COUNT_INVALID: %', account_count; end if;
-  if functional_count <> 13 then raise exception 'FUNCTIONAL_CONFIGURATION_COUNT_INVALID: %', functional_count; end if;
+  if functional_count <> 14 then raise exception 'FUNCTIONAL_CONFIGURATION_COUNT_INVALID: %', functional_count; end if;
 
   if exists (
     select 1 from public.account_accounts account
@@ -92,8 +92,14 @@ begin
     select 1 from public.account_accounts
     where tenant_id = tenant_a and canonical_account_type = 'liquidity'
   ) then raise exception 'LIQUIDITY_RESOURCE_AUTO_PROVISIONED'; end if;
-  if exists (select 1 from public.account_journals where tenant_id = tenant_a) then
-    raise exception 'JOURNAL_AUTO_PROVISIONED';
+  if (select count(*) from public.account_journals
+      where tenant_id = tenant_a and type in ('general', 'sale', 'purchase')
+         and journal_origin = 'template' and default_account_id is null) <> 3 then
+    raise exception 'NON_LIQUIDITY_JOURNALS_NOT_PROVISIONED';
+  end if;
+  if exists (select 1 from public.account_journals
+    where tenant_id = tenant_a and type in ('cash', 'bank')) then
+    raise exception 'LIQUIDITY_JOURNAL_AUTO_PROVISIONED';
   end if;
   if exists (select 1 from public.pos_payment_methods where tenant_id = tenant_a) then
     raise exception 'PAYMENT_METHOD_AUTO_PROVISIONED';
