@@ -11,6 +11,11 @@ declare
   structural_account uuid := '30000000-0000-4000-8000-000000000015';
   cash_journal uuid := '30000000-0000-4000-8000-000000000016';
   custody_journal uuid := '30000000-0000-4000-8000-000000000018';
+  cashbox_destination uuid := '30000000-0000-4000-8000-000000000021';
+  bank_destination uuid := '30000000-0000-4000-8000-000000000022';
+  custody_destination uuid := '30000000-0000-4000-8000-000000000023';
+  pos_destination uuid := '30000000-0000-4000-8000-000000000024';
+  wallet_destination uuid := '30000000-0000-4000-8000-000000000025';
   responsible uuid;
   active_destination uuid;
   kind text;
@@ -23,43 +28,40 @@ begin
   insert into public.pos_configs (id, tenant_id, branch_id, name, code, is_active)
   values (pos_a, tenant_a, branch_a, 'Phase 3A Runtime POS', 'P3ART', true);
 
+  insert into public.money_destinations (
+    id, tenant_id, destination_key, name, destination_type, status, branch_id,
+    responsible_user_id, pos_config_id, bank_name, bank_account_label
+  ) values
+    (cashbox_destination, tenant_a, 'runtime_cashbox', 'Runtime cashbox', 'cashbox', 'draft', branch_a, responsible, null, null, null),
+    (bank_destination, tenant_a, 'runtime_bank', 'Runtime bank', 'bank', 'draft', branch_a, null, null, 'Runtime Bank', 'Masked runtime account'),
+    (custody_destination, tenant_a, 'runtime_employee_cash_custody', 'Runtime employee custody', 'employee_cash_custody', 'draft', branch_a, responsible, null, null, null),
+    (pos_destination, tenant_a, 'runtime_pos_drawer', 'Runtime POS drawer', 'pos_drawer', 'draft', branch_a, responsible, pos_a, null, null),
+    (wallet_destination, tenant_a, 'runtime_wallet', 'Runtime wallet', 'wallet', 'draft', branch_a, null, null, null, null);
+
   insert into public.account_accounts (
     id, tenant_id, code, name, account_type, reconcile, active,
     canonical_account_type, statement_section, reporting_category,
     normal_balance, open_item_reconcile, statement_reconcile, is_posting,
-    semantic_key, account_origin
+    semantic_key, account_origin, money_destination_id
   ) values
     (liquidity_account, tenant_a, 'P3ART-LIQ', 'P3A Liquidity', 'asset', false, true,
       'liquidity', 'balance_sheet', 'cash_and_cash_equivalents', 'debit',
-      false, false, true, 'p3art_liquidity_resource', 'resource'),
+      false, false, true, 'p3art_liquidity_resource', 'resource', cashbox_destination),
     (custody_account, tenant_a, 'P3ART-CUS', 'P3A Custody', 'asset', true, true,
       'current_asset', 'balance_sheet', 'other_receivables', 'debit',
-      true, false, true, 'p3art_custody_resource', 'resource'),
+      true, false, true, 'p3art_custody_resource', 'resource', bank_destination),
     (structural_account, tenant_a, 'P3ART-STR', 'P3A Structural', 'asset', false, true,
       'liquidity', 'balance_sheet', 'cash_and_cash_equivalents', 'debit',
-      false, false, false, 'p3art_structural_resource', 'resource');
+      false, false, false, 'p3art_structural_resource', 'resource', wallet_destination);
 
   insert into public.account_journals (
     id, tenant_id, branch_id, name, code, type, default_account_id,
-    is_active, semantic_key, journal_origin
+    is_active, semantic_key, journal_origin, money_destination_id
   ) values
     (cash_journal, tenant_a, branch_a, 'P3A Cash', 'P3ARTC', 'cash', liquidity_account,
-      true, 'p3art_cash_journal', 'resource'),
+      true, 'p3art_cash_journal', 'resource', cashbox_destination),
     (custody_journal, tenant_a, branch_a, 'P3A Custody', 'P3ARTU', 'cash', custody_account,
-      true, 'p3art_custody_journal', 'resource');
-
-  foreach kind in array array['cashbox','bank','employee_cash_custody','pos_drawer','wallet'] loop
-    insert into public.money_destinations (
-      tenant_id, destination_key, name, destination_type, status, branch_id,
-      responsible_user_id, pos_config_id, bank_name, bank_account_label
-    ) values (
-      tenant_a, 'runtime_' || kind, 'Runtime ' || kind, kind, 'draft', branch_a,
-      case when kind in ('employee_cash_custody','cashbox','pos_drawer') then responsible end,
-      case when kind = 'pos_drawer' then pos_a end,
-      case when kind = 'bank' then 'Runtime Bank' end,
-      case when kind = 'bank' then 'Masked runtime account' end
-    );
-  end loop;
+      true, 'p3art_custody_journal', 'resource', bank_destination);
 
   if (select count(*) from public.money_destinations
       where tenant_id = tenant_a and destination_key like 'runtime_%') <> 5 then
