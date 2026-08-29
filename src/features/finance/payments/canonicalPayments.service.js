@@ -75,3 +75,34 @@ export function listFinancialPayments({ tenantId, limit = 50, offset = 0, ...fil
     p_limit: limit, p_offset: offset,
   }, 'تعذر تحميل الدفعات.');
 }
+
+export function listAllocatableOpenItems({ tenantId, paymentId, limit = 50, offset = 0 } = {}) {
+  requireTenantId(tenantId);
+  return call('list_allocatable_open_items_for_payment', {
+    p_tenant_id: tenantId, p_payment_id: paymentId,
+    p_limit: limit, p_offset: offset,
+  }, 'تعذر تحميل البنود المفتوحة القابلة للتخصيص.');
+}
+
+export function allocatePayment({ tenantId, paymentId, targetAccountLineId, amount, idempotencyKey } = {}) {
+  requireTenantId(tenantId);
+  return call('allocate_financial_payment', {
+    p_tenant_id: tenantId, p_payment_id: paymentId,
+    p_target_account_line_id: targetAccountLineId,
+    p_amount: amount, p_idempotency_key: idempotencyKey,
+  }, 'تعذر تخصيص الدفعة.');
+}
+
+export function unallocatePayment({ tenantId, allocationId, reason } = {}) {
+  requireTenantId(tenantId);
+  return call('unallocate_financial_payment_allocation', {
+    p_tenant_id: tenantId, p_allocation_id: allocationId, p_reason: reason,
+  }, 'تعذر فك تخصيص الدفعة.');
+}
+
+export function getPaymentAllocationSummary({ tenantId, paymentId } = {}) {
+  requireTenantId(tenantId);
+  return call('get_financial_payment_allocation_summary', {
+    p_tenant_id: tenantId, p_payment_id: paymentId,
+  }, 'تعذر تحميل ملخص تخصيص الدفعة.');
+}
