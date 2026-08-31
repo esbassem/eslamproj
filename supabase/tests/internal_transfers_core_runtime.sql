@@ -19,7 +19,7 @@ do $$ declare c phase5_context%rowtype; r phase5_resources%rowtype; x jsonb; suf
 begin select * into c from phase5_context; r.branch_id:=gen_random_uuid();
  insert into public.branches(id,tenant_id,name,code,is_active) values(r.branch_id,c.tenant_id,'Phase 5 Branch','P5'||left(suffix,5),true);
  insert into public.res_groups(tenant_id,name,code,category,is_system,active) values(c.tenant_id,'Phase 5 transfer actors','phase5_transfer_'||suffix,'Tenant',false,true) returning id into permission_group;
- insert into public.auth_group_permissions(group_id,permission_id) select permission_group,id from public.auth_permissions where code in('financial.transfer.create','financial.transfer.send','financial.transfer.receive','financial.transfer.confirm');
+ insert into public.auth_group_permissions(group_id,permission_id) select permission_group,id from public.auth_permissions where code in('financial.transfer.create','financial.transfer.send','financial.transfer.receive','financial.transfer.confirm','financial.transfer.reverse');
  insert into public.res_users_groups(tenant_id,user_id,group_id) values(c.tenant_id,c.owner_id,permission_group);
  select id into g from public.account_groups where tenant_id=c.tenant_id and template_group_key='liquidity_resources' limit 1;
  if g is null then select id into g from public.account_groups where tenant_id=c.tenant_id limit 1; end if;
@@ -43,6 +43,7 @@ begin select * into c from phase5_context;select * into r from phase5_resources;
  x:=public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,10000,'immediate','p5-create-immediate','EGP',r.branch_id,r.branch_id);
  y:=public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,10000,'immediate','p5-create-immediate','EGP',r.branch_id,r.branch_id);
  if x->>'transfer_id'<>y->>'transfer_id' or not (y->>'idempotent_replay')::boolean then raise exception 'CREATE_IDEMPOTENCY_FAILED'; end if; tid:=(x->>'transfer_id')::uuid;
+ if(public.get_financial_reversal_eligibility(c.tenant_id,'internal_transfer',tid)->>'eligible')::boolean or not(public.get_financial_reversal_eligibility(c.tenant_id,'internal_transfer',tid)->'blockers'?'TRANSFER_HAS_NO_ACCOUNTING_EFFECT')then raise exception'DRAFT_TRANSFER_ELIGIBILITY_INVALID';end if;
  x:=public.confirm_internal_transfer(c.tenant_id,tid,'p5-confirm-immediate'); mid:=(x->>'account_move_id')::uuid;
  if (select sum(debit-credit) from public.account_move_lines where move_id=mid)<>0
  or (select debit from public.account_move_lines where move_id=mid and account_id=r.destination_account)<>10000
@@ -50,6 +51,14 @@ begin select * into c from phase5_context;select * into r from phase5_resources;
  y:=public.confirm_internal_transfer(c.tenant_id,tid,'p5-confirm-immediate'); if (y->>'account_move_id')::uuid<>mid or not (y->>'idempotent_replay')::boolean then raise exception 'CONFIRM_IDEMPOTENCY_FAILED'; end if;
  begin perform public.confirm_internal_transfer(c.tenant_id,tid,'p5-confirm-mismatch'); raise exception 'DUPLICATE_CONFIRM_ACCEPTED'; exception when check_violation then null; end;
  if (select count(*) from public.account_partial_reconcile)<>before_rec then raise exception 'TRANSFER_CREATED_RECONCILIATION'; end if;
+ if not (public.get_financial_reversal_eligibility(c.tenant_id,'internal_transfer',tid)->>'eligible')::boolean then raise exception 'IMMEDIATE_REVERSAL_NOT_ELIGIBLE';end if;
+ x:=public.reverse_internal_transfer_accounting(c.tenant_id,tid,'fixture correction','p5-reverse-immediate',current_date);
+ if(select debit from public.account_move_lines where move_id=((x->'moves'->0->>'move_id')::uuid) and account_id=r.source_account)<>10000
+ or(select credit from public.account_move_lines where move_id=((x->'moves'->0->>'move_id')::uuid) and account_id=r.destination_account)<>10000 then raise exception'IMMEDIATE_REVERSAL_INVALID';end if;
+ y:=public.reverse_internal_transfer_accounting(c.tenant_id,tid,'fixture correction','p5-reverse-immediate',current_date);
+ if not(y->>'idempotent_replay')::boolean or y->>'reversal_id'<>x->>'reversal_id'then raise exception'IMMEDIATE_REVERSAL_REPLAY_FAILED';end if;
+ begin perform public.reverse_internal_transfer_accounting(c.tenant_id,tid,'changed','p5-reverse-immediate',current_date);raise exception'REVERSE_IDEMPOTENCY_MISMATCH_ACCEPTED';exception when unique_violation then null;end;
+ begin perform public.reverse_internal_transfer_accounting(c.tenant_id,tid,'second reversal','p5-reverse-immediate-second',current_date);raise exception'DOUBLE_REVERSAL_ACCEPTED';exception when check_violation then null;end;
 
  x:=public.create_internal_transfer(c.tenant_id,r.custody_id,r.destination_id,2500,'immediate','p5-custody-create','EGP',r.branch_id,r.branch_id); tid:=(x->>'transfer_id')::uuid;
  x:=public.confirm_internal_transfer(c.tenant_id,tid,'p5-custody-confirm'); mid:=(x->>'account_move_id')::uuid;
@@ -64,18 +73,39 @@ begin select * into c from phase5_context;select * into r from phase5_resources;
  if (select debit from public.account_move_lines where move_id=mid and account_id=r.destination_account)<>4000 or (select credit from public.account_move_lines where move_id=mid and account_id=r.transit_account)<>4000 then raise exception 'RECEIVE_POSTING_INVALID';end if;
  x:=public.confirm_internal_transfer(c.tenant_id,tid,'p5-final-confirm');if x->'account_move_id'<>'null'::jsonb then raise exception 'IN_TRANSIT_CONFIRM_CREATED_MOVE';end if;
  if (select sum(debit-credit) from public.account_move_lines where account_id=r.transit_account and move_id in(select account_move_id from public.financial_internal_transfer_accounting_links where transfer_id=tid))<>0 then raise exception 'COMPLETED_TRANSFER_REMAINS_IN_TRANSIT';end if;
+ x:=public.reverse_internal_transfer_accounting(c.tenant_id,tid,'completed fixture correction','p5-reverse-completed',current_date);
+ if(select count(*)from public.financial_accounting_reversal_move_links where reversal_id=(x->>'reversal_id')::uuid and stage in('transfer_receive','transfer_send'))<>2 then raise exception'COMPLETED_REVERSAL_STAGES_MISSING';end if;
+ if(select coalesce(sum(l.debit-l.credit),0)from public.account_move_lines l where l.account_id=r.transit_account and l.move_id in(select account_move_id from public.financial_internal_transfer_accounting_links where transfer_id=tid))<>0 then raise exception'COMPLETED_REVERSAL_TRANSIT_NOT_ZERO';end if;
  begin update public.financial_internal_transfers set amount=5 where id=tid;raise exception 'ACCOUNTED_TRANSFER_MUTATED';exception when check_violation or insufficient_privilege then null;end;
  begin perform public.create_internal_transfer(c.tenant_id,r.source_id,r.source_id,1,'immediate','p5-same','EGP',r.branch_id,r.branch_id);raise exception 'SAME_DESTINATION_ACCEPTED';exception when check_violation then null;end;
  begin perform public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,10001,'immediate','p5-create-immediate','EGP',r.branch_id,r.branch_id);raise exception 'IDEMPOTENCY_MISMATCH_ACCEPTED';exception when unique_violation then null;end;
 end $$;
-reset role;
+
+-- Sent-only in-transit reversal restores source and clears transit without touching destination.
+do $$declare c phase5_context%rowtype;r phase5_resources%rowtype;x jsonb;tid uuid;send_move uuid;rev_move uuid;dst_before numeric;
+begin select*into c from phase5_context;select*into r from phase5_resources;
+ select coalesce(sum(debit-credit),0)into dst_before from public.account_move_lines where account_id=r.destination_account;
+ x:=public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,10000,'in_transit','p5-sent-only-create','EGP',r.branch_id,r.branch_id);tid:=(x->>'transfer_id')::uuid;
+ x:=public.send_internal_transfer(c.tenant_id,tid,'p5-sent-only-send');send_move:=(x->>'account_move_id')::uuid;
+ if not(public.get_financial_reversal_eligibility(c.tenant_id,'internal_transfer',tid)->>'eligible')::boolean then raise exception'SENT_ONLY_NOT_ELIGIBLE';end if;
+ x:=public.reverse_internal_transfer_accounting(c.tenant_id,tid,'sent-only correction','p5-reverse-sent-only',current_date);
+ select reversal_move_id into rev_move from public.financial_accounting_reversal_move_links where reversal_id=(x->>'reversal_id')::uuid and stage='transfer_send';
+ if(select debit from public.account_move_lines where move_id=rev_move and account_id=r.source_account)<>10000 or(select credit from public.account_move_lines where move_id=rev_move and account_id=r.transit_account)<>10000 then raise exception'SENT_ONLY_REVERSAL_INVALID';end if;
+ if(select sum(debit-credit)from public.account_move_lines where account_id=r.transit_account and move_id in(send_move,rev_move))<>0 then raise exception'SENT_ONLY_TRANSIT_NOT_ZERO';end if;
+ if(select coalesce(sum(debit-credit),0)from public.account_move_lines where account_id=r.destination_account)<>dst_before then raise exception'SENT_ONLY_CHANGED_DESTINATION';end if;
+end$$;
+set local role postgres;
 
 select set_config('request.jwt.claim.sub',other_auth::text,true) from phase5_context;set local role authenticated;
 do $$ declare c phase5_context%rowtype;r phase5_resources%rowtype;blocked boolean:=false;begin select * into c from phase5_context;select * into r from phase5_resources;
  begin perform public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,1,'immediate','p5-unauthorized','EGP',r.branch_id,r.branch_id);exception when insufficient_privilege then blocked:=true;end;
  if not blocked then raise exception 'UNAUTHORIZED_CREATE_ACCEPTED';end if;
+ if exists(select 1 from public.financial_internal_transfers where tenant_id=c.tenant_id and accounting_state='active'and status<>'draft')then
+  blocked:=false;begin perform public.reverse_internal_transfer_accounting(c.tenant_id,(select id from public.financial_internal_transfers where tenant_id=c.tenant_id and accounting_state='active'and status<>'draft'limit 1),'unauthorized','p5-unauthorized-reverse',current_date);exception when insufficient_privilege then blocked:=true;end;
+  if not blocked then raise exception'UNAUTHORIZED_TRANSFER_REVERSAL_ACCEPTED';end if;
+ end if;
 end $$;
-reset role;
+set local role postgres;
 
 do $$ declare b phase5_before%rowtype;begin select * into b from phase5_before;
  if exists(select 1 from public.account_moves m join public.account_move_lines l on l.move_id=m.id and l.tenant_id=m.tenant_id where m.state='posted' group by m.id having round(sum(l.debit-l.credit),2)<>0) then raise exception 'UNBALANCED_POSTED_MOVE';end if;

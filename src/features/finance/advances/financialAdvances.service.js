@@ -34,9 +34,10 @@ export function getFinancialAdvanceApplicationSummary({ tenantId, advancePayment
   }, 'تعذر تحميل ملخص المقدم.');
 }
 
-export function unapplyFinancialAdvance({ tenantId, applicationId, reason } = {}) {
+export function unapplyFinancialAdvance({ tenantId, applicationId, reason, idempotencyKey, reversalDate = null } = {}) {
   tenant(tenantId);
   return call('unapply_financial_advance', {
     p_tenant_id: tenantId, p_application_id: applicationId, p_reason: reason,
+    p_idempotency_key: idempotencyKey, p_reversal_date: reversalDate,
   }, 'فك تطبيق المقدم يتطلب دعم العكس المحاسبي.');
 }

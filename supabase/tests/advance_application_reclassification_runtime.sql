@@ -99,14 +99,14 @@ begin select*into c from phase6_context;select*into r from phase6_resources;
 end$$;
 
 select set_config('request.jwt.claim.sub',owner_auth::text,true)from phase6_context;set local role authenticated;
-do $$declare c phase6_context%rowtype;r phase6_resources%rowtype;x jsonb;y jsonb;aid uuid;mid uuid;before_moves bigint;before_rec bigint;
+do $$declare c phase6_context%rowtype;r phase6_resources%rowtype;x jsonb;y jsonb;aid uuid;second_aid uuid;mid uuid;original_app_move uuid;before_moves bigint;before_rec bigint;
 begin select*into c from phase6_context;select*into r from phase6_resources;select count(*)into before_moves from public.account_moves;select count(*)into before_rec from public.account_partial_reconcile;
  x:=public.apply_financial_advance(c.tenant_id,r.customer_payment,r.customer_target1,12000,'p6-customer-apply','first invoice');aid:=(x->>'application_id')::uuid;mid:=(x->>'reclassification_move_id')::uuid;
  y:=public.apply_financial_advance(c.tenant_id,r.customer_payment,r.customer_target1,12000,'p6-customer-apply','first invoice');if(y->>'application_id')::uuid<>aid or(y->>'reclassification_move_id')::uuid<>mid or not(y->>'idempotent_replay')::boolean then raise exception'CUSTOMER_IDEMPOTENCY_FAILED';end if;
  if(select amount_residual from public.account_move_lines where id=r.customer_source)<>8000 or(select amount_residual from public.account_move_lines where id=r.customer_target1)<>3000 then raise exception'CUSTOMER_RESIDUALS_INVALID';end if;
  if(select count(*) from public.account_partial_reconcile where id in((x->>'advance_partial_reconcile_id')::uuid,(x->>'target_partial_reconcile_id')::uuid))<>2 then raise exception'TWO_SIDED_RECONCILIATION_MISSING';end if;
  if(select sum(debit-credit)from public.account_move_lines where move_id=mid)<>0 or(select debit from public.account_move_lines where move_id=mid and account_id=c.customer_advance_account)<>12000 or(select credit from public.account_move_lines where move_id=mid and account_id=c.customer_receivable_account)<>12000 then raise exception'CUSTOMER_RECLASSIFICATION_INVALID';end if;
- x:=public.apply_financial_advance(c.tenant_id,r.customer_payment,r.customer_target2,8000,'p6-customer-full');if(select amount_residual from public.account_move_lines where id=r.customer_source)<>0 then raise exception'FULL_APPLICATION_FAILED';end if;
+ x:=public.apply_financial_advance(c.tenant_id,r.customer_payment,r.customer_target2,8000,'p6-customer-full');second_aid:=(x->>'application_id')::uuid;if(select amount_residual from public.account_move_lines where id=r.customer_source)<>0 then raise exception'FULL_APPLICATION_FAILED';end if;
  x:=public.apply_financial_advance(c.tenant_id,r.supplier_payment,r.supplier_target,12000,'p6-supplier-apply');mid:=(x->>'reclassification_move_id')::uuid;
  if(select amount_residual from public.account_move_lines where id=r.supplier_source)<>8000 or(select amount_residual from public.account_move_lines where id=r.supplier_target)<>3000 then raise exception'SUPPLIER_RESIDUALS_INVALID';end if;
  if(select debit from public.account_move_lines where move_id=mid and account_id=c.supplier_payable_account)<>12000 or(select credit from public.account_move_lines where move_id=mid and account_id=c.supplier_advance_account)<>12000 then raise exception'SUPPLIER_RECLASSIFICATION_INVALID';end if;
@@ -115,14 +115,28 @@ begin select*into c from phase6_context;select*into r from phase6_resources;sele
  begin perform public.apply_financial_advance(c.tenant_id,r.supplier_payment,r.supplier_target,0,'p6-zero');raise exception'ZERO_ACCEPTED';exception when invalid_parameter_value then null;end;
  begin perform public.apply_financial_advance(c.tenant_id,r.customer_payment,r.supplier_target,1,'p6-cross-kind');raise exception'CROSS_KIND_ACCEPTED';exception when check_violation then null;end;
  begin perform public.apply_financial_advance(c.tenant_id,r.customer_payment,r.customer_target1,12001,'p6-customer-apply');raise exception'IDEMPOTENCY_MISMATCH_ACCEPTED';exception when unique_violation then null;end;
- begin perform public.unapply_financial_advance(c.tenant_id,aid,'wrong invoice');raise exception'UNAPPLICATION_ACCEPTED';exception when feature_not_supported then null;end;
- if(select count(*)from public.account_moves)<>before_moves+3 or(select count(*)from public.account_partial_reconcile)<>before_rec+6 then raise exception'LEDGER_CARDINALITY_INVALID';end if;
-end$$;reset role;
+ select reclassification_move_id into original_app_move from public.financial_advance_applications where id=aid;
+ x:=public.unapply_financial_advance(c.tenant_id,aid,'wrong invoice','p6-unapply-customer',current_date);
+ if x->>'status'<>'unapplied'or(select status from public.financial_advance_applications where id=aid)<>'unapplied'then raise exception'UNAPPLICATION_STATE_INVALID';end if;
+ if(select amount_residual from public.account_move_lines where id=r.customer_source)<>12000 or(select amount_residual from public.account_move_lines where id=r.customer_target1)<>15000 then raise exception'UNAPPLICATION_RESIDUAL_RESTORE_FAILED';end if;
+ if(select state from public.account_moves where id=original_app_move)<>'posted'or not exists(select 1 from public.account_moves where id=(x->>'reversal_move_id')::uuid and state='posted'and reversed_entry_id=original_app_move)then raise exception'UNAPPLICATION_REVERSING_MOVE_INVALID';end if;
+ y:=public.unapply_financial_advance(c.tenant_id,aid,'wrong invoice','p6-unapply-customer',current_date);if not(y->>'idempotent_replay')::boolean or y->>'reversal_id'<>x->>'reversal_id'then raise exception'UNAPPLICATION_REPLAY_FAILED';end if;
+ begin perform public.unapply_financial_advance(c.tenant_id,aid,'changed reason','p6-unapply-customer',current_date);raise exception'UNAPPLICATION_IDEMPOTENCY_MISMATCH_ACCEPTED';exception when unique_violation then null;end;
+ perform public.unapply_financial_advance(c.tenant_id,second_aid,'remove remaining application','p6-unapply-customer-second',current_date);
+ if exists(select 1 from public.financial_advance_applications where tenant_id=c.tenant_id and advance_payment_id=r.customer_payment and status='active')or(select amount_residual from public.account_move_lines where id=r.customer_source)<>20000 then raise exception'ADVANCE_NOT_FULLY_RESTORED';end if;
+ x:=public.reverse_financial_payment_accounting(c.tenant_id,r.customer_payment,'reverse restored advance payment','p6-reverse-restored-advance',current_date);
+ if(select accounting_state from public.financial_payments where id=r.customer_payment)<>'reversed'or not exists(select 1 from public.account_moves where id=(x->>'reversal_move_id')::uuid and state='posted')then raise exception'RESTORED_ADVANCE_PAYMENT_REVERSAL_FAILED';end if;
+ if(select count(*)from public.account_moves)<>before_moves+6 or(select count(*)from public.account_partial_reconcile)<>before_rec+7 then raise exception'LEDGER_CARDINALITY_INVALID';end if;
+end$$;set local role postgres;
 
+create temporary table phase6_security_application as
+select id from public.financial_advance_applications where status='active'limit 1;
+grant select on phase6_security_application to public;
 select set_config('request.jwt.claim.sub',other_auth::text,true)from phase6_context;set local role authenticated;
 do $$declare c phase6_context%rowtype;r phase6_resources%rowtype;blocked boolean:=false;begin select*into c from phase6_context;select*into r from phase6_resources;
- begin perform public.apply_financial_advance(c.tenant_id,r.customer_payment,r.customer_target1,1,'p6-unauthorized');exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'UNAUTHORIZED_APPLICATION_ACCEPTED';end if;
-end$$;reset role;
+ begin perform public.apply_financial_advance(c.tenant_id,r.supplier_payment,r.supplier_target,1,'p6-unauthorized');exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'UNAUTHORIZED_APPLICATION_ACCEPTED';end if;
+ blocked:=false;begin perform public.unapply_financial_advance(c.tenant_id,(select id from phase6_security_application),'unauthorized','p6-unauthorized-unapply',current_date);exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'UNAUTHORIZED_UNAPPLICATION_ACCEPTED';end if;
+end$$;set local role postgres;
 
 do $$declare b phase6_before%rowtype;begin select*into b from phase6_before;
  if exists(select 1 from public.account_moves m join public.account_move_lines l on l.move_id=m.id and l.tenant_id=m.tenant_id where m.state='posted'group by m.id having round(sum(l.debit-l.credit),2)<>0)then raise exception'UNBALANCED_POSTED_MOVE';end if;
