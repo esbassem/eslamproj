@@ -190,20 +190,15 @@ export const accountantService = {
     if (typeResult.error) throw typeResult.error;
     if (!typeResult.data?.id) throw new Error('نوع الحساب المختار غير مستخدم في دليل حسابات الشركة.');
 
-    const { data, error } = await client
-      .from('account_accounts')
-      .insert({
-        tenant_id: tenantId,
-        group_id: groupId,
-        code: normalizedCode,
-        name: normalizedName,
-        account_type: accountType,
-        reconcile: Boolean(reconcile),
-        active: Boolean(active),
-        responsible_user_id: null,
-      })
-      .select('id, group_id, code, name, account_type, reconcile, active')
-      .single();
+    const { data, error } = await client.rpc('create_temporary_account', {
+      p_tenant_id: tenantId,
+      p_group_id: groupId,
+      p_code: normalizedCode,
+      p_name: normalizedName,
+      p_account_type: accountType,
+      p_reconcile: Boolean(reconcile),
+      p_active: Boolean(active),
+    });
 
     if (error) {
       if (error.code === '23505') throw new Error('كود الحساب مستخدم بالفعل، اختر كودًا آخر.');

@@ -35,8 +35,21 @@ begin
   )) <> 3 then raise exception 'BATCH_FUNCTIONAL_RESOLUTION_FAILED'; end if;
 
   if exists (select 1 from public.account_accounts
-    where tenant_id = tenant_a and canonical_account_type = 'liquidity') then
-    raise exception 'FAKE_LIQUIDITY_ACCOUNT_PROVISIONED';
+    where tenant_id = tenant_a and canonical_account_type = 'liquidity'
+      and template_account_key <> 'cash_in_transit') then
+    raise exception 'NON_CANONICAL_LIQUIDITY_RESOURCE_PROVISIONED';
+  end if;
+  if not exists (select 1 from public.account_accounts account
+    join public.account_functional_accounts configuration
+      on configuration.tenant_id = account.tenant_id
+     and configuration.account_id = account.id
+     and configuration.functional_role = 'cash_in_transit'
+     and configuration.is_active
+    where account.tenant_id = tenant_a
+      and account.template_account_key = 'cash_in_transit'
+      and account.canonical_account_type = 'liquidity'
+      and account.account_origin = 'template') then
+    raise exception 'CASH_IN_TRANSIT_NOT_CANONICALLY_PROVISIONED';
   end if;
   failed := false;
   begin

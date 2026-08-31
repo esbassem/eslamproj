@@ -11,22 +11,29 @@ declare
   group_count integer;
   account_count integer;
   functional_count integer;
+  expected_functional_count integer;
   installation_id uuid;
   repeated_installation_id uuid;
   move_id uuid;
   group_id uuid;
-  version_two_id uuid;
+  next_version_id uuid;
+  active_version integer;
   failed boolean;
 begin
   select id into v_template_id from public.canonical_chart_templates
-  where template_key = 'general_trading' and version = 1 and status = 'active';
-  if v_template_id is null then raise exception 'CANONICAL_TEMPLATE_V1_MISSING'; end if;
+  where template_key = 'general_trading' and status = 'active'
+  order by version desc limit 1;
+  if v_template_id is null then raise exception 'ACTIVE_CANONICAL_TEMPLATE_MISSING'; end if;
+  select version into active_version from public.canonical_chart_templates where id = v_template_id;
 
   select count(*) into required_count from public.canonical_chart_template_accounts
   where template_id = v_template_id and provisioning_policy = 'required';
   select count(*) into conditional_count from public.canonical_chart_template_accounts
   where template_id = v_template_id and provisioning_policy = 'conditional';
-  if required_count <> 25 or conditional_count <> 10 then
+  select count(*) into expected_functional_count from public.canonical_chart_template_accounts
+  where template_id = v_template_id and provisioning_policy = 'required'
+    and functional_role is not null;
+  if required_count < 25 or conditional_count <> 10 then
     raise exception 'UNEXPECTED_TEMPLATE_POLICY_COUNTS: required %, conditional %', required_count, conditional_count;
   end if;
 
@@ -53,13 +60,13 @@ begin
   insert into public.canonical_chart_templates(
     template_key, version, name, status
   ) values (
-    'general_trading', 2, 'General Trading — Test Version 2', 'draft'
-  ) returning id into version_two_id;
-  if version_two_id is null then raise exception 'TEMPLATE_VERSION_TWO_DRAFT_FAILED'; end if;
+    'general_trading', active_version + 1, 'General Trading — Test Next Version', 'draft'
+  ) returning id into next_version_id;
+  if next_version_id is null then raise exception 'NEXT_TEMPLATE_VERSION_DRAFT_FAILED'; end if;
   failed := false;
   begin
     update public.canonical_chart_templates set status = 'active'
-    where id = version_two_id;
+    where id = next_version_id;
   exception when unique_violation then failed := true;
   end;
   if not failed then raise exception 'MULTIPLE_ACTIVE_TEMPLATE_VERSIONS_ACCEPTED'; end if;
@@ -77,7 +84,18 @@ begin
   where tenant_id = tenant_a and is_active;
   if group_count <> 16 then raise exception 'PROVISIONED_GROUP_COUNT_INVALID: %', group_count; end if;
   if account_count <> required_count then raise exception 'PROVISIONED_REQUIRED_COUNT_INVALID: %', account_count; end if;
-  if functional_count <> 14 then raise exception 'FUNCTIONAL_CONFIGURATION_COUNT_INVALID: %', functional_count; end if;
+  if functional_count < expected_functional_count or exists (
+    select 1 from public.canonical_chart_template_accounts definition
+    where definition.template_id = v_template_id
+      and definition.provisioning_policy = 'required'
+      and definition.functional_role is not null
+      and not exists (
+        select 1 from public.account_functional_accounts configuration
+        where configuration.tenant_id = tenant_a
+          and configuration.functional_role = definition.functional_role
+          and configuration.is_active
+      )
+  ) then raise exception 'REQUIRED_FUNCTIONAL_CONFIGURATION_MISSING: actual %, required %', functional_count, expected_functional_count; end if;
 
   if exists (
     select 1 from public.account_accounts account
@@ -91,7 +109,8 @@ begin
   if exists (
     select 1 from public.account_accounts
     where tenant_id = tenant_a and canonical_account_type = 'liquidity'
-  ) then raise exception 'LIQUIDITY_RESOURCE_AUTO_PROVISIONED'; end if;
+      and template_account_key <> 'cash_in_transit'
+  ) then raise exception 'CONDITIONAL_LIQUIDITY_RESOURCE_AUTO_PROVISIONED'; end if;
   if (select count(*) from public.account_journals
       where tenant_id = tenant_a and type in ('general', 'sale', 'purchase')
          and journal_origin = 'template' and default_account_id is null) <> 3 then
@@ -107,7 +126,7 @@ begin
 
   select id into installation_id from public.tenant_chart_template_installations
   where tenant_id = tenant_a and template_id = v_template_id and status = 'installed';
-  repeated_installation_id := public.provision_tenant_canonical_chart(tenant_a, 'general_trading', 1);
+  repeated_installation_id := public.provision_tenant_canonical_chart(tenant_a, 'general_trading', active_version);
   if repeated_installation_id <> installation_id then raise exception 'PROVISIONING_NOT_IDEMPOTENT'; end if;
   if (select count(*) from public.account_groups where tenant_id = tenant_a and template_group_key is not null) <> group_count
      or (select count(*) from public.account_accounts where tenant_id = tenant_a and account_origin = 'template') <> account_count
