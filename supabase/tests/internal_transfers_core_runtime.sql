@@ -40,6 +40,16 @@ end $$;
 
 do $$ declare c phase5_context%rowtype;r phase5_resources%rowtype;x jsonb;y jsonb;tid uuid;mid uuid;before_rec bigint;
 begin select * into c from phase5_context;select * into r from phase5_resources;select count(*) into before_rec from public.account_partial_reconcile;
+ x:=public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,1000,'immediate','p5-policy-deny-immediate','EGP',r.branch_id,r.branch_id);tid:=(x->>'transfer_id')::uuid;
+ begin perform public.confirm_internal_transfer(c.tenant_id,tid,'p5-policy-deny-immediate-confirm');raise exception'INSUFFICIENT_IMMEDIATE_TRANSFER_ACCEPTED';exception when check_violation then null;end;
+ if(select status from public.financial_internal_transfers where id=tid)<>'draft'or exists(select 1 from public.financial_internal_transfer_accounting_links where transfer_id=tid)then raise exception'FAILED_IMMEDIATE_TRANSFER_NOT_ATOMIC';end if;
+ x:=public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,1000,'in_transit','p5-policy-deny-send','EGP',r.branch_id,r.branch_id);tid:=(x->>'transfer_id')::uuid;
+ begin perform public.send_internal_transfer(c.tenant_id,tid,'p5-policy-deny-send-command');raise exception'INSUFFICIENT_IN_TRANSIT_SEND_ACCEPTED';exception when check_violation then null;end;
+ if(select status from public.financial_internal_transfers where id=tid)<>'draft'or exists(select 1 from public.financial_internal_transfer_accounting_links where transfer_id=tid)then raise exception'FAILED_IN_TRANSIT_SEND_NOT_ATOMIC';end if;
+ x:=public.create_internal_transfer(c.tenant_id,r.custody_id,r.destination_id,1000,'immediate','p5-policy-deny-custody','EGP',r.branch_id,r.branch_id);tid:=(x->>'transfer_id')::uuid;
+ begin perform public.confirm_internal_transfer(c.tenant_id,tid,'p5-policy-deny-custody-confirm');raise exception'INSUFFICIENT_CUSTODY_TRANSFER_ACCEPTED';exception when check_violation then null;end;
+ perform public.configure_money_destination_negative_balance(c.tenant_id,r.source_id,true,'Legacy transfer runtime fixture starts without an opening balance');
+ perform public.configure_money_destination_negative_balance(c.tenant_id,r.custody_id,true,'Legacy custody runtime fixture starts without an opening balance');
  x:=public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,10000,'immediate','p5-create-immediate','EGP',r.branch_id,r.branch_id);
  y:=public.create_internal_transfer(c.tenant_id,r.source_id,r.destination_id,10000,'immediate','p5-create-immediate','EGP',r.branch_id,r.branch_id);
  if x->>'transfer_id'<>y->>'transfer_id' or not (y->>'idempotent_replay')::boolean then raise exception 'CREATE_IDEMPOTENCY_FAILED'; end if; tid:=(x->>'transfer_id')::uuid;
