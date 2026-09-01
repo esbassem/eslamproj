@@ -74,6 +74,7 @@ do $$declare c p10b3_context%rowtype;r p10b3_r%rowtype;m uuid:=gen_random_uuid()
 end$$;
 
 select set_config('request.jwt.claim.sub',owner_auth::text,true)from p10b3_context;set local role authenticated;
+do $$declare c p10b3_context%rowtype;r p10b3_r%rowtype;blocked boolean:=false;begin select*into c from p10b3_context;select*into r from p10b3_r;begin perform public.configure_money_destination_negative_balance(c.tenant_id,r.destination,true,'   ');exception when invalid_parameter_value then blocked:=true;end;if not blocked then raise exception'NEGATIVE_POLICY_BLANK_REASON_ACCEPTED';end if;end$$;
 select public.set_financial_period_lock(tenant_id,current_date,true,'Close through today for runtime test')from p10b3_context;
 set local role postgres;
 do $$declare c p10b3_context%rowtype;r p10b3_r%rowtype;begin select*into c from p10b3_context;select*into r from p10b3_r;
@@ -82,9 +83,12 @@ do $$declare c p10b3_context%rowtype;r p10b3_r%rowtype;begin select*into c from 
 
 -- Ordinary and cross-tenant users cannot manage policy or write tables directly.
 select set_config('request.jwt.claim.sub',other_auth::text,true)from p10b3_context;set local role authenticated;
-do $$declare c p10b3_context%rowtype;blocked boolean:=false;foreign_tenant uuid;begin select*into c from p10b3_context;
+do $$declare c p10b3_context%rowtype;r p10b3_r%rowtype;blocked boolean:=false;foreign_tenant uuid;begin select*into c from p10b3_context;select*into r from p10b3_r;
  begin perform public.set_financial_period_lock(c.tenant_id,current_date,false,'Unauthorized');exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'UNAUTHORIZED_PERIOD_MANAGEMENT_ACCEPTED';end if;
+ blocked:=false;begin perform public.configure_money_destination_negative_balance(c.tenant_id,r.destination,true,'Unauthorized');exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'UNAUTHORIZED_NEGATIVE_POLICY_ACCEPTED';end if;
  select id into foreign_tenant from public.tenants where id<>c.tenant_id limit 1;blocked:=false;begin perform public.set_financial_period_lock(foreign_tenant,current_date,true,'Cross tenant');exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'CROSS_TENANT_PERIOD_MANAGEMENT_ACCEPTED';end if;
+ blocked:=false;begin perform public.configure_money_destination_negative_balance(foreign_tenant,r.destination,true,'Cross tenant');exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'CROSS_TENANT_NEGATIVE_POLICY_ACCEPTED';end if;
+ blocked:=false;begin update public.money_destinations set allow_negative_balance=true where id=r.destination;exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'DIRECT_NEGATIVE_POLICY_WRITE_ACCEPTED';end if;
  blocked:=false;begin insert into public.financial_period_locks(tenant_id,locked_through_date,reason,created_by,updated_by)values(c.tenant_id,current_date,'Forged',c.other_id,c.other_id);exception when insufficient_privilege then blocked:=true;end;if not blocked then raise exception'DIRECT_PERIOD_WRITE_ACCEPTED';end if;end$$;
 set local role postgres;
 
