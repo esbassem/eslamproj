@@ -62,13 +62,26 @@ join lateral (
 ) installed on true
 on conflict do nothing;
 
+insert into public.res_groups (tenant_id, module_id, name, code, is_system, active)
+select context.tenant_id, installed.module_id,
+  'Authorization escalation target', 'authorization_runtime_escalation_target', false, true
+from authz_test_context context
+join lateral (
+  select tenant_module.module_id
+  from public.tenant_modules tenant_module
+  where tenant_module.tenant_id = context.tenant_id
+    and tenant_module.state = 'installed'
+  limit 1
+) installed on true
+on conflict do nothing;
+
 insert into public.auth_group_permissions (group_id, permission_id)
 select permission_group.id, permission.id
 from authz_test_context context
 join public.res_groups permission_group
   on permission_group.tenant_id = context.tenant_id
  and permission_group.code = 'authorization_runtime_test'
-join public.auth_permissions permission on permission.code = 'crm.read'
+join public.auth_permissions permission on permission.code = 'crm.access'
 on conflict do nothing;
 
 insert into public.res_users_groups (tenant_id, user_id, group_id)
@@ -96,13 +109,13 @@ begin
   if public.current_tenant_id() is distinct from context.tenant_id then
     raise exception 'identity: wrong tenant';
   end if;
-  if not public.has_permission('crm.read') then
+  if not public.has_permission('crm.access') then
     raise exception 'permissions: group permission was not resolved';
   end if;
-  if not public.has_permission(context.tenant_id, 'crm.read') then
+  if not public.has_permission(context.tenant_id, 'crm.access') then
     raise exception 'permissions: legacy wrapper did not resolve canonical permission';
   end if;
-  if public.has_permission('crm.read', context.other_tenant_id) then
+  if public.has_permission('crm.access', context.other_tenant_id) then
     raise exception 'permissions: cross-tenant permission was granted';
   end if;
   if exists (
@@ -141,7 +154,8 @@ begin
     insert into public.res_users_groups (tenant_id, user_id, group_id)
     select context.tenant_id, context.member_tenant_user_id, permission_group.id
     from public.res_groups permission_group
-    where permission_group.code = 'inventory_user'
+    where permission_group.code = 'authorization_runtime_escalation_target'
+      and permission_group.tenant_id = context.tenant_id
     limit 1;
   exception when insufficient_privilege then
     blocked := true;
