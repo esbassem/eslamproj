@@ -10,51 +10,44 @@ import { AccessControlSettings } from '@/features/settings/sections/access-contr
 import { PosSettings } from '@/features/settings/sections/pos/PosSettings';
 import { TeamManagementPage } from '@/features/team/pages/TeamManagementPage';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
+import { useAppContext } from '@/contexts/AppContext';
+import {
+  getSettingsMenuHref,
+  getSettingsNavigationItems,
+  getSettingsSectionKey,
+  resolveActiveSettingsMenu,
+} from '@/features/settings/settingsNavigation';
 
-const validSections = new Set(['general', 'branches', 'accounting', 'pos', 'payments', 'team', 'permissions']);
 const validAccountingTabs = new Set(['methods', 'rules', 'journals', 'journal-methods']);
 
 export function SettingsPage() {
   const { t } = useI18n();
   const { tenantUser } = useWorkspace();
+  const { activeMenus } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const normalizedPath = location.pathname.replace(/\/+$/, '');
-  const isTeamPath = normalizedPath === ROUTES.settingsTeam;
-  const isPermissionsPath = normalizedPath === ROUTES.settingsPermissions;
-  const isBranchesPath = normalizedPath === ROUTES.settingsBranches;
   const isOwner = tenantUser?.role === 'owner';
-  const requestedSection = searchParams.get('section');
   const requestedTab = searchParams.get('tab');
-  const normalizedRequestedSection = requestedSection === 'payments' ? 'accounting' : requestedSection;
-  const activeSection = isBranchesPath
-    ? 'branches'
-    : isPermissionsPath
-      ? 'permissions'
-      : isTeamPath
-        ? 'team'
-        : validSections.has(requestedSection)
-          ? normalizedRequestedSection
-          : 'general';
+  const navigationItems = getSettingsNavigationItems(activeMenus, { isOwner });
+  const activeMenu = resolveActiveSettingsMenu(navigationItems, location);
+  const activeSection = getSettingsSectionKey(activeMenu) ?? 'general';
   const activeAccountingTab = validAccountingTabs.has(requestedTab) ? requestedTab : 'methods';
 
   useEffect(() => {
     const nextParams = new URLSearchParams(searchParams);
     let shouldReplace = false;
+    const requestedSection = nextParams.get('section');
 
-    if ((isTeamPath || isPermissionsPath || isBranchesPath) && (requestedSection || requestedTab)) {
+    if (location.pathname !== ROUTES.settings && (requestedSection || requestedTab)) {
       nextParams.delete('section');
       nextParams.delete('tab');
       shouldReplace = true;
-    } else if (requestedSection && !validSections.has(requestedSection)) {
-      nextParams.set('section', 'general');
-      nextParams.delete('tab');
-      shouldReplace = true;
-    }
-
-    if (requestedSection === 'payments') {
+    } else if (requestedSection === 'payments') {
       nextParams.set('section', 'accounting');
+      shouldReplace = true;
+    } else if (requestedSection && activeMenu?.code === 'settings.general' && requestedSection !== 'general') {
+      nextParams.delete('section');
       shouldReplace = true;
     }
 
@@ -72,41 +65,11 @@ export function SettingsPage() {
     if (shouldReplace) {
       setSearchParams(nextParams, { replace: true });
     }
-  }, [activeSection, isBranchesPath, isPermissionsPath, isTeamPath, requestedSection, requestedTab, searchParams, setSearchParams]);
+  }, [activeMenu?.code, activeSection, location.pathname, requestedTab, searchParams, setSearchParams]);
 
-  const handleSectionChange = (section) => {
-    if (!['general', 'branches', 'accounting', 'pos', 'team', 'permissions'].includes(section)) return;
-
-    if (section === 'branches') {
-      navigate(ROUTES.settingsBranches);
-      return;
-    }
-
-    if (section === 'team') {
-      navigate(ROUTES.settingsTeam);
-      return;
-    }
-
-    if (section === 'permissions') {
-      navigate(ROUTES.settingsPermissions);
-      return;
-    }
-
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('section', section);
-
-    if (section === 'accounting') {
-      const nextTab = validAccountingTabs.has(searchParams.get('tab')) ? searchParams.get('tab') : 'methods';
-      nextParams.set('tab', nextTab);
-    } else {
-      nextParams.delete('tab');
-    }
-
-    if (isTeamPath || isPermissionsPath || isBranchesPath) {
-      navigate(`${ROUTES.settings}?${nextParams.toString()}`);
-    } else {
-      setSearchParams(nextParams);
-    }
+  const handleMenuSelect = (menu) => {
+    const href = getSettingsMenuHref(menu);
+    if (href) navigate(href);
   };
 
   const handleAccountingTabChange = (tab) => {
@@ -147,10 +110,10 @@ export function SettingsPage() {
     <SettingsLayout
       title={pageTitle}
       description={pageDescription}
-      activeSection={activeSection}
+      navigationItems={navigationItems}
+      activeMenuId={activeMenu?.id ?? null}
       activeAccountingTab={activeAccountingTab}
-      canManagePermissions={isOwner}
-      onSectionChange={handleSectionChange}
+      onMenuSelect={handleMenuSelect}
       onAccountingTabChange={handleAccountingTabChange}
     >
       {activeSection === 'accounting' ? <AccountingSettings activeTab={activeAccountingTab} onTabChange={handleAccountingTabChange} /> : null}

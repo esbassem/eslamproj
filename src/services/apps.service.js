@@ -162,7 +162,11 @@ function filterMenusByAppRules(menus, appCode, options = {}) {
   }
 
   if (appCode === 'settings' && options.userRole !== 'owner') {
-    return menus.filter((menu) => menu.active !== false && menu.code !== 'settings.branches');
+    return menus.filter((menu) => (
+      menu.active !== false
+      && menu.code !== 'settings.branches'
+      && menu.code !== 'settings.permissions'
+    ));
   }
 
   if (appCode === 'photos') {

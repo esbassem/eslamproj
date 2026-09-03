@@ -5,10 +5,10 @@ import { SettingsSectionNav } from '@/features/settings/components/SettingsSecti
 export function SettingsLayout({
   title,
   description,
-  activeSection,
+  navigationItems,
+  activeMenuId,
   activeAccountingTab,
-  canManagePermissions,
-  onSectionChange,
+  onMenuSelect,
   onAccountingTabChange,
   children,
 }) {
@@ -21,10 +21,10 @@ export function SettingsLayout({
       showEmptyState={false}
       sidebarContent={
         <SettingsSectionNav
-          activeSection={activeSection}
+          items={navigationItems}
+          activeMenuId={activeMenuId}
           activeAccountingTab={activeAccountingTab}
-          canManagePermissions={canManagePermissions}
-          onSectionChange={onSectionChange}
+          onMenuSelect={onMenuSelect}
           onAccountingTabChange={onAccountingTabChange}
         />
       }

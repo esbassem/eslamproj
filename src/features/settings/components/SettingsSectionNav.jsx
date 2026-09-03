@@ -1,14 +1,7 @@
-import { Building2, Landmark, MapPinned, ShieldCheck, Store, Users2, WalletCards } from 'lucide-react';
+import { Landmark, WalletCards } from 'lucide-react';
 import { cn } from '@/core/utils/cn';
-
-const sections = [
-  { key: 'general', title: 'عام', icon: Building2 },
-  { key: 'branches', title: 'الفروع', icon: MapPinned, ownerOnly: true },
-  { key: 'accounting', title: 'المحاسبة', icon: Landmark },
-  { key: 'pos', title: 'نقاط البيع', icon: Store },
-  { key: 'team', title: 'المستخدمون والفريق', icon: Users2 },
-  { key: 'permissions', title: 'الأدوار والصلاحيات', icon: ShieldCheck, ownerOnly: true },
-];
+import { resolveModuleIcon } from '@/features/modules/modules.navigation';
+import { getSettingsSectionKey } from '@/features/settings/settingsNavigation';
 
 const accountingTabs = [
   { key: 'methods', title: 'طرق الدفع', icon: WalletCards },
@@ -18,23 +11,22 @@ const accountingTabs = [
 ];
 
 export function SettingsSectionNav({
-  activeSection = 'general',
+  items = [],
+  activeMenuId = null,
   activeAccountingTab = 'methods',
-  canManagePermissions = false,
-  onSectionChange,
+  onMenuSelect,
   onAccountingTabChange,
 }) {
-  const visibleSections = sections.filter((section) => !section.ownerOnly || canManagePermissions);
-
   return (
     <nav className="space-y-2" dir="rtl">
-      {visibleSections.map((section) => {
-        const Icon = section.icon;
-        const isActive = activeSection === section.key;
-        const isDisabled = section.active === false;
+      {items.map((menu) => {
+        const sectionKey = getSettingsSectionKey(menu);
+        const Icon = resolveModuleIcon(menu.icon);
+        const isActive = menu.id === activeMenuId;
+        const isDisabled = menu.active === false;
 
         return (
-          <div key={section.key} className="space-y-2">
+          <div key={menu.id || menu.code} className="space-y-2">
             <div
               className={cn(
                 'rounded-lg transition',
@@ -55,7 +47,7 @@ export function SettingsSectionNav({
                 aria-disabled={isDisabled}
                 onClick={() => {
                   if (!isDisabled) {
-                    onSectionChange?.(section.key);
+                    onMenuSelect?.(menu);
                   }
                 }}
               >
@@ -67,7 +59,7 @@ export function SettingsSectionNav({
                 >
                   <Icon className="h-4 w-4" />
                 </span>
-                <span className="min-w-0 flex-1">{section.title}</span>
+                <span className="min-w-0 flex-1">{menu.name}</span>
                 {isDisabled ? (
                   <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[0.68rem] font-black text-white/70">
                     قريبًا
@@ -75,7 +67,7 @@ export function SettingsSectionNav({
                 ) : null}
               </button>
 
-              {section.key === 'accounting' && isActive && !isDisabled ? (
+              {sectionKey === 'accounting' && isActive && !isDisabled ? (
                 <div className="space-y-1 px-3 pb-3">
                   <div className="h-px bg-[#dbe8ff]" />
                   {accountingTabs.map((tab) => {
