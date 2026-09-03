@@ -17,8 +17,7 @@ test('retires only the obsolete Settings menu row and is idempotent', () => {
   assert.doesNotMatch(migration, /delete from public\.ir_ui_menus/);
 });
 
-test('guards the current Accounting and Financial Settings navigation', () => {
-  assert.match(migration, /code = 'settings\.accounting'[\s\S]*route_path = '\/app\/settings\?section=accounting'[\s\S]*active = true/);
+test('guards canonical Financial Settings navigation', () => {
   assert.match(migration, /code = 'settings\.financial_setup'[\s\S]*route_path = '\/app\/settings\/financial'[\s\S]*active = true/);
   assert.match(migration, /code = 'settings\.money_destinations'[\s\S]*route_path = '\/app\/settings\/financial\/money-destinations'[\s\S]*active = true/);
 });

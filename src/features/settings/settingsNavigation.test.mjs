@@ -10,7 +10,6 @@ import {
 const expected = [
   ['settings.general', '/app/settings', 10],
   ['settings.financial_setup', '/app/settings/financial', 15],
-  ['settings.accounting', '/app/settings?section=accounting', 20],
   ['settings.branches', '/app/settings/branches', 30],
   ['settings.pos', '/app/settings?section=pos', 40],
   ['settings.team', '/app/settings/team', 50],
@@ -44,17 +43,17 @@ function settingsTree(role = 'owner') {
 test('Settings navigation is derived from canonical menu data in sequence order', () => {
   const items = getSettingsNavigationItems(settingsTree(), { isOwner: true });
   assert.deepEqual(items.map((item) => item.code), expected.map(([code]) => code));
-  assert.deepEqual(items.map(getSettingsSectionKey), ['general', 'financial_setup', 'accounting', 'branches', 'pos', 'team', 'permissions']);
+  assert.deepEqual(items.map(getSettingsSectionKey), ['general', 'financial_setup', 'branches', 'pos', 'team', 'permissions']);
 });
 
-test('canonical Settings routes resolve General, Accounting, POS, Branches, Team, and Permissions', () => {
+test('canonical Settings routes resolve General, Financial Setup, POS, Branches, Team, and Permissions', () => {
   const items = getSettingsNavigationItems(settingsTree(), { isOwner: true });
   const cases = [
     ['/app/settings', '', 'settings.general'],
     ['/app/settings/financial', '', 'settings.financial_setup'],
     ['/app/settings/financial/money-destinations', '', 'settings.financial_setup'],
-    ['/app/settings', '?section=accounting&tab=journals', 'settings.accounting'],
-    ['/app/settings', '?section=payments', 'settings.accounting'],
+    ['/app/settings', '?section=accounting&tab=journals', 'settings.general'],
+    ['/app/settings', '?section=payments', 'settings.general'],
     ['/app/settings', '?section=pos', 'settings.pos'],
     ['/app/settings/branches', '', 'settings.branches'],
     ['/app/settings/team', '', 'settings.team'],
@@ -91,9 +90,9 @@ test('top-level labels, icons, and order are not hardcoded by SettingsSectionNav
   assert.match(source, /items\.map/);
 });
 
-test('accounting tabs intentionally remain local and preserve all existing tab keys', () => {
+test('legacy accounting tabs are absent from Settings navigation', () => {
   const source = readFileSync(new URL('./components/SettingsSectionNav.jsx', import.meta.url), 'utf8');
-  for (const key of ['methods', 'rules', 'journals', 'journal-methods']) assert.match(source, new RegExp(`key: '${key}'`));
+  assert.doesNotMatch(source, /accountingTabs|activeAccountingTab|onAccountingTabChange/);
 });
 
 test('all canonical Settings menu routes retain a frontend route/component destination', () => {

@@ -7,9 +7,7 @@ export function SettingsLayout({
   description,
   navigationItems,
   activeMenuId,
-  activeAccountingTab,
   onMenuSelect,
-  onAccountingTabChange,
   children,
 }) {
   return (
@@ -23,9 +21,7 @@ export function SettingsLayout({
         <SettingsSectionNav
           items={navigationItems}
           activeMenuId={activeMenuId}
-          activeAccountingTab={activeAccountingTab}
           onMenuSelect={onMenuSelect}
-          onAccountingTabChange={onAccountingTabChange}
         />
       }
     >

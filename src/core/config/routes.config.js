@@ -22,6 +22,5 @@ export const ROUTES = {
   settingsBranches: '/app/settings/branches',
   settingsTeam: '/app/settings/team',
   settingsPermissions: '/app/settings/permissions',
-  paymentSettings: '/app/settings?section=accounting&tab=methods',
   team: '/app/settings/team',
 };

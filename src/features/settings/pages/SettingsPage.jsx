@@ -3,7 +3,6 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ROUTES } from '@/core/config/routes.config';
 import { useI18n } from '@/core/i18n/useI18n';
 import { SettingsLayout } from '@/features/settings/components/SettingsLayout';
-import { AccountingSettings } from '@/features/settings/sections/accounting/AccountingSettings';
 import { BranchesSettings } from '@/features/settings/sections/branches/BranchesSettings';
 import { CompanySettings } from '@/features/settings/sections/general/CompanySettings';
 import { AccessControlSettings } from '@/features/settings/sections/access-control';
@@ -21,8 +20,6 @@ import {
   resolveActiveSettingsMenu,
 } from '@/features/settings/settingsNavigation';
 
-const validAccountingTabs = new Set(['methods', 'rules', 'journals', 'journal-methods']);
-
 export function SettingsPage() {
   const { t } = useI18n();
   const { tenant, tenantUser } = useWorkspace();
@@ -39,7 +36,6 @@ export function SettingsPage() {
     .flatMap((menu) => menu.children ?? [])
     .find((menu) => getSettingsMenuHref(menu).split('?')[0] === location.pathname);
   const activeSection = getSettingsSectionKey(activeMenu) ?? 'general';
-  const activeAccountingTab = validAccountingTabs.has(requestedTab) ? requestedTab : 'methods';
   const showingMoneyDestinations = location.pathname === ROUTES.settingsMoneyDestinations;
 
   useEffect(() => {
@@ -51,21 +47,12 @@ export function SettingsPage() {
       nextParams.delete('section');
       nextParams.delete('tab');
       shouldReplace = true;
-    } else if (requestedSection === 'payments') {
-      nextParams.set('section', 'accounting');
-      shouldReplace = true;
     } else if (requestedSection && activeMenu?.code === 'settings.general' && requestedSection !== 'general') {
       nextParams.delete('section');
       shouldReplace = true;
     }
 
-    if (activeSection === 'accounting') {
-      if (!requestedTab || !validAccountingTabs.has(requestedTab)) {
-        nextParams.set('section', 'accounting');
-        nextParams.set('tab', 'methods');
-        shouldReplace = true;
-      }
-    } else if (requestedTab) {
+    if (requestedTab) {
       nextParams.delete('tab');
       shouldReplace = true;
     }
@@ -73,50 +60,37 @@ export function SettingsPage() {
     if (shouldReplace) {
       setSearchParams(nextParams, { replace: true });
     }
-  }, [activeMenu?.code, activeSection, location.pathname, requestedTab, searchParams, setSearchParams]);
+  }, [activeMenu?.code, location.pathname, requestedTab, searchParams, setSearchParams]);
 
   const handleMenuSelect = (menu) => {
     const href = getSettingsMenuHref(menu);
     if (href) navigate(href);
   };
 
-  const handleAccountingTabChange = (tab) => {
-    if (!validAccountingTabs.has(tab)) return;
-
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('section', 'accounting');
-    nextParams.set('tab', tab);
-    setSearchParams(nextParams);
-  };
-
   const pageTitle =
     activeSection === 'financial_setup'
       ? showingMoneyDestinations ? 'أماكن الأموال' : 'الإعداد المالي'
       : activeSection === 'branches'
-      ? 'الفروع'
-      : activeSection === 'accounting'
-        ? 'إعدادات المحاسبة'
-        : activeSection === 'pos'
-          ? 'إعدادات نقاط البيع'
-          : activeSection === 'team'
-            ? 'المستخدمون والفريق'
-            : activeSection === 'permissions'
-              ? 'الأدوار والصلاحيات'
-              : t('settings.title');
+        ? 'الفروع'
+      : activeSection === 'pos'
+        ? 'إعدادات نقاط البيع'
+        : activeSection === 'team'
+          ? 'المستخدمون والفريق'
+          : activeSection === 'permissions'
+            ? 'الأدوار والصلاحيات'
+            : t('settings.title');
   const pageDescription =
     activeSection === 'financial_setup'
       ? showingMoneyDestinations ? 'إدارة أماكن الاحتفاظ بأموال النشاط وربطها المالي التلقائي.' : 'تحقق من جاهزية الأساس المالي وما يحتاج إلى إعداد قبل بدء التشغيل.'
       : activeSection === 'branches'
-      ? 'إدارة تعريف فروع الشركة الحالية دون ربطها بالمخزون.'
-      : activeSection === 'accounting'
-        ? 'إعدادات الدفع المحاسبية داخل settings كمصدر واحد.'
-        : activeSection === 'pos'
-          ? 'إعدادات نقاط البيع منفصلة عن المحاسبة.'
-          : activeSection === 'team'
-            ? 'إدارة المستخدمين وأعضاء الفريق داخل تطبيق الإعدادات.'
-            : activeSection === 'permissions'
-              ? 'إدارة أدوار المستخدمين ونطاق العمل والإعدادات الافتراضية.'
-              : t('settings.description');
+        ? 'إدارة تعريف فروع الشركة الحالية دون ربطها بالمخزون.'
+      : activeSection === 'pos'
+        ? 'إعدادات نقاط البيع مستقلة عن بقية إعدادات النظام.'
+        : activeSection === 'team'
+          ? 'إدارة المستخدمين وأعضاء الفريق داخل تطبيق الإعدادات.'
+          : activeSection === 'permissions'
+            ? 'إدارة أدوار المستخدمين ونطاق العمل والإعدادات الافتراضية.'
+            : t('settings.description');
 
   return (
     <SettingsLayout
@@ -124,13 +98,10 @@ export function SettingsPage() {
       description={pageDescription}
       navigationItems={navigationItems}
       activeMenuId={activeChildMenu?.id ?? activeMenu?.id ?? null}
-      activeAccountingTab={activeAccountingTab}
       onMenuSelect={handleMenuSelect}
-      onAccountingTabChange={handleAccountingTabChange}
     >
       {activeSection === 'financial_setup' && !showingMoneyDestinations ? <FinancialSetup tenantId={tenant?.id ?? null} /> : null}
       {activeSection === 'financial_setup' && showingMoneyDestinations ? <MoneyDestinationsSettings tenantId={tenant?.id ?? null} canManage={can('financial.destination.manage')} /> : null}
-      {activeSection === 'accounting' ? <AccountingSettings activeTab={activeAccountingTab} onTabChange={handleAccountingTabChange} /> : null}
       {activeSection === 'branches' ? <BranchesSettings /> : null}
       {activeSection === 'pos' ? <PosSettings /> : null}
       {activeSection === 'team' ? <TeamManagementPage embedded /> : null}

@@ -17,7 +17,6 @@ export const modeRoutes = [
       { path: 'payments', element: <Navigate to={ROUTES.payments} replace /> },
       { path: 'contracts', element: <Navigate to={ROUTES.contracts} replace /> },
       { path: 'settings', element: <Navigate to={ROUTES.settings} replace /> },
-      { path: 'settings/finance/payments', element: <Navigate to={ROUTES.paymentSettings} replace /> },
       { path: 'team', element: <Navigate to={ROUTES.team} replace /> },
     ],
   },

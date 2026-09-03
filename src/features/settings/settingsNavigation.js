@@ -5,7 +5,6 @@ const sectionKeysByCode = Object.freeze({
   'settings.general': 'general',
   'settings.financial_setup': 'financial_setup',
   'settings.branches': 'branches',
-  'settings.accounting': 'accounting',
   'settings.pos': 'pos',
   'settings.team': 'team',
   'settings.permissions': 'permissions',
@@ -44,11 +43,9 @@ export function resolveActiveSettingsMenu(items, { pathname = '', search = '' } 
   const requestedSection = params.get('section');
 
   if (currentPath === '/app/settings') {
-    const requestedCode = requestedSection === 'payments'
-      ? 'settings.accounting'
-      : requestedSection
-        ? `settings.${requestedSection}`
-        : 'settings.general';
+    const requestedCode = requestedSection
+      ? `settings.${requestedSection}`
+      : 'settings.general';
     return items.find((menu) => menu.code === requestedCode)
       ?? items.find((menu) => menu.code === 'settings.general')
       ?? null;
