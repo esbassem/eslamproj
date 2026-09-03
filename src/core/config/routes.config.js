@@ -18,6 +18,7 @@ export const ROUTES = {
   contracts: '/app/contracts',
   settings: '/app/settings',
   settingsFinancial: '/app/settings/financial',
+  settingsMoneyDestinations: '/app/settings/financial/money-destinations',
   settingsBranches: '/app/settings/branches',
   settingsCashLocations: '/app/settings/accounting/cash-locations',
   settingsTeam: '/app/settings/team',

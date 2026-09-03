@@ -21,7 +21,8 @@ test('separates automatic foundation from user-configured money operation checks
 });
 
 test('future Money Destination and Payment Method actions are safe disabled placeholders', () => {
-  assert.match(source, /disabled title="سيتم إتاحته في المرحلة التالية"/);
+  assert.match(source, /navigate\(ROUTES\.settingsMoneyDestinations\)/);
+  assert.match(source, /disabled title="سيتم إتاحته في مرحلة لاحقة"/);
   assert.match(source, /actionLabel/);
 });
 

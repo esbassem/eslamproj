@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Check, CircleAlert, RefreshCw, WalletCards, X } from 'lucide-react';
 import { Button } from '@/core/ui/button';
+import { useNavigate } from 'react-router-dom';
+import { ROUTES } from '@/core/config/routes.config';
 import { financialReadinessService } from '@/features/settings/services/financialReadiness.service';
 
 const foundationChecks = [
@@ -55,6 +57,7 @@ function ErrorState({ error, onRetry }) {
 }
 
 export function FinancialSetup({ tenantId }) {
+  const navigate = useNavigate();
   const [state, setState] = useState({ status: 'loading', data: null, error: null });
   const load = useCallback(async () => {
     setState({ status: 'loading', data: null, error: null });
@@ -98,7 +101,9 @@ export function FinancialSetup({ tenantId }) {
               <article key={item.code} className="flex flex-col gap-3 rounded-xl bg-red-50 p-4 sm:flex-row sm:items-center">
                 <CircleAlert className="h-5 w-5 shrink-0 text-red-700"/>
                 <div className="min-w-0 flex-1"><p className="font-bold text-red-950">{item.label}</p><p className="mt-1 text-sm leading-6 text-red-800">{item.detail}</p></div>
-                {item.actionLabel ? <Button type="button" variant="secondary" disabled title="سيتم إتاحته في المرحلة التالية" className="min-h-11 shrink-0">{item.actionLabel} — قريبًا</Button> : null}
+                {item.actionLabel ? item.code === 'ACTIVE_MONEY_DESTINATION_REQUIRED'
+                  ? <Button type="button" variant="secondary" className="min-h-11 shrink-0" onClick={() => navigate(ROUTES.settingsMoneyDestinations)}>{item.actionLabel}</Button>
+                  : <Button type="button" variant="secondary" disabled title="سيتم إتاحته في مرحلة لاحقة" className="min-h-11 shrink-0">{item.actionLabel} — قريبًا</Button> : null}
               </article>
             ))}
           </div>

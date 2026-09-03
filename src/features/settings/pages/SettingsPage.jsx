@@ -9,9 +9,11 @@ import { CompanySettings } from '@/features/settings/sections/general/CompanySet
 import { AccessControlSettings } from '@/features/settings/sections/access-control';
 import { PosSettings } from '@/features/settings/sections/pos/PosSettings';
 import { FinancialSetup } from '@/features/settings/sections/financial/FinancialSetup';
+import { MoneyDestinationsSettings } from '@/features/settings/sections/financial/MoneyDestinationsSettings';
 import { TeamManagementPage } from '@/features/team/pages/TeamManagementPage';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { useAppContext } from '@/contexts/AppContext';
+import { useAuthorization } from '@/core/authorization/useAuthorization';
 import {
   getSettingsMenuHref,
   getSettingsNavigationItems,
@@ -25,6 +27,7 @@ export function SettingsPage() {
   const { t } = useI18n();
   const { tenant, tenantUser } = useWorkspace();
   const { activeMenus } = useAppContext();
+  const { can } = useAuthorization();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -32,8 +35,12 @@ export function SettingsPage() {
   const requestedTab = searchParams.get('tab');
   const navigationItems = getSettingsNavigationItems(activeMenus, { isOwner });
   const activeMenu = resolveActiveSettingsMenu(navigationItems, location);
+  const activeChildMenu = navigationItems
+    .flatMap((menu) => menu.children ?? [])
+    .find((menu) => getSettingsMenuHref(menu).split('?')[0] === location.pathname);
   const activeSection = getSettingsSectionKey(activeMenu) ?? 'general';
   const activeAccountingTab = validAccountingTabs.has(requestedTab) ? requestedTab : 'methods';
+  const showingMoneyDestinations = location.pathname === ROUTES.settingsMoneyDestinations;
 
   useEffect(() => {
     const nextParams = new URLSearchParams(searchParams);
@@ -84,7 +91,7 @@ export function SettingsPage() {
 
   const pageTitle =
     activeSection === 'financial_setup'
-      ? 'الإعداد المالي'
+      ? showingMoneyDestinations ? 'أماكن الأموال' : 'الإعداد المالي'
       : activeSection === 'branches'
       ? 'الفروع'
       : activeSection === 'accounting'
@@ -98,7 +105,7 @@ export function SettingsPage() {
               : t('settings.title');
   const pageDescription =
     activeSection === 'financial_setup'
-      ? 'تحقق من جاهزية الأساس المالي وما يحتاج إلى إعداد قبل بدء التشغيل.'
+      ? showingMoneyDestinations ? 'إدارة أماكن الاحتفاظ بأموال النشاط وربطها المالي التلقائي.' : 'تحقق من جاهزية الأساس المالي وما يحتاج إلى إعداد قبل بدء التشغيل.'
       : activeSection === 'branches'
       ? 'إدارة تعريف فروع الشركة الحالية دون ربطها بالمخزون.'
       : activeSection === 'accounting'
@@ -116,12 +123,13 @@ export function SettingsPage() {
       title={pageTitle}
       description={pageDescription}
       navigationItems={navigationItems}
-      activeMenuId={activeMenu?.id ?? null}
+      activeMenuId={activeChildMenu?.id ?? activeMenu?.id ?? null}
       activeAccountingTab={activeAccountingTab}
       onMenuSelect={handleMenuSelect}
       onAccountingTabChange={handleAccountingTabChange}
     >
-      {activeSection === 'financial_setup' ? <FinancialSetup tenantId={tenant?.id ?? null} /> : null}
+      {activeSection === 'financial_setup' && !showingMoneyDestinations ? <FinancialSetup tenantId={tenant?.id ?? null} /> : null}
+      {activeSection === 'financial_setup' && showingMoneyDestinations ? <MoneyDestinationsSettings tenantId={tenant?.id ?? null} canManage={can('financial.destination.manage')} /> : null}
       {activeSection === 'accounting' ? <AccountingSettings activeTab={activeAccountingTab} onTabChange={handleAccountingTabChange} /> : null}
       {activeSection === 'branches' ? <BranchesSettings /> : null}
       {activeSection === 'pos' ? <PosSettings /> : null}

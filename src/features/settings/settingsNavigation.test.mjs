@@ -52,6 +52,7 @@ test('canonical Settings routes resolve General, Accounting, POS, Branches, Team
   const cases = [
     ['/app/settings', '', 'settings.general'],
     ['/app/settings/financial', '', 'settings.financial_setup'],
+    ['/app/settings/financial/money-destinations', '', 'settings.financial_setup'],
     ['/app/settings', '?section=accounting&tab=journals', 'settings.accounting'],
     ['/app/settings', '?section=payments', 'settings.accounting'],
     ['/app/settings', '?section=pos', 'settings.pos'],
@@ -98,12 +99,24 @@ test('accounting tabs intentionally remain local and preserve all existing tab k
 test('all canonical Settings menu routes retain a frontend route/component destination', () => {
   const registry = readFileSync(new URL('../../app/router/menuRegistry.js', import.meta.url), 'utf8');
   const routes = readFileSync(new URL('../../core/config/routes.config.js', import.meta.url), 'utf8');
-  assert.match(registry, /'\/app\/settings', '\/app\/settings\/financial', '\/app\/settings\/branches', '\/app\/settings\/team', '\/app\/settings\/permissions'/);
+  assert.match(registry, /'\/app\/settings', '\/app\/settings\/financial', '\/app\/settings\/financial\/money-destinations', '\/app\/settings\/branches', '\/app\/settings\/team', '\/app\/settings\/permissions'/);
   assert.match(routes, /settings: '\/app\/settings'/);
   assert.match(routes, /settingsFinancial: '\/app\/settings\/financial'/);
+  assert.match(routes, /settingsMoneyDestinations: '\/app\/settings\/financial\/money-destinations'/);
   assert.match(routes, /settingsBranches: '\/app\/settings\/branches'/);
   assert.match(routes, /settingsTeam: '\/app\/settings\/team'/);
   assert.match(routes, /settingsPermissions: '\/app\/settings\/permissions'/);
+});
+
+test('Money Destinations is a canonical child of Financial Setup', () => {
+  const sql = readFileSync(new URL('../../../supabase/migrations/20260903123000_add_money_destinations_settings_menu.sql', import.meta.url), 'utf8');
+  assert.match(sql, /code = 'settings\.financial_setup'/);
+  assert.match(sql, /'settings\.money_destinations', '\/app\/settings\/financial\/money-destinations'/);
+  assert.match(sql, /parent_id = v_financial_setup_id/);
+  const nav = readFileSync(new URL('./components/SettingsSectionNav.jsx', import.meta.url), 'utf8');
+  assert.match(nav, /menu\.children\.map/);
+  assert.match(nav, /onMenuSelect\?\.\(child\)/);
+  assert.doesNotMatch(nav, /settings\.money_destinations/);
 });
 
 test('Financial Setup is registered by canonical menu data without a local navigation entry', () => {

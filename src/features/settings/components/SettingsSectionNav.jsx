@@ -22,7 +22,8 @@ export function SettingsSectionNav({
       {items.map((menu) => {
         const sectionKey = getSettingsSectionKey(menu);
         const Icon = resolveModuleIcon(menu.icon);
-        const isActive = menu.id === activeMenuId;
+        const activeChild = (menu.children ?? []).find((child) => child.id === activeMenuId);
+        const isActive = menu.id === activeMenuId || Boolean(activeChild);
         const isDisabled = menu.active === false;
 
         return (
@@ -102,6 +103,36 @@ export function SettingsSectionNav({
                             قريبًا
                           </span>
                         ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {(menu.children ?? []).length && isActive && !isDisabled ? (
+                <div className="space-y-1 px-3 pb-3">
+                  <div className="h-px bg-[#dbe8ff]" />
+                  {menu.children.map((child) => {
+                    const ChildIcon = resolveModuleIcon(child.icon);
+                    const isChildActive = child.id === activeMenuId;
+                    return (
+                      <button
+                        key={child.id || child.code}
+                        type="button"
+                        disabled={child.active === false}
+                        aria-disabled={child.active === false}
+                        className={cn(
+                          'mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 py-2.5 text-right text-xs font-bold transition',
+                          child.active === false
+                            ? 'cursor-not-allowed text-slate-400 opacity-55'
+                            : isChildActive
+                              ? 'bg-[#eaf2ff] text-[#0f62fe]'
+                              : 'text-slate-500 hover:bg-slate-50 hover:text-slate-950',
+                        )}
+                        onClick={() => child.active !== false && onMenuSelect?.(child)}
+                      >
+                        <ChildIcon className="h-3.5 w-3.5" />
+                        <span className="min-w-0 flex-1">{child.name}</span>
                       </button>
                     );
                   })}

@@ -54,9 +54,18 @@ export function resolveActiveSettingsMenu(items, { pathname = '', search = '' } 
       ?? null;
   }
 
-  return items
+  const exact = items
     .filter((menu) => normalizePath(menu.href ?? menu.routePath) === currentPath)
     .sort((first, second) => String(second.href ?? '').length - String(first.href ?? '').length)[0]
+    ?? null;
+  if (exact) return exact;
+
+  return items
+    .filter((menu) => {
+      const menuPath = normalizePath(menu.href ?? menu.routePath);
+      return menuPath !== '/app/settings' && currentPath.startsWith(`${menuPath}/`);
+    })
+    .sort((first, second) => normalizePath(second.href ?? second.routePath).length - normalizePath(first.href ?? first.routePath).length)[0]
     ?? null;
 }
 
