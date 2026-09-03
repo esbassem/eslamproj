@@ -40,7 +40,6 @@ export const routeLoaders = {
   payments: cached('payments', () => import('@/features/payments/pages/PaymentsPage')),
   contracts: cached('contracts', () => import('@/features/contracts/pages/ContractsPage')),
   settings: cached('settings', () => import('@/features/settings/pages/SettingsPage')),
-  cashLocationsSettings: cached('cashLocationsSettings', () => import('@/features/settings/pages/CashLocationsSettingsPage')),
   team: cached('team', () => import('@/features/team/pages/TeamManagementPage')),
   contacts: cached('contacts', () => import('@/features/contacts/pages/ContactsPage')),
   customers: cached('customers', () => import('@/features/contacts/pages/CustomersPage')),

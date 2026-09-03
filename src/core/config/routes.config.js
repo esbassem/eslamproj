@@ -20,7 +20,6 @@ export const ROUTES = {
   settingsFinancial: '/app/settings/financial',
   settingsMoneyDestinations: '/app/settings/financial/money-destinations',
   settingsBranches: '/app/settings/branches',
-  settingsCashLocations: '/app/settings/accounting/cash-locations',
   settingsTeam: '/app/settings/team',
   settingsPermissions: '/app/settings/permissions',
   paymentSettings: '/app/settings?section=accounting&tab=methods',

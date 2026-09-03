@@ -199,8 +199,8 @@ export function DashboardPage() {
       return undefined;
     }
 
-    import('@/features/settings/services/cashLocationsSettings.service')
-      .then(({ cashLocationsSettingsService }) => cashLocationsSettingsService.getEmployeeCustodyAccount(tenant.id, tenantUser.id))
+    import('@/features/accountant/services/employeeCustody.service')
+      .then(({ employeeCustodyService }) => employeeCustodyService.getEmployeeCustodyAccount(tenant.id, tenantUser.id))
       .then((account) => {
         if (mounted) setCashCustodyAccount(account);
       })
@@ -519,8 +519,8 @@ export function DashboardPage() {
           onOpenChange={setIsCashCustodySheetOpen}
           onOperationCreated={async () => {
             if (!tenant?.id || !tenantUser?.id) return;
-            const { cashLocationsSettingsService } = await import('@/features/settings/services/cashLocationsSettings.service');
-            const account = await cashLocationsSettingsService.getEmployeeCustodyAccount(tenant.id, tenantUser.id);
+            const { employeeCustodyService } = await import('@/features/accountant/services/employeeCustody.service');
+            const account = await employeeCustodyService.getEmployeeCustodyAccount(tenant.id, tenantUser.id);
             setCashCustodyAccount(account);
           }}
         /></Suspense> : null}

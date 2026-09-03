@@ -48,6 +48,4 @@ register(['/apps/paperwork/documents'], 'paperworkDocuments', 'PaperworkDocument
 register(['/apps/paperwork/vault'], 'paperworkVault', 'PaperworkVaultPage');
 register(['/app/receivables', '/app/receivables/installments', '/apps/receivables', '/apps/receivables/installments'], 'receivables', 'ReceivablesPage');
 register(['/app/settings', '/app/settings/financial', '/app/settings/financial/money-destinations', '/app/settings/branches', '/app/settings/team', '/app/settings/permissions', '/app/team'], 'settings', 'SettingsPage');
-register(['/app/settings/accounting/cash-locations'], 'cashLocationsSettings', 'CashLocationsSettingsPage');
-
 export const MENU_COMPONENTS = routes;
