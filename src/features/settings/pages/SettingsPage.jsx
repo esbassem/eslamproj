@@ -8,6 +8,7 @@ import { BranchesSettings } from '@/features/settings/sections/branches/Branches
 import { CompanySettings } from '@/features/settings/sections/general/CompanySettings';
 import { AccessControlSettings } from '@/features/settings/sections/access-control';
 import { PosSettings } from '@/features/settings/sections/pos/PosSettings';
+import { FinancialSetup } from '@/features/settings/sections/financial/FinancialSetup';
 import { TeamManagementPage } from '@/features/team/pages/TeamManagementPage';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { useAppContext } from '@/contexts/AppContext';
@@ -22,7 +23,7 @@ const validAccountingTabs = new Set(['methods', 'rules', 'journals', 'journal-me
 
 export function SettingsPage() {
   const { t } = useI18n();
-  const { tenantUser } = useWorkspace();
+  const { tenant, tenantUser } = useWorkspace();
   const { activeMenus } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
@@ -82,7 +83,9 @@ export function SettingsPage() {
   };
 
   const pageTitle =
-    activeSection === 'branches'
+    activeSection === 'financial_setup'
+      ? 'الإعداد المالي'
+      : activeSection === 'branches'
       ? 'الفروع'
       : activeSection === 'accounting'
         ? 'إعدادات المحاسبة'
@@ -94,7 +97,9 @@ export function SettingsPage() {
               ? 'الأدوار والصلاحيات'
               : t('settings.title');
   const pageDescription =
-    activeSection === 'branches'
+    activeSection === 'financial_setup'
+      ? 'تحقق من جاهزية الأساس المالي وما يحتاج إلى إعداد قبل بدء التشغيل.'
+      : activeSection === 'branches'
       ? 'إدارة تعريف فروع الشركة الحالية دون ربطها بالمخزون.'
       : activeSection === 'accounting'
         ? 'إعدادات الدفع المحاسبية داخل settings كمصدر واحد.'
@@ -116,6 +121,7 @@ export function SettingsPage() {
       onMenuSelect={handleMenuSelect}
       onAccountingTabChange={handleAccountingTabChange}
     >
+      {activeSection === 'financial_setup' ? <FinancialSetup tenantId={tenant?.id ?? null} /> : null}
       {activeSection === 'accounting' ? <AccountingSettings activeTab={activeAccountingTab} onTabChange={handleAccountingTabChange} /> : null}
       {activeSection === 'branches' ? <BranchesSettings /> : null}
       {activeSection === 'pos' ? <PosSettings /> : null}

@@ -3,6 +3,7 @@ const OWNER_ONLY_CODES = new Set(['settings.branches', 'settings.permissions']);
 
 const sectionKeysByCode = Object.freeze({
   'settings.general': 'general',
+  'settings.financial_setup': 'financial_setup',
   'settings.branches': 'branches',
   'settings.accounting': 'accounting',
   'settings.pos': 'pos',

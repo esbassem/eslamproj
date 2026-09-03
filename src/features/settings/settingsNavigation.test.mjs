@@ -9,6 +9,7 @@ import {
 
 const expected = [
   ['settings.general', '/app/settings', 10],
+  ['settings.financial_setup', '/app/settings/financial', 15],
   ['settings.accounting', '/app/settings?section=accounting', 20],
   ['settings.branches', '/app/settings/branches', 30],
   ['settings.pos', '/app/settings?section=pos', 40],
@@ -43,13 +44,14 @@ function settingsTree(role = 'owner') {
 test('Settings navigation is derived from canonical menu data in sequence order', () => {
   const items = getSettingsNavigationItems(settingsTree(), { isOwner: true });
   assert.deepEqual(items.map((item) => item.code), expected.map(([code]) => code));
-  assert.deepEqual(items.map(getSettingsSectionKey), ['general', 'accounting', 'branches', 'pos', 'team', 'permissions']);
+  assert.deepEqual(items.map(getSettingsSectionKey), ['general', 'financial_setup', 'accounting', 'branches', 'pos', 'team', 'permissions']);
 });
 
 test('canonical Settings routes resolve General, Accounting, POS, Branches, Team, and Permissions', () => {
   const items = getSettingsNavigationItems(settingsTree(), { isOwner: true });
   const cases = [
     ['/app/settings', '', 'settings.general'],
+    ['/app/settings/financial', '', 'settings.financial_setup'],
     ['/app/settings', '?section=accounting&tab=journals', 'settings.accounting'],
     ['/app/settings', '?section=payments', 'settings.accounting'],
     ['/app/settings', '?section=pos', 'settings.pos'],
@@ -96,18 +98,30 @@ test('accounting tabs intentionally remain local and preserve all existing tab k
 test('all canonical Settings menu routes retain a frontend route/component destination', () => {
   const registry = readFileSync(new URL('../../app/router/menuRegistry.js', import.meta.url), 'utf8');
   const routes = readFileSync(new URL('../../core/config/routes.config.js', import.meta.url), 'utf8');
-  assert.match(registry, /'\/app\/settings', '\/app\/settings\/branches', '\/app\/settings\/team', '\/app\/settings\/permissions'/);
+  assert.match(registry, /'\/app\/settings', '\/app\/settings\/financial', '\/app\/settings\/branches', '\/app\/settings\/team', '\/app\/settings\/permissions'/);
   assert.match(routes, /settings: '\/app\/settings'/);
+  assert.match(routes, /settingsFinancial: '\/app\/settings\/financial'/);
   assert.match(routes, /settingsBranches: '\/app\/settings\/branches'/);
   assert.match(routes, /settingsTeam: '\/app\/settings\/team'/);
   assert.match(routes, /settingsPermissions: '\/app\/settings\/permissions'/);
+});
+
+test('Financial Setup is registered by canonical menu data without a local navigation entry', () => {
+  const navigation = readFileSync(new URL('./settingsNavigation.js', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('./pages/SettingsPage.jsx', import.meta.url), 'utf8');
+  const migration = readFileSync(new URL('../../../supabase/migrations/20260903121000_add_financial_setup_settings_menu.sql', import.meta.url), 'utf8');
+  assert.equal(getSettingsNavigationItems(settingsTree(), { isOwner: true }).some((item) => item.code === 'settings.financial_setup'), true);
+  assert.doesNotMatch(page, /navigationItems\s*=\s*\[/);
+  assert.match(navigation, /'settings\.financial_setup': 'financial_setup'/);
+  assert.match(migration, /'settings\.financial_setup', '\/app\/settings\/financial', 'WalletCards', 15, true/);
+  assert.match(migration, /parent_id = v_settings_root_id/);
 });
 
 test('forward migration defines one canonical child per current Settings section', () => {
   const sql = readFileSync(new URL('../../../supabase/migrations/20260903120000_unify_settings_navigation.sql', import.meta.url), 'utf8');
   assert.match(sql, /technical_name = 'settings'/);
   assert.match(sql, /code = 'settings\.root'/);
-  for (const [code, route, sequence] of expected) {
+  for (const [code, route, sequence] of expected.filter(([code]) => code !== 'settings.financial_setup')) {
     assert.match(sql, new RegExp(`\\('${code.replaceAll('.', '\\.')}', '${route.replaceAll('?', '\\?')}', ${sequence}\\)`));
   }
   assert.match(sql, /having count\(\*\) <> 1/);
