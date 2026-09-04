@@ -75,6 +75,9 @@ const ERROR_MESSAGES = Object.freeze({
   MONEY_DESTINATION_ACTIVE_REQUIRES_LEDGER_ACCOUNT_AND_JOURNAL: 'لم يكتمل الربط المحاسبي التلقائي لمكان الأموال.',
   MONEY_DESTINATION_PARTIAL_OR_INVALID_PROVISIONING_STATE: 'تعذر إكمال موارد مكان الأموال المحاسبية بأمان.',
   MONEY_DESTINATION_ACCOUNT_CODE_RANGE_EXHAUSTED: 'لا توجد أرقام حسابات متاحة لهذا النوع. راجع مسؤول النظام.',
+  MONEY_DESTINATION_LEGACY_CUSTODY_INCOMPATIBLE: 'يوجد حساب مالي قائم لهذا الموظف ولا يمكن تحويله تلقائيًا إلى عهدة أموال. يلزم مراجعة إعداد الحساب.',
+  MONEY_DESTINATION_LEGACY_CUSTODY_AMBIGUOUS: 'يوجد أكثر من إعداد مالي مرتبط بهذا الموظف، لذلك تعذر إنشاء العهدة تلقائيًا.',
+  MONEY_DESTINATION_EMPLOYEE_CUSTODY_ALREADY_EXISTS: 'يوجد مكان أموال لعهدة هذا الموظف بالفعل.',
 });
 
 export function moneyDestinationError(error) {

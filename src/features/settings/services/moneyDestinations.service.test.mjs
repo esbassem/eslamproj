@@ -51,3 +51,17 @@ test('never calls the legacy custody RPC', () => {
   const source = moneyDestinationsService.create.toString();
   assert.doesNotMatch(source, /create_employee_custody_account|111003|old_cashbox/);
 });
+
+test('maps employee custody adoption conflicts without exposing backend details', () => {
+  const cases = [
+    ['MONEY_DESTINATION_LEGACY_CUSTODY_INCOMPATIBLE', 'يوجد حساب مالي قائم لهذا الموظف ولا يمكن تحويله تلقائيًا إلى عهدة أموال. يلزم مراجعة إعداد الحساب.'],
+    ['MONEY_DESTINATION_LEGACY_CUSTODY_AMBIGUOUS', 'يوجد أكثر من إعداد مالي مرتبط بهذا الموظف، لذلك تعذر إنشاء العهدة تلقائيًا.'],
+    ['MONEY_DESTINATION_EMPLOYEE_CUSTODY_ALREADY_EXISTS', 'يوجد مكان أموال لعهدة هذا الموظف بالفعل.'],
+  ];
+  for (const [code, message] of cases) {
+    const error = moneyDestinationError({ code: '23514', message: code, details: 'private detail' });
+    assert.equal(error.code, code);
+    assert.equal(error.message, message);
+    assert.doesNotMatch(error.message, /23514|constraint|uuid/i);
+  }
+});
