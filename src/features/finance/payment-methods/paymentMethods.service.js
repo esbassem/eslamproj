@@ -1,19 +1,25 @@
 import { requireSupabase } from '@/core/lib/supabase';
 import { normalizeMoneyDestinationSelection } from '../money-destinations/moneyDestinationSelection';
-
-function requireTenantId(tenantId) {
-  if (!tenantId) throw new Error('لا توجد شركة نشطة.');
-}
+import { normalizeFinancialError, requireFinancialTenant } from '../shared/financialError';
 
 export async function listAvailablePaymentMethods({ tenantId, permissionCode = 'financial.payment.create' } = {}) {
-  requireTenantId(tenantId);
+  requireFinancialTenant(tenantId);
   const client = requireSupabase();
   const { data, error } = await client.rpc('list_available_financial_payment_methods', {
     p_tenant_id: tenantId,
     p_permission_code: permissionCode,
   });
-  if (error) throw new Error(error.message || 'تعذر تحميل طرق الدفع المتاحة.');
-  return data ?? [];
+  if (error) throw normalizeFinancialError(error, 'تعذر تحميل طرق الدفع المتاحة.');
+  const methods = data ?? [];
+  const usability = await Promise.all(methods.map(async (method) => {
+    const result = await client.rpc('is_financial_payment_method_usable', {
+      p_tenant_id: tenantId,
+      p_payment_method_id: method.payment_method_id,
+    });
+    if (result.error) throw normalizeFinancialError(result.error, 'تعذر التحقق من جاهزية طرق الدفع.');
+    return result.data === true;
+  }));
+  return methods.filter((_, index) => usability[index]);
 }
 
 export async function getPaymentMethodDestinationSelection({
@@ -23,7 +29,7 @@ export async function getPaymentMethodDestinationSelection({
   accessType = 'initiate',
   branchId = null,
 } = {}) {
-  requireTenantId(tenantId);
+  requireFinancialTenant(tenantId);
   if (!paymentMethodId) throw new Error('يجب اختيار طريقة دفع.');
   const client = requireSupabase();
   const { data, error } = await client.rpc('get_payment_method_destination_selection', {
@@ -33,7 +39,7 @@ export async function getPaymentMethodDestinationSelection({
     p_access_type: accessType,
     p_branch_id: branchId || null,
   });
-  if (error) throw new Error(error.message || 'تعذر تحميل وجهات الدفع المسموحة.');
+  if (error) throw normalizeFinancialError(error, 'تعذر تحميل أماكن الأموال المسموحة.');
   return normalizeMoneyDestinationSelection(data);
 }
 
@@ -48,7 +54,7 @@ export async function savePaymentMethod({
   requiresConfirmation = null,
   metadata = {},
 } = {}) {
-  requireTenantId(tenantId);
+  requireFinancialTenant(tenantId);
   const client = requireSupabase();
   const { data, error } = await client.rpc('save_financial_payment_method', {
     p_tenant_id: tenantId,
@@ -61,6 +67,6 @@ export async function savePaymentMethod({
     p_requires_confirmation: requiresConfirmation,
     p_metadata: metadata,
   });
-  if (error) throw new Error(error.message || 'تعذر حفظ طريقة الدفع.');
+  if (error) throw normalizeFinancialError(error, 'تعذر حفظ طريقة الدفع.');
   return data;
 }

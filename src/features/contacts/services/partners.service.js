@@ -336,7 +336,7 @@ export const partnersService = {
     });
   },
 
-  async getPartners({ tenantId, filterType = 'all', search = '', status = 'all' } = {}) {
+  async getPartners({ tenantId, filterType = 'all', search = '', status = 'all', limit = null } = {}) {
     const client = requireSupabase();
 
     let query = client.from('partners').select('*').order('created_at', { ascending: false });
@@ -360,6 +360,10 @@ export const partnersService = {
 
     if (status === 'archived') {
       query = query.eq('active', false);
+    }
+
+    if (Number.isInteger(limit) && limit > 0) {
+      query = query.limit(Math.min(limit, 100));
     }
 
     const { data, error } = await query;

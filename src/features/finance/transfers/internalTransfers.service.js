@@ -1,12 +1,9 @@
 import { requireSupabase } from '@/core/lib/supabase';
-
-function requireTenantId(tenantId) {
-  if (!tenantId) throw new Error('لا توجد شركة نشطة.');
-}
+import { normalizeFinancialError, requireFinancialTenant } from '@/features/finance/shared/financialError';
 
 async function call(contract, parameters, fallbackMessage) {
   const { data, error } = await requireSupabase().rpc(contract, parameters);
-  if (error) throw new Error(error.message || fallbackMessage);
+  if (error) throw normalizeFinancialError(error, fallbackMessage);
   return data;
 }
 
@@ -16,7 +13,7 @@ export function createInternalTransfer({
   sourceBranchId = null, destinationBranchId = null,
   referenceNumber = null, notes = null,
 } = {}) {
-  requireTenantId(tenantId);
+  requireFinancialTenant(tenantId);
   return call('create_internal_transfer', {
     p_tenant_id: tenantId,
     p_source_destination_id: sourceDestinationId,
@@ -33,7 +30,7 @@ export function createInternalTransfer({
 }
 
 function transition(contract, fallbackMessage, { tenantId, transferId, idempotencyKey } = {}) {
-  requireTenantId(tenantId);
+  requireFinancialTenant(tenantId);
   return call(contract, {
     p_tenant_id: tenantId,
     p_transfer_id: transferId,
@@ -46,14 +43,26 @@ export const receiveInternalTransfer = (input) => transition('receive_internal_t
 export const confirmInternalTransfer = (input) => transition('confirm_internal_transfer', 'تعذر تأكيد التحويل الداخلي.', input);
 
 export function getInternalTransfer({ tenantId, transferId } = {}) {
-  requireTenantId(tenantId);
+  requireFinancialTenant(tenantId);
   return call('get_internal_transfer', { p_tenant_id: tenantId, p_transfer_id: transferId }, 'تعذر تحميل التحويل الداخلي.');
 }
 
 export function listInternalTransfers({ tenantId, status = null, mode = null, limit = 50, offset = 0 } = {}) {
-  requireTenantId(tenantId);
+  requireFinancialTenant(tenantId);
   return call('list_internal_transfers', {
     p_tenant_id: tenantId, p_status: status, p_mode: mode,
     p_limit: limit, p_offset: offset,
   }, 'تعذر تحميل التحويلات الداخلية.');
+}
+
+export async function registerImmediateInternalTransfer(input = {}) {
+  const created = await createInternalTransfer({ ...input, transferMode: 'immediate' });
+  if (created.status !== 'confirmed') {
+    await confirmInternalTransfer({
+      tenantId: input.tenantId,
+      transferId: created.transfer_id,
+      idempotencyKey: `${input.idempotencyKey}:confirm`,
+    });
+  }
+  return getInternalTransfer({ tenantId: input.tenantId, transferId: created.transfer_id });
 }
