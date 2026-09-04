@@ -20,8 +20,9 @@ test('separates automatic foundation from user-configured money operation checks
   assert.match(source, /طرق الدفع/);
 });
 
-test('future Money Destination and Payment Method actions are safe disabled placeholders', () => {
+test('links configurable money requirements and keeps unsupported actions disabled', () => {
   assert.match(source, /navigate\(ROUTES\.settingsMoneyDestinations\)/);
+  assert.match(source, /navigate\(ROUTES\.settingsPaymentMethods\)/);
   assert.match(source, /disabled title="سيتم إتاحته في مرحلة لاحقة"/);
   assert.match(source, /actionLabel/);
 });

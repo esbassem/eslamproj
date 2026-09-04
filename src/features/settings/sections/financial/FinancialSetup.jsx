@@ -103,7 +103,9 @@ export function FinancialSetup({ tenantId }) {
                 <div className="min-w-0 flex-1"><p className="font-bold text-red-950">{item.label}</p><p className="mt-1 text-sm leading-6 text-red-800">{item.detail}</p></div>
                 {item.actionLabel ? item.code === 'ACTIVE_MONEY_DESTINATION_REQUIRED'
                   ? <Button type="button" variant="secondary" className="min-h-11 shrink-0" onClick={() => navigate(ROUTES.settingsMoneyDestinations)}>{item.actionLabel}</Button>
-                  : <Button type="button" variant="secondary" disabled title="سيتم إتاحته في مرحلة لاحقة" className="min-h-11 shrink-0">{item.actionLabel} — قريبًا</Button> : null}
+                  : item.code === 'ACTIVE_PAYMENT_METHOD_REQUIRED'
+                    ? <Button type="button" variant="secondary" className="min-h-11 shrink-0" onClick={() => navigate(ROUTES.settingsPaymentMethods)}>{item.actionLabel}</Button>
+                    : <Button type="button" variant="secondary" disabled title="سيتم إتاحته في مرحلة لاحقة" className="min-h-11 shrink-0">{item.actionLabel} — قريبًا</Button> : null}
               </article>
             ))}
           </div>

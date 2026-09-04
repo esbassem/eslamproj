@@ -42,6 +42,7 @@ test('Accountant cash-location operations and canonical Financial Settings remai
   assert.match(accountantService, /create_cash_location_operation/);
   assert.match(routes, /settingsFinancial: '\/app\/settings\/financial'/);
   assert.match(routes, /settingsMoneyDestinations: '\/app\/settings\/financial\/money-destinations'/);
+  assert.match(routes, /settingsPaymentMethods: '\/app\/settings\/financial\/payment-methods'/);
   assert.match(registry, /'\/app\/settings\/financial'/);
   assert.match(registry, /'\/app\/settings\/financial\/money-destinations'/);
 });

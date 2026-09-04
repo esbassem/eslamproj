@@ -9,6 +9,7 @@ import { AccessControlSettings } from '@/features/settings/sections/access-contr
 import { PosSettings } from '@/features/settings/sections/pos/PosSettings';
 import { FinancialSetup } from '@/features/settings/sections/financial/FinancialSetup';
 import { MoneyDestinationsSettings } from '@/features/settings/sections/financial/MoneyDestinationsSettings';
+import { PaymentMethodsSettings } from '@/features/settings/sections/financial/PaymentMethodsSettings';
 import { TeamManagementPage } from '@/features/team/pages/TeamManagementPage';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { useAppContext } from '@/contexts/AppContext';
@@ -37,6 +38,7 @@ export function SettingsPage() {
     .find((menu) => getSettingsMenuHref(menu).split('?')[0] === location.pathname);
   const activeSection = getSettingsSectionKey(activeMenu) ?? 'general';
   const showingMoneyDestinations = location.pathname === ROUTES.settingsMoneyDestinations;
+  const showingPaymentMethods = location.pathname === ROUTES.settingsPaymentMethods;
 
   useEffect(() => {
     const nextParams = new URLSearchParams(searchParams);
@@ -69,7 +71,7 @@ export function SettingsPage() {
 
   const pageTitle =
     activeSection === 'financial_setup'
-      ? showingMoneyDestinations ? 'أماكن الأموال' : 'الإعداد المالي'
+      ? showingMoneyDestinations ? 'أماكن الأموال' : showingPaymentMethods ? 'طرق الدفع' : 'الإعداد المالي'
       : activeSection === 'branches'
         ? 'الفروع'
       : activeSection === 'pos'
@@ -81,7 +83,7 @@ export function SettingsPage() {
             : t('settings.title');
   const pageDescription =
     activeSection === 'financial_setup'
-      ? showingMoneyDestinations ? 'إدارة أماكن الاحتفاظ بأموال النشاط وربطها المالي التلقائي.' : 'تحقق من جاهزية الأساس المالي وما يحتاج إلى إعداد قبل بدء التشغيل.'
+      ? showingMoneyDestinations ? 'إدارة أماكن الاحتفاظ بأموال النشاط وربطها المالي التلقائي.' : showingPaymentMethods ? 'حدد طرق الدفع التي يمكن استخدامها في العمليات المالية.' : 'تحقق من جاهزية الأساس المالي وما يحتاج إلى إعداد قبل بدء التشغيل.'
       : activeSection === 'branches'
         ? 'إدارة تعريف فروع الشركة الحالية دون ربطها بالمخزون.'
       : activeSection === 'pos'
@@ -100,8 +102,9 @@ export function SettingsPage() {
       activeMenuId={activeChildMenu?.id ?? activeMenu?.id ?? null}
       onMenuSelect={handleMenuSelect}
     >
-      {activeSection === 'financial_setup' && !showingMoneyDestinations ? <FinancialSetup tenantId={tenant?.id ?? null} /> : null}
+      {activeSection === 'financial_setup' && !showingMoneyDestinations && !showingPaymentMethods ? <FinancialSetup tenantId={tenant?.id ?? null} /> : null}
       {activeSection === 'financial_setup' && showingMoneyDestinations ? <MoneyDestinationsSettings tenantId={tenant?.id ?? null} canManage={can('financial.destination.manage')} /> : null}
+      {activeSection === 'financial_setup' && showingPaymentMethods ? <PaymentMethodsSettings tenantId={tenant?.id ?? null} canManage={can('financial.payment_method.manage')} /> : null}
       {activeSection === 'branches' ? <BranchesSettings /> : null}
       {activeSection === 'pos' ? <PosSettings /> : null}
       {activeSection === 'team' ? <TeamManagementPage embedded /> : null}

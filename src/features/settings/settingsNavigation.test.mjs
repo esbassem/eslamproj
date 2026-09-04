@@ -52,6 +52,7 @@ test('canonical Settings routes resolve General, Financial Setup, POS, Branches,
     ['/app/settings', '', 'settings.general'],
     ['/app/settings/financial', '', 'settings.financial_setup'],
     ['/app/settings/financial/money-destinations', '', 'settings.financial_setup'],
+    ['/app/settings/financial/payment-methods', '', 'settings.financial_setup'],
     ['/app/settings', '?section=accounting&tab=journals', 'settings.general'],
     ['/app/settings', '?section=payments', 'settings.general'],
     ['/app/settings', '?section=pos', 'settings.pos'],
@@ -98,10 +99,11 @@ test('legacy accounting tabs are absent from Settings navigation', () => {
 test('all canonical Settings menu routes retain a frontend route/component destination', () => {
   const registry = readFileSync(new URL('../../app/router/menuRegistry.js', import.meta.url), 'utf8');
   const routes = readFileSync(new URL('../../core/config/routes.config.js', import.meta.url), 'utf8');
-  assert.match(registry, /'\/app\/settings', '\/app\/settings\/financial', '\/app\/settings\/financial\/money-destinations', '\/app\/settings\/branches', '\/app\/settings\/team', '\/app\/settings\/permissions'/);
+  assert.match(registry, /'\/app\/settings', '\/app\/settings\/financial', '\/app\/settings\/financial\/money-destinations', '\/app\/settings\/financial\/payment-methods', '\/app\/settings\/branches', '\/app\/settings\/team', '\/app\/settings\/permissions'/);
   assert.match(routes, /settings: '\/app\/settings'/);
   assert.match(routes, /settingsFinancial: '\/app\/settings\/financial'/);
   assert.match(routes, /settingsMoneyDestinations: '\/app\/settings\/financial\/money-destinations'/);
+  assert.match(routes, /settingsPaymentMethods: '\/app\/settings\/financial\/payment-methods'/);
   assert.match(routes, /settingsBranches: '\/app\/settings\/branches'/);
   assert.match(routes, /settingsTeam: '\/app\/settings\/team'/);
   assert.match(routes, /settingsPermissions: '\/app\/settings\/permissions'/);

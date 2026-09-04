@@ -26,4 +26,5 @@ test('removes legacy Accounting Settings support while preserving canonical fina
   assert.doesNotMatch(sources, /settings\.accounting|section=accounting|activeAccountingTab|AccountingSettings/);
   assert.match(sources, /\/app\/settings\/financial/);
   assert.match(sources, /\/app\/settings\/financial\/money-destinations/);
+  assert.match(sources, /\/app\/settings\/financial\/payment-methods/);
 });
