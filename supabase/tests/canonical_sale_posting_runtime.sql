@@ -523,7 +523,9 @@ begin
       'canonical-sale-foreign-source', repeat('7', 64), context.foreign_partner_id,
       100, 'EGP', current_date, null, 'FOREIGN-SOURCE'
     );
-  exception when insufficient_privilege then blocked := true; end;
+  exception when check_violation then
+    blocked := sqlerrm = 'FINANCIAL_ENGINE_ACTOR_TENANT_MISMATCH';
+  end;
   if not blocked then raise exception 'CROSS_TENANT_SOURCE_ACCEPTED'; end if;
 
   blocked := false;
@@ -544,6 +546,8 @@ declare
   baseline canonical_sale_before%rowtype;
   context canonical_sale_context%rowtype;
   resources canonical_sale_resources%rowtype;
+  wrong_link_acquisition jsonb;
+  blocked boolean := false;
 begin
   select * into baseline from canonical_sale_before;
   select * into context from canonical_sale_context;
@@ -567,6 +571,37 @@ begin
   if (select count(*) from public.account_moves where state = 'posted') <> baseline.moves + 1
      or (select count(*) from public.account_move_lines where parent_state = 'posted') <> baseline.lines + 2 then
     raise exception 'CANONICAL_SALE_UNEXPECTED_LEDGER_CARDINALITY';
+  end if;
+  if not exists (
+    select 1 from public.financial_engine_bindings binding
+    where binding.tenant_id = context.tenant_id
+      and binding.source_app = 'test_sales_app'
+      and binding.source_model = 'commercial_sale'
+      and binding.source_id = 'sale-1001'
+      and binding.financial_event_version = 1
+      and binding.financial_engine = 'canonical'
+      and binding.state = 'posted'
+      and binding.canonical_sale_posting_id = resources.posting_id
+      and binding.legacy_move_id is null
+  ) then
+    raise exception 'CANONICAL_SALE_ENGINE_BINDING_MISSING_OR_INVALID';
+  end if;
+
+  wrong_link_acquisition := public.acquire_financial_engine_binding(
+    context.tenant_id, 'test_sales_app', 'commercial_sale',
+    'sale-wrong-canonical-link', 1, 'canonical',
+    'canonical_link_test', null
+  );
+  begin
+    perform public.finalize_financial_engine_binding(
+      (wrong_link_acquisition ->> 'binding_id')::uuid,
+      'canonical', resources.posting_id
+    );
+  exception when check_violation then
+    blocked := sqlerrm = 'FINANCIAL_ENGINE_CANONICAL_LINK_INVALID';
+  end;
+  if not blocked then
+    raise exception 'WRONG_SOURCE_CANONICAL_LINK_ACCEPTED';
   end if;
   raise notice 'CANONICAL_SALE_POSTING_RUNTIME_PASSED posting_id=% move_id=% receivable_line_id=%',
     resources.posting_id, resources.move_id, resources.receivable_line_id;

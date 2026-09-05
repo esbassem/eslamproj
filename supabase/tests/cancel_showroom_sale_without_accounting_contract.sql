@@ -5,9 +5,10 @@ declare
   v_preview text := pg_get_functiondef(
     'public.preview_showroom_sale_cancellation(uuid,uuid)'::regprocedure
   );
-  v_cancel text := pg_get_functiondef(
+  v_cancel text := pg_get_functiondef(coalesce(
+    to_regprocedure('public.cancel_showroom_sale_legacy_engine_impl(uuid,uuid,text,text)'),
     'public.cancel_showroom_sale(uuid,uuid,text,text)'::regprocedure
-  );
+  ));
 begin
   if position('no_accounting_move' in v_preview) = 0 then
     raise exception 'TEST_FAILED: missing-accounting move is not a preview warning';
