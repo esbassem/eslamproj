@@ -114,9 +114,14 @@ begin
     status, total_amount, created_by, showroom_config_id
   ) values (
     sale_id, context.tenant_id, context.branch_id, context.customer_id,
-    current_date, 'pending_payment', p_amount, context.owner_id,
+    current_date, 'draft', p_amount, context.owner_id,
     context.showroom_config_id
   );
+  -- Explicit pre-cutover/in-flight fixture: generation is assigned at birth
+  -- and is not changed when the draft later becomes payment-pending.
+  update public.showroom_sales
+  set status = 'pending_payment'
+  where id = sale_id;
   insert into public.showroom_sale_lines (
     tenant_id, sale_id, product_product_id, description,
     quantity, unit_price, total
