@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -34,8 +35,7 @@ import { partnersService } from '@/features/contacts/services/partners.service';
 import { CashLocationSheet } from '@/features/accountant/components/CashLocationSheet';
 import { LedgerAccountOperationsSheet } from '@/features/accountant/components/LedgerAccountOperationsSheet';
 import { accountantService } from '@/features/accountant/services/accountant.service';
-import { ShowroomSaleViewSheet } from '@/features/showroom/components/ShowroomSaleViewSheet';
-import { showroomService } from '@/features/showroom/services/showroom.service';
+import { SettlementDialog } from '@/features/settlement';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
 const NEW_CUSTOMER_INITIAL_VALUES = {
@@ -817,10 +817,10 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
     }
 
     setIsLoadingAdvanceBalances(true);
-    showroomService.getCustomerOpenCredits({ tenantId, customerId: invoice.customerId })
+    accountantService.listPaymentEntityCustomerCredits({ tenantId })
       .then((records) => {
         if (!mounted) return;
-        setOpenCredits(records);
+        setOpenCredits((records || []).filter((record) => record.customerId === invoice.customerId));
       })
       .catch((loadError) => {
         if (mounted) setError(loadError.message || 'تعذر تحميل رصيد العميل المقدم.');
@@ -1847,6 +1847,7 @@ function AccountantOperationsPanel({
 }
 
 export function AccountantHomePage() {
+  const navigate = useNavigate();
   const [salesInvoicesOpen, setSalesInvoicesOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [paymentApprovalOpen, setPaymentApprovalOpen] = useState(false);
@@ -2114,7 +2115,7 @@ export function AccountantHomePage() {
         invoices={salesInvoiceSummary.invoices}
         isLoading={isLoadingSalesInvoiceSummary}
         total={salesInvoiceSummary.total}
-        onInvoiceSelect={setSelectedSalesInvoice}
+        onInvoiceSelect={(invoice) => navigate(`/app/sales/${encodeURIComponent(invoice.id)}`)}
       />
       <TemporaryAccountDialog
         open={temporaryAccountOpen}
@@ -2161,45 +2162,13 @@ export function AccountantHomePage() {
           setEntityReceivableTotal((current) => current + Number(operation?.amount || 0));
         }}
       />
-      <ShowroomSaleViewSheet
-        sale={selectedSalesInvoice ? {
-          id: selectedSalesInvoice.id,
-          customer_id: selectedSalesInvoice.customerId,
-          customer: { id: selectedSalesInvoice.customerId, name: selectedSalesInvoice.customerName },
-          total_amount: selectedSalesInvoice.totalAmount,
-          accounting_paid_amount: selectedSalesInvoice.paidAmount,
-          accounting_remaining_amount: selectedSalesInvoice.remainingAmount,
-          created_at: selectedSalesInvoice.saleDate,
-        } : null}
-        showroomConfigId={selectedSalesInvoice?.showroomConfigId || null}
-        isOpen={Boolean(selectedSalesInvoice)}
-        onClose={() => {
-          setSelectedSalesInvoice(null);
-        }}
-        onSettleBalance={(sale, options = {}) => {
-          const totalAmount = Number(sale?.total_amount ?? selectedSalesInvoice?.totalAmount ?? 0);
-          const paidAmount = Array.isArray(sale?.payments)
-            ? sale.payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
-            : Number(selectedSalesInvoice?.paidAmount || 0);
-          setSettlementInvoice({
-            ...selectedSalesInvoice,
-            customerId: sale?.customer?.id || sale?.customer_id || selectedSalesInvoice?.customerId || null,
-            totalAmount,
-            paidAmount,
-            remainingAmount: Math.max(totalAmount - paidAmount, 0),
-            preferredMode: options.preferredMode || 'cash',
-          });
-          setSelectedSalesInvoice(null);
-        }}
-        readOnly
-      />
-      <InvoiceSettlementDialog
+      <SettlementDialog
         open={Boolean(settlementInvoice)}
         onOpenChange={(open) => {
           if (!open) setSettlementInvoice(null);
         }}
-        tenantId={tenantId}
-        invoice={settlementInvoice}
+        targetType="sale"
+        targetId={settlementInvoice?.id || ''}
         onSettled={async () => {
           setSettlementInvoice(null);
           setIsLoadingSalesInvoiceSummary(true);

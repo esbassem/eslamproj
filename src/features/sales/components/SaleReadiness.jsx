@@ -1,0 +1,9 @@
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
+
+const reasonLabels = { SALE_NOT_DRAFT: 'البيع لم يعد مسودة.', BRANCH_INACTIVE: 'الفرع غير نشط.', CUSTOMER_INVALID: 'بيانات العميل لم تعد صالحة.', SALE_LINES_REQUIRED: 'أضف بند بيع واحدًا على الأقل.', SALE_TOTAL_MUST_BE_POSITIVE: 'إجمالي البيع يجب أن يكون أكبر من صفر.', SALE_PRODUCT_INVALID: 'أحد المنتجات لم يعد صالحًا للبيع.', LOT_TRACKING_CONFIRMATION_SUPPORT_REQUIRED: 'تتبع الدُفعات غير مدعوم في التأكيد الحالي.' };
+const warningLabels = { INVENTORY_AVAILABILITY_CHECK_REQUIRED_AT_CONFIRMATION: 'سيُعاد التحقق من توفر المخزون عند التأكيد.', SERIAL_SELECTION_REQUIRED_AT_RESERVATION: 'يجب أن تظل القطعة المتسلسلة متاحة حتى لحظة التأكيد.' };
+
+export function SaleReadiness({ readiness }) {
+  if (!readiness) return <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5"><h2 className="font-black text-amber-950">جاهزية المسودة</h2><p className="mt-2 text-sm text-amber-800">تعذر قراءة الجاهزية الآن. يمكن إعادة تحميل الصفحة للمحاولة مجددًا.</p></section>;
+  return <section className={`rounded-2xl border p-5 ${readiness.ready ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}><div className="flex items-center gap-2">{readiness.ready ? <CheckCircle2 className="h-5 w-5 text-emerald-700" /> : <AlertCircle className="h-5 w-5 text-amber-700" />}<h2 className="font-black">{readiness.ready ? 'المسودة جاهزة للتأكيد' : 'المسودة غير جاهزة للتأكيد'}</h2></div>{readiness.blockingReasons.length ? <ul className="mt-3 list-inside list-disc space-y-1 text-sm">{readiness.blockingReasons.map((reason) => <li key={reason}>{reasonLabels[reason] || 'توجد بيانات مطلوبة قبل التأكيد.'}</li>)}</ul> : null}{readiness.warnings.length ? <ul className="mt-3 space-y-1 text-xs text-slate-600">{readiness.warnings.map((warning) => <li key={warning}>{warningLabels[warning] || 'سيتم إجراء تحقق إضافي عند التأكيد.'}</li>)}</ul> : null}</section>;
+}

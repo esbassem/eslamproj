@@ -1012,7 +1012,7 @@ async function getProductUsageCounts(client, productId) {
   const variantCounts = await Promise.all(
     variantIds.flatMap((productProductId) => [
       safeCount(client, 'pos_order_lines', 'product_product_id', productProductId),
-      safeCount(client, 'showroom_sale_lines', 'product_product_id', productProductId),
+      safeCount(client, 'sale_lines', 'product_id', productProductId),
       safeCount(client, 'stock_tracking_units', 'product_product_id', productProductId),
       safeCount(client, 'stock_moves', 'product_product_id', productProductId),
       safeCount(client, 'stock_quants', 'product_product_id', productProductId),
@@ -1041,7 +1041,7 @@ async function countVariantUsageById(client, productProductId) {
     safeCount(client, 'stock_quants', 'product_product_id', productProductId),
     safeCount(client, 'stock_tracking_units', 'product_product_id', productProductId),
     safeCount(client, 'pos_order_lines', 'product_product_id', productProductId),
-    safeCount(client, 'showroom_sale_lines', 'product_product_id', productProductId),
+    safeCount(client, 'sale_lines', 'product_id', productProductId),
     safeCount(client, 'account_move_lines', 'product_product_id', productProductId),
   ]);
   return counts.reduce((a, b) => a + b, 0);

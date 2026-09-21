@@ -24,7 +24,7 @@ export function PaperworkProcessorsPage() {
   const navigationState = createPaperworkNavigationState(location, {
     returnLabel: 'عند الجهات',
   });
-  const returnContext = resolvePaperworkReturnContext(location, PAPERWORK_ROUTES.root, 'طلبات الأوراق');
+  const returnContext = resolvePaperworkReturnContext(location, PAPERWORK_ROUTES.root, 'الرئيسية');
   const contextualBack = (
     <PaperworkBackButton onClick={() => navigate(returnContext.returnTo)} label={returnContext.returnLabel} />
   );

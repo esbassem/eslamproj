@@ -17,10 +17,10 @@ export const paperworkReportsService = {
 
       for (let from = 0; ; from += pageSize) {
         const { data, error } = await client
-          .from('showroom_sale_lines')
-          .select('id, showroom_sales!inner(status)')
+          .from('sale_lines')
+          .select('id, sales!inner(status)')
           .eq('tenant_id', tenantId)
-          .neq('showroom_sales.status', 'cancelled')
+          .neq('sales.status', 'cancelled')
           .range(from, from + pageSize - 1);
 
         if (error) throw error;
@@ -106,7 +106,7 @@ export const paperworkReportsService = {
     const client = requireSupabase();
 
     let query = client
-      .from('showroom_sales')
+      .from('sales')
       .select(SALE_COLUMNS)
       .eq('tenant_id', tenantId);
 

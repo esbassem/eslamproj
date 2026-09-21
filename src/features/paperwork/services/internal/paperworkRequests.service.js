@@ -159,7 +159,7 @@ export const paperworkRequestsService = {
       loadTenantUsersByIdsMap(client, tenantId, assignedUserIds),
       saleIds.length
         ? client
-          .from('showroom_sales')
+          .from('sales')
           .select('id, sale_number')
           .eq('tenant_id', tenantId)
           .in('id', saleIds)

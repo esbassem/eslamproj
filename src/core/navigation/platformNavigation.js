@@ -2,25 +2,48 @@ import { ROUTES } from '../config/routes.config.js';
 
 const APP_NAVIGATION = Object.freeze([
   Object.freeze({
+    code: 'sales',
+    label: 'المبيعات',
+    to: '/app/sales',
+    sections: Object.freeze([
+      {
+        label: 'نظرة عامة',
+        to: '/app/sales',
+        primaryTo: '/app/sales',
+        matches: [
+          { to: '/app/sales', end: true },
+          { pattern: /^\/app\/sales\/(?!list$|new$|invoices$|contracts$)[^/]+$/ },
+        ],
+      },
+      {
+        label: 'بيع جديد',
+        to: '/app/sales/new',
+        primaryTo: '/app/sales/new',
+      },
+    ]),
+  }),
+  Object.freeze({
     code: 'paperwork',
     label: 'إدارة أوراق الملكية',
     to: '/apps/paperwork',
     includePlatformHome: false,
     sections: Object.freeze([
       {
-        label: 'طلبات الأوراق',
+        label: 'الرئيسية',
         to: '/apps/paperwork',
         primaryTo: '/apps/paperwork',
-        matches: [
-          { to: '/apps/paperwork', end: true },
-          { to: '/apps/paperwork/requests' },
-        ],
+        matches: [{ to: '/apps/paperwork', end: true }],
+      },
+      {
+        label: 'طلبات الأوراق',
+        to: '/apps/paperwork/requests',
+        primaryTo: '/apps/paperwork/requests',
       },
       {
         label: 'عند الجهات',
         to: '/apps/paperwork/processors',
-        primaryTo: '/apps/paperwork',
-        parent: { label: 'طلبات الأوراق', to: '/apps/paperwork' },
+        primaryTo: '/apps/paperwork/requests',
+        parent: { label: 'طلبات الأوراق', to: '/apps/paperwork/requests' },
       },
       {
         label: 'المستندات',
@@ -46,17 +69,6 @@ const APP_NAVIGATION = Object.freeze([
       { label: 'الجرد', to: '/apps/inventory/operations/counts' },
     ]),
   }),
-  Object.freeze({
-    code: 'crm',
-    label: 'متابعة العملاء المحتملين',
-    to: '/apps/crm',
-    sections: Object.freeze([
-      { label: 'العملاء المحتملون', to: '/apps/crm/leads' },
-      { label: 'متابعات اليوم', to: '/apps/crm/followups' },
-      { label: 'طلبات التقسيط', to: '/apps/crm/installments' },
-      { label: 'الإعدادات', to: '/apps/crm/settings' },
-    ]),
-  }),
 ]);
 
 function normalizePath(pathname = '') {
@@ -71,7 +83,7 @@ function matchesPath(pathname, route) {
 function matchesSection(pathname, section) {
   if (!section.matches) return matchesPath(pathname, section.to);
   return section.matches.some((match) => (
-    match.end ? pathname === match.to : matchesPath(pathname, match.to)
+    match.pattern ? match.pattern.test(pathname) : match.end ? pathname === match.to : matchesPath(pathname, match.to)
   ));
 }
 

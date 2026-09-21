@@ -6,7 +6,8 @@ import { modeRoutes } from '@/routes';
 import { CheckingSessionPage } from '@/pages/system/CheckingSessionPage';
 import { RouteLoadingFallback } from '@/pages/system/RouteLoadingFallback';
 import { DynamicAppPage } from '@/app/router/DynamicAppPage';
-import { AppLayout, AccountantHomePage, AuthLayout, CrmLeadDetailsPage, CrmLeadsPage, CrmSettingsPage, CrmFollowupsPage, CrmInstallmentsPage, CrmInstallmentDetailsPage, CrmPlaceholderPage, CrmWorkspaceLayout, ForgotPasswordPage, LandingPage, MotoCustomerCareSaleFollowUpDetailsPage, MotoCustomerCareSalesFollowUpListPage, MotoCustomerCareWorkspaceLayout, PaperworkHomePage, PaperworkRequestsPage, PaperworkRequestDetailsPage, PaperworkProcessorsPage, PaperworkProcessorDetailsPage, PaperworkVaultPage, PaperworkDocumentsPage, PaperworkDocumentDetailsPage, NotFoundPage, OnboardingPage, PosPage, PublicLayout, ReceivablesPage, ShowroomSaleDetailsPage, ShowroomSellPage, ShowroomWorkspaceLayout, SignupPage } from '@/app/router/lazyRoutes';
+import { PlatformRuntimeLayout } from '@/app/layouts/PlatformRuntimeLayout';
+import { AppLayout, AccountantHomePage, AuthLayout, ForgotPasswordPage, InvoicesPage, LandingPage, MotoCustomerCareSaleFollowUpDetailsPage, MotoCustomerCareSalesFollowUpListPage, MotoCustomerCareWorkspaceLayout, PaperworkHomePage, PaperworkRequestsPage, PaperworkRequestDetailsPage, PaperworkProcessorsPage, PaperworkProcessorDetailsPage, PaperworkVaultPage, PaperworkDocumentsPage, PaperworkDocumentDetailsPage, NotFoundPage, OnboardingPage, PosPage, PublicLayout, ReceivablesPage, SaleCreatePage, SaleDetailsPage, SalesBranchPage, SalesOverviewPage, SignupPage } from '@/app/router/lazyRoutes';
 
 function renderModeRoute(route) {
   return (
@@ -51,6 +52,7 @@ export function AppRouter() {
 
             <Route element={<ProtectedRoute />}>
               <Route path={ROUTES.onboarding} element={<OnboardingPage />} />
+              <Route element={<PlatformRuntimeLayout />}>
               {modeRoutes.map(renderModeRoute)}
               <Route path="/products/tracking-identifiers" element={<Navigate to="/apps/inventory/products/tracking-identifiers" replace />} />
               <Route path="/app/products/*" element={<LegacyInventoryRedirect sourceBase="/app/products" targetBase="/apps/inventory" />} />
@@ -61,18 +63,16 @@ export function AppRouter() {
               <Route path="/app/dashboard" element={<Navigate to={ROUTES.admin} replace />} />
               <Route path="/app/team" element={<Navigate to={ROUTES.settingsTeam} replace />} />
               <Route
-                path="/app/showroom_point"
-                element={
-                  <AppAccessRoute appCode="showroom_point">
-                    <ShowroomWorkspaceLayout />
-                  </AppAccessRoute>
-                }
+                path={ROUTES.sales}
+                element={<AppAccessRoute appCode="sales" />}
               >
-                <Route index element={<ShowroomSellPage />} />
-                <Route path="new" element={<ShowroomSellPage />} />
-                <Route path="customers" element={<ShowroomSellPage />} />
-                <Route path="settings" element={<Navigate to="/app/showroom_point" replace />} />
-                <Route path="sale/:saleId" element={<ShowroomSaleDetailsPage />} />
+                <Route index element={<SalesOverviewPage />} />
+                <Route path="list" element={<Navigate to={ROUTES.sales} replace />} />
+                <Route path="new" element={<SaleCreatePage />} />
+                <Route path="branches/:branchId" element={<SalesBranchPage />} />
+                <Route path="invoices" element={<InvoicesPage />} />
+                <Route path="contracts" element={<Navigate to={ROUTES.contracts} replace />} />
+                <Route path=":saleId" element={<SaleDetailsPage />} />
               </Route>
               <Route
                 path="/app/moto_customer_care"
@@ -191,22 +191,6 @@ export function AppRouter() {
                 <Route index element={<AccountantHomePage />} />
                 <Route path="payments" element={<AccountantHomePage />} />
               </Route>
-              <Route
-                path="/apps/crm"
-                element={
-                  <AppAccessRoute appCode="crm">
-                    <CrmWorkspaceLayout />
-                  </AppAccessRoute>
-                }
-              >
-                <Route index element={<Navigate to="/apps/crm/leads" replace />} />
-                <Route path="leads" element={<CrmLeadsPage />} />
-                <Route path="leads/:leadId" element={<CrmLeadDetailsPage />} />
-                <Route path="followups" element={<CrmFollowupsPage />} />
-                <Route path="installments" element={<CrmInstallmentsPage />} />
-                <Route path="installments/:applicationId" element={<CrmInstallmentDetailsPage />} />
-                <Route path="settings" element={<CrmSettingsPage />} />
-              </Route>
               <Route path="/app/accounting" element={<Navigate to="/apps/accounting" replace />} />
               <Route path="/app/accounting/payments" element={<Navigate to="/apps/accounting/payments" replace />} />
               <Route path="/app/accounting/journals" element={<Navigate to="/apps/accounting/journals" replace />} />
@@ -229,6 +213,7 @@ export function AppRouter() {
               <Route path="/app/:appCode" element={<AppLayout />}>
                 <Route index element={<DynamicAppPage />} />
                 <Route path="*" element={<DynamicAppPage />} />
+              </Route>
               </Route>
             </Route>
           </Route>

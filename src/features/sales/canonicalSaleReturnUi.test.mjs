@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import { buildSaleReturnLines, createInitialReturnSelection, getSaleReturnSelectionIssue, normalizeSaleReturnEligibility, resolveSaleRefundAttempt, resolveSaleReturnAttempt } from './services/salesReturn.model.js';
+
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const action = read('./components/CanonicalSaleReturnAction.jsx'); const dialog = read('./components/SaleReturnDialog.jsx');
+const refund = read('./components/SaleRefundDialog.jsx'); const section = read('./components/SaleReturnsSection.jsx');
+const hook = read('./hooks/useSaleReturn.js'); const service = read('./services/salesReturn.service.js'); const page = read('./components/SaleDetails.jsx');
+const eligibility = normalizeSaleReturnEligibility({ can_return: true, lines: [{ sale_line_id: 'qty', kind: 'quantity', returnable_quantity: 2, unit_price: 25 }, { sale_line_id: 'serial', kind: 'serial', returnable_quantity: 1, serialized_units: [{ tracking_unit_id: 'unit-1' }] }, { sale_line_id: 'service', kind: 'service', returnable_quantity: 1 }] });
+
+test('1. Return action requires backend returnability', () => assert.match(action, /eligibility\?\.canReturn/));
+test('2. Draft never shows Return', () => assert.match(action, /commercialStatus !== 'confirmed'/));
+test('3. no delivery means no backend returnable lines', () => assert.match(service, /get_sale_return_eligibility/));
+test('4. sales.return permission is explicit', () => assert.match(action, /can\('sales\.return'\)/));
+test('5. serialized units create quantity one lines', () => { const s = createInitialReturnSelection(eligibility); s.serial.units['unit-1'] = true; assert.deepEqual(buildSaleReturnLines(eligibility, s)[0], { sale_line_id: 'serial', tracking_unit_id: 'unit-1', quantity: 1 }); });
+test('6. quantity supports partial values', () => { const s = createInitialReturnSelection(eligibility); s.qty.quantity = '1'; assert.equal(buildSaleReturnLines(eligibility, s)[0].quantity, 1); });
+test('7. service is labelled as no-inventory', () => assert.match(dialog, /لا توجد حركة مخزون/));
+test('8. reason is required', () => assert.match(getSaleReturnSelectionIssue(eligibility, { qty: { quantity: 1 } }, 'loc', ''), /سبب/));
+test('9. eligibility refreshes before command', () => assert.match(hook, /getSaleReturnEligibility[\s\S]*returnSale/));
+test('10. submit lock prevents double click', () => assert.match(hook, /lockRef\.current \|\| submitting/));
+test('11. retry keeps Return idempotency key', () => { const payload = { saleId: 'a' }; assert.equal(resolveSaleReturnAttempt(resolveSaleReturnAttempt(null, payload), payload).fingerprint, JSON.stringify(payload)); });
+test('12. version conflict refresh path exists', () => assert.match(hook, /SALES_VERSION_CONFLICT/));
+test('13. success reloads Sale Details', () => assert.match(page, /handleReturned[\s\S]*details\.reload/));
+test('14. return history is visible', () => { assert.match(section, /المرتجعات/); assert.match(section, /eligibility\.returns/); });
+test('15. refundable amount is visible', () => assert.match(section + dialog, /remainingRefundableAmount|refundableAmount/));
+test('16. refund action has separate permission', () => assert.match(section, /can\('settlement\.refund'\)/));
+test('17. dialogs use bottom mobile sheets', () => { assert.match(dialog, /side="bottom"/); assert.match(refund, /side="bottom"/); });
+test('18. no role-name checks', () => assert.doesNotMatch(action + dialog + refund + hook, /role\s*===|owner|admin/));
+test('19. UI does not call Inventory RPC', () => assert.doesNotMatch(action + dialog + refund + hook + service, /\.rpc\(['"]receive_inventory_return/));
+test('20. UI does not call accounting RPC', () => assert.doesNotMatch(action + dialog + refund + hook + service, /\.rpc\(['"](?:post_financial|create_financial)/));
+test('21. refund retry preserves idempotency', () => { const payload = { amount: 10 }; const first = resolveSaleRefundAttempt(null, payload); assert.equal(resolveSaleRefundAttempt(first, payload).idempotencyKey, first.idempotencyKey); });
+test('22. compact item presentation coexists with Return history on details', () => { assert.match(page, /compact \? \([\s\S]*SaleItemsDetails/); assert.match(page, /SaleReturnsSection/); });
+test('23. refund method and money source are business inputs', () => { assert.match(refund, /طريقة رد المبلغ/); assert.match(refund, /المورد المالي/); });
+test('24. Return and Refund are separate dialogs', () => { assert.doesNotMatch(dialog, /refundSaleReturn/); assert.match(refund, /useSaleRefund/); });

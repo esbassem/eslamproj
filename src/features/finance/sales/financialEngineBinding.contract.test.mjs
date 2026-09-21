@@ -6,14 +6,10 @@ const migration = readFileSync(
   new URL('../../../../supabase/migrations/20260905130000_financial_engine_binding_guard.sql', import.meta.url),
   'utf8',
 );
-const showroomService = readFileSync(
-  new URL('../../showroom/services/showroom.service.js', import.meta.url),
+const retirement = readFileSync(
+  new URL('../../../../supabase/migrations/20260910130000_final_legacy_showroom_retirement.sql', import.meta.url),
   'utf8',
 );
-const showroomSources = [
-  showroomService,
-  readFileSync(new URL('../../showroom/components/ShowroomSaleViewSheet.jsx', import.meta.url), 'utf8'),
-];
 
 test('binding identity has one immutable engine owner and no ledger values', () => {
   assert.match(migration, /create table public\.financial_engine_bindings/iu);
@@ -99,9 +95,7 @@ test('binding mutation primitives are not client executable', () => {
   }
 });
 
-test('Showroom frontend still calls only the Legacy completion RPC', () => {
-  assert.match(showroomService, /rpc\(["']complete_showroom_sale["']/u);
-  for (const source of showroomSources) {
-    assert.doesNotMatch(source, /post_financial_sale|financial_engine/iu);
-  }
+test('retirement removes the Legacy binding adapter without deleting generic bindings', () => {
+  assert.match(retirement, /drop function public\.bind_showroom_sale_to_legacy_engine/iu);
+  assert.doesNotMatch(retirement, /drop table public\.financial_engine_bindings/iu);
 });

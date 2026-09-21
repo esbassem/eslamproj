@@ -4,7 +4,7 @@ export function AppBreadcrumbs({ items = [], className = '', size = 'default' })
   if (!items.length) return null;
 
   const sizeClasses = size === 'large'
-    ? 'gap-2.5 text-base font-black sm:text-lg'
+    ? 'gap-3 text-lg font-black sm:text-xl'
     : 'gap-1.5 text-xs text-slate-500';
 
   return (
@@ -16,7 +16,7 @@ export function AppBreadcrumbs({ items = [], className = '', size = 'default' })
           return (
             <li
               key={`${item.label}-${index}`}
-              className={`min-w-0 items-center gap-1.5 ${compactHidden ? 'hidden sm:flex' : 'flex'} ${size === 'large' && index === 0 ? 'text-sm sm:text-base' : ''}`}
+              className={`min-w-0 items-center gap-1.5 ${compactHidden ? 'hidden sm:flex' : 'flex'} ${size === 'large' && items.length > 1 && index === 0 ? 'text-base sm:text-lg' : ''}`}
             >
               {index ? <span aria-hidden="true" className={`${index === Math.max(0, items.length - 2) ? 'hidden sm:inline' : ''} text-slate-300`}>/</span> : null}
               {item.to && !current ? (

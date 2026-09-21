@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+
+const migration = readFileSync(new URL('../../../supabase/migrations/20260908120000_canonical_sale_return_and_refund.sql', import.meta.url), 'utf8');
+const body = (name) => migration.slice(migration.indexOf(`function public.${name}`), migration.indexOf('\n$$;', migration.indexOf(`function public.${name}`)) + 4);
+const command = body('return_sale'); const financial = body('post_financial_sale_return'); const refund = body('refund_sale_return');
+
+test('1. undelivered goods cannot return', () => assert.match(command, /SALE_RETURN_EXCEEDS_DELIVERED_QUANTITY/));
+test('2. delivered serial is resolved from canonical delivery', () => assert.match(command, /sale_delivery_lines[\s\S]*tracking_unit_id = v_tracking/));
+test('3. serial is unique across returns', () => assert.match(migration, /create unique index sale_return_serial_once/));
+test('4. quantity partial return is supported', () => assert.match(command, /v_quantity := least\(v_available, v_remaining\)/));
+test('5. quantity full return is supported', () => assert.match(command, /v_remaining := v_remaining - v_quantity/));
+test('6. over-return is rejected', () => assert.match(command, /v_quantity > coalesce\(v_available, 0\)/));
+test('7. partial financial amount derives from lines', () => assert.match(command, /round\(v_quantity \* v_line\.unit_price, 2\)/));
+test('8. full financial amount uses exact return total', () => assert.match(financial, /v_return\.total_amount/));
+test('9. original Sale and posting are retained', () => assert.doesNotMatch(command + financial, /delete from public\.(sales|financial_sale_postings|sale_deliveries)/));
+test('10. Inventory Core receives the return', () => assert.match(command, /public\.receive_inventory_return/));
+test('11. unpaid return applies credit to AR', () => assert.match(financial, /least\(v_return\.total_amount, greatest\(v_receivable\.amount_residual, 0\)\)/));
+test('12. AR is consumed before credit is refundable', () => assert.match(financial, /v_credit_remaining := v_return\.total_amount - v_apply/));
+test('13. fully paid return leaves customer credit', () => assert.match(financial, /customer_credit_line_id/));
+test('14. refund cannot exceed live credit residual', () => assert.match(refund, /v_amount > v_credit\.amount_residual/));
+test('15. refund replay uses command result', () => assert.match(refund, /return v_existing\.result \|\| jsonb_build_object\('idempotent_replay', true\)/));
+test('16. return permission is enforced', () => assert.match(command, /has_permission\('sales\.return'/));
+test('17. refund permission is separate', () => assert.match(refund, /has_permission\('settlement\.refund'/));
+test('18. tenant and branch are enforced', () => assert.match(command + refund, /current_tenant_id[\s\S]*has_branch_access/));
+test('19. return is one database transaction', () => assert.match(command, /receive_inventory_return[\s\S]*post_financial_sale_return[\s\S]*sale_events/));
+test('20. Inventory failure precedes Financial posting', () => assert.ok(command.indexOf('receive_inventory_return') < command.indexOf('post_financial_sale_return')));
+test('21. serial concurrency locks delivery', () => assert.match(command, /tracking_unit_id = v_tracking[\s\S]*for update/));
+test('22. quantity concurrency locks delivery facts', () => assert.match(command, /sale_delivery_lines delivered[\s\S]*for update/));
+test('23. services never call Inventory directly', () => assert.match(command, /v_template_type = 'service'[\s\S]*line_kind[\s\S]*'service'/));
+test('24. return is a durable fact, not only an event', () => assert.match(migration, /create table public\.sale_returns/));
+test('25. commercial status is not changed to returned', () => assert.doesNotMatch(command, /set status = 'returned'/));
+test('26. canonical refund lifecycle is reused', () => { assert.match(refund, /create_financial_refund/); assert.match(refund, /submit_financial_refund/); assert.match(refund, /confirm_financial_refund/); assert.match(refund, /post_financial_refund/); });
+test('27. UI never supplies account or journal identifiers', () => assert.doesNotMatch(body('return_sale') + refund.slice(0, refund.indexOf('returns jsonb')), /p_(account|journal|debit|credit)/));

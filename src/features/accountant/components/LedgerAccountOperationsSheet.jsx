@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ChevronRight, History, Landmark, Loader2, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ChevronRight, History, Landmark, Loader2, LockKeyhole, Trash2, X } from 'lucide-react';
 import {
   Sheet,
   SheetBody,
@@ -200,15 +200,13 @@ export function LedgerAccountOperationsSheet({ account, tenantId, onOpenChange }
                     <p className="truncate text-left text-[11px] font-black text-emerald-700">{operation.debit ? formatCurrency(operation.debit) : '—'}</p>
                     <p className="truncate text-left text-[11px] font-black text-red-600">{operation.credit ? formatCurrency(operation.credit) : '—'}</p>
                     <p className="truncate text-left text-[11px] font-black text-slate-950">{formatAccountBalance(operation.runningBalance)}</p>
-                    <button
-                      type="button"
-                      onClick={() => openDeleteDialog(operation)}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100"
-                      aria-label={`معاينة حذف ${operation.label || 'القيد'}`}
-                      title="حذف"
+                    <span
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300"
+                      aria-label="قيد مرحل ومحمي من الحذف"
+                      title="قيد مرحل ومحمي من الحذف"
                     >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                      <LockKeyhole className="h-3.5 w-3.5" />
+                    </span>
                   </div>
                 ))}
               </div>

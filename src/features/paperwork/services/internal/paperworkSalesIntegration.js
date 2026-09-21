@@ -570,11 +570,11 @@ export function normalizeSalePayment(record) {
   return {
     id: record.id,
     tenantId: record.tenant_id,
-    saleId: String(record.ref || '').replace(/^showroom_sale:/, ''),
+    saleId: record.source_id || '',
     accountMoveId: record.id,
-    amount: toNumber(record.amount_total),
-    paymentDate: record.invoice_date || record.date || record.created_at,
-    paymentMethod: record.pay_method || '',
+    amount: toNumber(record.amount),
+    paymentDate: record.confirmed_at || record.created_at,
+    paymentMethod: '',
     notes: record.notes || '',
     createdBy: record.created_by,
     createdAt: record.created_at,
@@ -604,11 +604,11 @@ export function normalizeSale(record, customerMap, linesMap = new Map(), payment
     paidAmount,
     remainingAmount,
     notes: record.notes || '',
-    accountMoveId: record.account_move_id,
+    accountMoveId: record.historical_source?.[0]?.financial_account_move_id || null,
     createdBy: record.created_by,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
-    showroomConfigId: record.showroom_config_id,
+    showroomConfigId: null,
     customer,
     items: linesMap.get(record.id) || [],
     payments,
@@ -654,7 +654,7 @@ export async function loadSaleLinesMap(client, tenantId, sales, { includeAttachm
   }
 
   const { data, error } = await client
-    .from('showroom_sale_lines')
+    .from('sale_lines')
     .select(SALE_LINE_COLUMNS)
     .eq('tenant_id', tenantId)
     .in('sale_id', saleIds)
@@ -664,7 +664,10 @@ export async function loadSaleLinesMap(client, tenantId, sales, { includeAttachm
     throw error;
   }
 
-  const lines = data || [];
+  const lines = (data || []).map((line) => ({
+    ...line,
+    tracking_unit_id: line.historical_source?.[0]?.tracking_unit_id || null,
+  }));
   const [productMap, attributesMap, variantAttributesMap, trackingDetailsMap, trackingUnitAttributesMap] = await Promise.all([
     loadProductsMap(client, tenantId, lines),
     loadLineAttributesMap(client, tenantId, lines),
@@ -692,14 +695,13 @@ export async function loadSalePaymentsMap(client, tenantId, sales) {
     return new Map();
   }
 
-  const saleRefs = saleIds.map((saleId) => `showroom_sale:${saleId}`);
   const { data, error } = await client
-    .from('account_moves')
-    .select(SALE_PAYMENT_MOVE_COLUMNS)
+    .from('financial_payments')
+    .select('id,tenant_id,amount,confirmed_at,source_id,notes,created_by,created_at')
     .eq('tenant_id', tenantId)
-    .eq('move_type', 'payment')
-    .eq('state', 'posted')
-    .in('ref', saleRefs)
+    .eq('status', 'posted')
+    .eq('source_model', 'sale')
+    .in('source_id', saleIds)
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -726,8 +728,8 @@ export async function loadSaleAccountingMap(client, tenantId, sales) {
   const chunk = (values, size = 100) => (
     Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size))
   );
-  const accountMoveIds = [...new Set(saleRows.map((sale) => sale?.account_move_id).filter(Boolean))];
-  const [moveIdResults, refResults, receivableAccountId] = await Promise.all([
+  const accountMoveIds = [...new Set(saleRows.map((sale) => sale?.historical_source?.[0]?.financial_account_move_id).filter(Boolean))];
+  const [moveIdResults, receivableAccountId] = await Promise.all([
     Promise.all(chunk(accountMoveIds).map((ids) => client
       .from('account_moves')
       .select('id, ref')
@@ -735,17 +737,10 @@ export async function loadSaleAccountingMap(client, tenantId, sales) {
       .eq('move_type', 'sale')
       .eq('state', 'posted')
       .in('id', ids))),
-    Promise.all(chunk(saleIds.map((saleId) => `showroom_sale:${saleId}`)).map((refs) => client
-      .from('account_moves')
-      .select('id, ref')
-      .eq('tenant_id', tenantId)
-      .eq('move_type', 'sale')
-      .eq('state', 'posted')
-      .in('ref', refs))),
     resolveFunctionalAccount({ tenantId, role: 'customer_receivable' }),
   ]);
 
-  const moveResults = [...moveIdResults, ...refResults];
+  const moveResults = [...moveIdResults];
   const failedResult = moveResults.find((result) => result.error);
   if (failedResult?.error) throw failedResult.error;
 
@@ -755,7 +750,7 @@ export async function loadSaleAccountingMap(client, tenantId, sales) {
   const moveBySaleId = new Map();
 
   saleRows.forEach((sale) => {
-    const move = movesById.get(sale.account_move_id) || movesByRef.get(`showroom_sale:${sale.id}`) || null;
+    const move = movesById.get(sale.historical_source?.[0]?.financial_account_move_id) || null;
     if (move) moveBySaleId.set(sale.id, move);
   });
 
@@ -841,7 +836,7 @@ export async function loadPaperworkDocumentInvoiceMap(client, tenantId, document
     (_, index) => saleLineIds.slice(index * 100, (index + 1) * 100),
   );
   const saleLineResults = await Promise.all(saleLineChunks.map((ids) => client
-    .from('showroom_sale_lines')
+    .from('sale_lines')
     .select('id, sale_id')
     .eq('tenant_id', tenantId)
     .in('id', ids)));
@@ -871,8 +866,8 @@ export async function loadPaperworkDocumentInvoiceMap(client, tenantId, document
     (_, index) => saleIds.slice(index * 100, (index + 1) * 100),
   );
   const saleResults = await Promise.all(saleChunks.map((ids) => client
-    .from('showroom_sales')
-    .select('id, sale_number, total_amount, account_move_id')
+    .from('sales')
+    .select('id,sale_number,total_amount,historical_source:sale_historical_sources(financial_account_move_id)')
     .eq('tenant_id', tenantId)
     .in('id', ids)));
   const failedSaleResult = saleResults.find((result) => result.error);

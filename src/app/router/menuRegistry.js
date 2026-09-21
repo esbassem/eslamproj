@@ -24,7 +24,9 @@ register(['/apps/inventory/unique-units'], 'inventorySerials', 'SerialUnitsPage'
 register(['/apps/inventory/operations/moves'], 'inventoryMoves', 'StockMovesPage');
 register(['/apps/inventory/operations/locations'], 'inventoryLocations', 'InventoryLocationsPage');
 register(['/apps/inventory/operations/counts'], 'inventoryCounts', 'InventoryCountsPage');
-register(['/app/sales', '/app/sales/invoices'], 'invoices', 'InvoicesPage');
+register(['/app/sales'], 'salesOverview', 'SalesOverviewPage');
+register(['/app/sales/new'], 'saleCreate', 'SaleCreatePage');
+register(['/app/sales/invoices'], 'invoices', 'InvoicesPage');
 register(['/app/sales/contracts', '/app/contracts'], 'contracts', 'ContractsPage');
 register(['/app/accounting', '/app/accounting/payments', '/apps/accounting', '/apps/accounting/payments'], 'payments', 'PaymentsPage');
 register(['/app/accounting/journals', '/apps/accounting/journals', '/apps/accountant/journals'], 'settings', 'SettingsPage');
@@ -40,7 +42,6 @@ register(['/photos/settings', '/app/photos/settings'], 'photosSettings', 'Photos
 register(['/app/partners'], 'partners', 'PartnersPage');
 register(['/app/pos'], 'pos', 'PosPage');
 register(['/app/old_cashbox', '/app/old-cashbox', '/apps/old-cashbox'], 'oldCashbox', 'OldCashboxPage');
-register(['/app/showroom_point', '/app/showroom_point/new', '/app/showroom_point/customers', '/app/showroom_point/settings'], 'showroomSell', 'ShowroomSellPage');
 register(['/app/moto-customer-care', '/app/moto-customer-care/dashboard', '/app/moto-customer-care/sales', '/apps/moto-customer-care', '/apps/moto-customer-care/dashboard', '/apps/moto-customer-care/sales'], 'customerCareList', 'MotoCustomerCareSalesFollowUpListPage');
 register(['/apps/paperwork'], 'paperworkHome', 'PaperworkHomePage');
 register(['/apps/paperwork/processors'], 'paperworkProcessors', 'PaperworkProcessorsPage');

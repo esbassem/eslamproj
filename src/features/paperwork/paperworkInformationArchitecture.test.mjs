@@ -5,13 +5,13 @@ import { getPlatformRouteMetadata } from '../../core/navigation/platformNavigati
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
-test('Paperwork routes resolve to one of exactly two primary sidebar destinations', () => {
+test('Paperwork routes resolve to one of the three primary sidebar destinations', () => {
   const cases = [
     ['/apps/paperwork', '/apps/paperwork'],
-    ['/apps/paperwork/requests', '/apps/paperwork'],
-    ['/apps/paperwork/requests/request-1', '/apps/paperwork'],
-    ['/apps/paperwork/processors', '/apps/paperwork'],
-    ['/apps/paperwork/processors/processor-1', '/apps/paperwork'],
+    ['/apps/paperwork/requests', '/apps/paperwork/requests'],
+    ['/apps/paperwork/requests/request-1', '/apps/paperwork/requests'],
+    ['/apps/paperwork/processors', '/apps/paperwork/requests'],
+    ['/apps/paperwork/processors/processor-1', '/apps/paperwork/requests'],
     ['/apps/paperwork/documents', '/apps/paperwork/documents'],
     ['/apps/paperwork/documents/document-1', '/apps/paperwork/documents'],
     ['/apps/paperwork/vault', '/apps/paperwork/documents'],
@@ -36,7 +36,8 @@ test('launcher opens the summary while needs-action opens the dedicated requests
   const appsService = read('../../services/apps.service.js');
   const router = read('../../app/router/AppRouter.jsx');
   assert.match(registry, /appCode: 'paperwork'[\s\S]*path: '\/apps\/paperwork'/);
-  assert.match(appsService, /name: 'طلبات الأوراق'[\s\S]*href: '\/apps\/paperwork'/);
+  assert.match(appsService, /name: 'الرئيسية'[\s\S]*href: '\/apps\/paperwork'/);
+  assert.match(appsService, /name: 'طلبات الأوراق'[\s\S]*href: '\/apps\/paperwork\/requests'/);
   assert.match(router, /<Route index element=\{<PaperworkHomePage \/>\}/);
   assert.match(router, /path="requests" element=\{<PaperworkRequestsPage \/>\}/);
 });
@@ -52,12 +53,13 @@ test('documents own vault navigation and the permission-gated manual receipt ent
   assert.doesNotMatch(read('./pages/PaperworkHomePage.jsx'), /actions=\{canReceive/);
 });
 
-test('forward migration exposes only requests and documents as active primary menus', () => {
-  const migration = read('../../../supabase/migrations/20260823120000_finalize_paperwork_two_section_ia.sql');
-  assert.match(migration, /name = 'طلبات الأوراق'[\s\S]*route_path = '\/apps\/paperwork'/);
-  assert.match(migration, /code in \('paperwork\.overview', 'paperwork\.processors', 'paperwork\.vault'\)/);
+test('forward migration exposes home, requests and documents as active primary menus', () => {
+  const migration = read('../../../supabase/migrations/20260824170000_add_paperwork_home_primary_menu.sql');
+  assert.match(migration, /name = 'الرئيسية'[\s\S]*route_path = '\/apps\/paperwork'/);
+  assert.match(migration, /name = 'طلبات الأوراق'[\s\S]*route_path = '\/apps\/paperwork\/requests'/);
+  assert.match(migration, /code in \('paperwork\.processors', 'paperwork\.vault'\)/);
   assert.match(migration, /active = false/);
-  assert.match(migration, /exactly two active primary menus/);
+  assert.match(migration, /three primary menus/);
   assert.doesNotMatch(migration, /delete from/);
 });
 
@@ -69,12 +71,13 @@ test('canonical requests corrective migration changes menu metadata only', () =>
   assert.doesNotMatch(migration, /paperwork_requests|paperwork_documents|auth_permissions|create policy/i);
 });
 
-test('frontend menu normalization keeps Paperwork at two items even with stale workspace metadata', () => {
+test('frontend menu normalization keeps Paperwork at three items even with stale workspace metadata', () => {
   const appsService = read('../../services/apps.service.js');
   assert.match(appsService, /appCode === 'paperwork'/);
-  assert.match(appsService, /paperwork\.root.*paperwork\.requests.*paperwork\.documents/);
-  assert.match(appsService, /name: 'طلبات الأوراق'[\s\S]*href: '\/apps\/paperwork'/);
-  assert.doesNotMatch(appsService.match(/appCode === 'paperwork'[\s\S]*?\n  \}/)?.[0] || '', /paperwork\.overview|paperwork\.processors|paperwork\.vault/);
+  assert.match(appsService, /paperwork\.root.*paperwork\.overview.*paperwork\.requests.*paperwork\.documents/);
+  assert.match(appsService, /name: 'الرئيسية'[\s\S]*href: '\/apps\/paperwork'/);
+  assert.match(appsService, /name: 'طلبات الأوراق'[\s\S]*href: '\/apps\/paperwork\/requests'/);
+  assert.doesNotMatch(appsService.match(/appCode === 'paperwork'[\s\S]*?\n  \}/)?.[0] || '', /paperwork\.processors|paperwork\.vault/);
 });
 
 test('Paperwork pages render the canonical top breadcrumb trail', () => {
@@ -82,5 +85,5 @@ test('Paperwork pages render the canonical top breadcrumb trail', () => {
   assert.match(page, /getCanonicalBreadcrumbs/);
   assert.match(page, /breadcrumbs=\{breadcrumbs\}/);
   assert.match(page, /PageHeader/);
-  assert.match(page, /contextualBack/);
+  assert.match(page, /breadcrumbSize="large"/);
 });

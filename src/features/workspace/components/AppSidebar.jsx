@@ -109,7 +109,7 @@ function AppSidebarComponent({ mobile = false, open = false, onOpenChange = () =
 
   return (
     <aside className="hidden h-screen w-[22rem] self-stretch lg:block xl:w-[24rem]">
-      <div className="fixed inset-y-0 right-0 z-20 h-screen w-[22rem] xl:w-[24rem]">
+      <div className="fixed inset-y-0 right-0 z-20 h-screen w-[22rem] border-l border-slate-200/80 xl:w-[24rem]">
         <SidebarContent />
       </div>
     </aside>

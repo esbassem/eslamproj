@@ -1,5 +1,7 @@
 import { requireSupabase } from '@/core/lib/supabase';
 import { resolveFunctionalAccount } from '@/features/finance/accounts/api/functionalAccounts.api';
+import { financialSalesContextService } from '@/features/finance/sales/financialSalesContext.service';
+import { settlementService } from '@/features/settlement';
 import {
   getAllowedCollectionDestinations,
   getMoneyDestinationSelection,
@@ -533,34 +535,25 @@ export const accountantService = {
     if (mode === 'advance_credit' && !allocations.length) throw new Error('اختر اعتمادًا واحدًا على الأقل.');
 
     const client = requireSupabase();
-    if (mode === 'advance_credit') {
-      const { data, error } = await client.rpc('settle_showroom_sale_with_open_credits', {
-        p_tenant_id: tenantId,
-        p_sale_id: saleId,
-        p_allocations: allocations,
-      });
-      if (error) throw new Error(error.message || 'تعذر استخدام رصيد العميل.');
-      return data;
+    if (mode === 'advance_credit' || destinationAccountId) {
+      throw new Error('استخدم شاشة التحصيل الموحدة لاختيار طريقة الدفع المعتمدة.');
     }
-
-    const canonicalDestinationMode = mode === 'cash' && Boolean(moneyDestinationId);
-    const { data, error } = canonicalDestinationMode
-      ? await client.rpc('settle_showroom_sale_balance_to_destination', {
-          p_sale_id: saleId,
-          p_amount: safeAmount,
-          p_money_destination_id: moneyDestinationId,
-          p_notes: String(notes || '').trim() || null,
-        })
-      : await client.rpc('settle_showroom_sale_balance', {
-          p_sale_id: saleId,
-          p_amount: safeAmount,
-          p_mode: mode,
-          p_destination_account_id: mode === 'account' ? destinationAccountId : null,
-          p_notes: String(notes || '').trim() || null,
-        });
-
-    if (error) throw new Error(error.message || 'تعذر تسجيل التسوية.');
-    return data;
+    const options = await settlementService.getSettlementOptions({ targetType: 'sale', targetId: saleId });
+    const methods = options.settlementMechanisms
+      .find((mechanism) => mechanism.code === 'money_payment')?.paymentMethods || [];
+    const method = methods.find((candidate) => !candidate.requiresMoneyDestination
+      || candidate.moneyDestinations.some((destination) => destination.id === moneyDestinationId));
+    if (!method) throw new Error('لا توجد طريقة دفع معتمدة متوافقة مع مكان التحصيل.');
+    return settlementService.settleObligation({
+      targetType: 'sale',
+      targetId: saleId,
+      mechanism: 'money_payment',
+      amount: safeAmount,
+      paymentMethodId: method.id,
+      moneyDestinationId: method.requiresMoneyDestination ? moneyDestinationId : null,
+      notes,
+      idempotencyKey: globalThis.crypto?.randomUUID?.() || `${saleId}:${Date.now()}`,
+    });
   },
 
   async getSalesInvoiceSummary({ tenantId } = {}) {
@@ -568,19 +561,65 @@ export const accountantService = {
 
     const client = requireSupabase();
     const invoices = await fetchAllPages(() => client
-        .from('showroom_sales')
-        .select('id, customer_id, showroom_config_id, sale_number, sale_date, status, account_move_id, created_at')
+        .from('sales')
+        .select('id, customer_id, branch_id, sale_number, effective_sale_date, status, total_amount, is_historical, created_at')
         .eq('tenant_id', tenantId)
         .in('status', ['confirmed', 'pending_payment'])
-        .order('sale_date', { ascending: false })
+        .order('effective_sale_date', { ascending: false })
         .order('created_at', { ascending: false })
         .order('id', { ascending: false }));
 
     if (!invoices.length) return { invoices: [], count: 0, total: 0 };
 
+    const canonicalSaleIds = invoices.map((invoice) => invoice.id);
+    const canonicalLines = await fetchAllPages(() => client.from('sale_lines')
+      .select('id, sale_id, product_id, description, line_position')
+      .eq('tenant_id', tenantId)
+      .in('sale_id', canonicalSaleIds)
+      .order('line_position', { ascending: true }));
+    const canonicalProductIds = unique(canonicalLines.map((line) => line.product_id));
+    const canonicalProducts = canonicalProductIds.length
+      ? await fetchAllPages(() => client.from('product_products')
+        .select('id, display_name').eq('tenant_id', tenantId).in('id', canonicalProductIds))
+      : [];
+    const canonicalProductsById = byId(canonicalProducts);
+    const canonicalNamesBySale = new Map();
+    canonicalLines.forEach((line) => {
+      const names = canonicalNamesBySale.get(line.sale_id) || [];
+      const name = canonicalProductsById.get(line.product_id)?.display_name || line.description || 'منتج';
+      if (!names.includes(name)) names.push(name);
+      canonicalNamesBySale.set(line.sale_id, names);
+    });
+
+    const receiptRows = await Promise.all(invoices.map(async (invoice) => {
+      const receipt = await financialSalesContextService.getSaleReceiptContext({ tenantId, saleId: invoice.id });
+      return {
+        id: invoice.id,
+        saleNumber: receipt.display_number || invoice.sale_number || null,
+        saleDate: receipt.sale_date || invoice.effective_sale_date || invoice.created_at || null,
+        branchId: invoice.branch_id || null,
+        status: invoice.status,
+        historical: invoice.is_historical === true,
+        customerId: invoice.customer_id || null,
+        customerName: receipt.customer || 'عميل غير محدد',
+        productNames: canonicalNamesBySale.get(invoice.id) || [],
+        totalAmount: Number(receipt.receivable_amount ?? invoice.total_amount ?? 0),
+        paidAmount: Number(receipt.allocated_total || 0),
+        remainingAmount: Number(receipt.residual || 0),
+      };
+    }));
+    const canonicalOutstanding = receiptRows.filter((invoice) => invoice.remainingAmount > 0);
+    return {
+      invoices: canonicalOutstanding,
+      count: canonicalOutstanding.length,
+      total: canonicalOutstanding.reduce((sum, invoice) => sum + invoice.remainingAmount, 0),
+    };
+
+    /* istanbul ignore next -- unreachable compatibility shape retained until the accountant UI cleanup */
+
     const saleIds = invoices.map((invoice) => invoice.id);
     const linkedMoveIds = unique(invoices.map((invoice) => invoice.account_move_id));
-    const saleRefs = saleIds.map((saleId) => `showroom_sale:${saleId}`);
+    const saleRefs = [];
     const [moveIdResults, moveRefResults, receivableAccountId] = await Promise.all([
       Promise.all(chunks(linkedMoveIds).map((ids) => fetchAllPages(() => client
         .from('account_moves')
@@ -607,7 +646,7 @@ export const accountantService = {
     const moveBySaleId = new Map();
 
     invoices.forEach((invoice) => {
-      const move = movesById.get(invoice.account_move_id) || movesByRef.get(`showroom_sale:${invoice.id}`) || null;
+      const move = movesById.get(invoice.account_move_id) || null;
       if (move) moveBySaleId.set(invoice.id, move);
     });
 
@@ -666,7 +705,7 @@ export const accountantService = {
 
     const customersById = byId(customerResults.flat());
     const saleLineResults = await Promise.all(chunks(saleIds).map((ids) => fetchAllPages(() => client
-      .from('showroom_sale_lines')
+      .from('sale_lines')
       .select('id, sale_id, product_product_id, description, created_at')
       .eq('tenant_id', tenantId)
       .in('sale_id', ids)
@@ -704,7 +743,6 @@ export const accountantService = {
         id: invoice.id,
         saleNumber: invoice.sale_number || null,
         saleDate: invoice.sale_date || invoice.created_at || null,
-        showroomConfigId: invoice.showroom_config_id || null,
         status: invoice.status,
         customerId: invoice.customer_id || null,
         customerName: customersById.get(invoice.customer_id)?.name || 'عميل غير محدد',

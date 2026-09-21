@@ -120,6 +120,17 @@ test('Money Destinations is a canonical child of Financial Setup', () => {
   assert.doesNotMatch(nav, /settings\.money_destinations/);
 });
 
+test('a menu parent keeps its own route and expands children with a separate control', () => {
+  const nav = readFileSync(new URL('../workspace/components/SidebarNav.jsx', import.meta.url), 'utf8');
+  assert.match(nav, /if \(hasChildren\)[\s\S]*?<NavLink[\s\S]*?to=\{item\.href\}/);
+  assert.match(nav, /<button[\s\S]*?onClick=\{onToggle\}[\s\S]*?aria-expanded=\{isExpanded\}/);
+  assert.match(nav, /containsActiveHref\(item, activeHref\)/);
+  assert.match(nav, /if \(isBranchActive\) setIsExpanded\(true\)/);
+  const expandButton = nav.match(/<button\s+type="button"\s+onClick=\{onToggle\}[\s\S]*?<\/button>/)?.[0];
+  assert.ok(expandButton);
+  assert.doesNotMatch(expandButton, /\{content\}/);
+});
+
 test('Financial Setup is registered by canonical menu data without a local navigation entry', () => {
   const navigation = readFileSync(new URL('./settingsNavigation.js', import.meta.url), 'utf8');
   const page = readFileSync(new URL('./pages/SettingsPage.jsx', import.meta.url), 'utf8');

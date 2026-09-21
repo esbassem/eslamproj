@@ -179,21 +179,8 @@ export function CrmLeadDetailsPage() {
     }
   };
   const startSale = (saleType) => {
-    if (saleType === "financing" && !selectedApproval) {
-      setNotice("اختر موافقة التقسيط أولًا.");
-      return;
-    }
-    if (
-      saleType === "financing" &&
-      selectedApproval.approval_expiry_date &&
-      selectedApproval.approval_expiry_date <
-        new Date().toISOString().slice(0, 10) &&
-      !window.confirm(
-        "انتهت صلاحية الموافقة المختارة. هل تريد المتابعة رغم ذلك؟",
-      )
-    )
-      return;
-    navigate(`/app/showroom_point/new?leadId=${leadId}&saleType=${saleType}`);
+    void saleType;
+    setNotice("تم إيقاف CRM القديم مؤقتًا لحين إطلاق النظام الجديد.");
   };
   return (
     <section>
@@ -355,15 +342,6 @@ export function CrmLeadDetailsPage() {
             </p>
             <p>بواسطة: {lead.sold_by_name || "مستخدم"}</p>
           </div>
-          <Button
-            className="mt-3"
-            size="sm"
-            onClick={() =>
-              navigate(`/app/showroom_point/new?saleId=${lead.sale_id}`)
-            }
-          >
-            فتح عملية البيع
-          </Button>
         </Card>
       ) : null}
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.85fr)]">

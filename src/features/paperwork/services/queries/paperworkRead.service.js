@@ -82,7 +82,7 @@ export const paperworkReadService = {
     const request = await client.from('paperwork_requests').select('id,sale_id').eq('tenant_id', tenantId).eq('id', requestId).maybeSingle();
     if (request.error) throw request.error;
     if (!request.data) return null;
-    const sale = request.data.sale_id ? await client.from('showroom_sales').select('id,sale_number,total_amount').eq('tenant_id', tenantId).eq('id', request.data.sale_id).maybeSingle() : { data: null, error: null };
+    const sale = request.data.sale_id ? await client.from('sales').select('id,sale_number,total_amount').eq('tenant_id', tenantId).eq('id', request.data.sale_id).maybeSingle() : { data: null, error: null };
     if (sale.error) throw sale.error;
     return { requestId: request.data.id, saleId: sale.data?.id || null, saleNumber: sale.data?.sale_number || '', totalAmount: sale.data?.total_amount || 0 };
   },

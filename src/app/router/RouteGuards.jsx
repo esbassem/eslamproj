@@ -88,6 +88,6 @@ export function AppAccessRoute({ appCode, children }) {
     return <AppAccessDeniedPage />;
   }
 
-  return children;
+  return children ?? <Outlet />;
 }
 

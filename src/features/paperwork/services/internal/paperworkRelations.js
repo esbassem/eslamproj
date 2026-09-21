@@ -53,7 +53,7 @@ export async function loadPaperworkSaleLinesMap(client, tenantId, requests) {
   }
 
   const { data, error } = await client
-    .from('showroom_sale_lines')
+    .from('sale_lines')
     .select(SALE_LINE_COLUMNS)
     .eq('tenant_id', tenantId)
     .in('id', saleLineIds);
@@ -63,7 +63,7 @@ export async function loadPaperworkSaleLinesMap(client, tenantId, requests) {
   }
 
   return (data || []).reduce((map, line) => {
-    map.set(line.id, line);
+    map.set(line.id, { ...line, tracking_unit_id: line.historical_source?.[0]?.tracking_unit_id || null });
     return map;
   }, new Map());
 }

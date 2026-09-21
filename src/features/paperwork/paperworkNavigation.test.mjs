@@ -72,11 +72,11 @@ test('detail pages have direct-link fallbacks and URL-addressable request tabs',
   assert.match(request, /current\.set\("tab", item\.id\)/);
 });
 
-test('processors operational view has a contextual back to canonical requests', () => {
+test('processors operational view returns to the current canonical Paperwork root', () => {
   const home = read('./pages/PaperworkHomePage.jsx');
   const processors = read('./pages/PaperworkProcessorsPage.jsx');
   assert.match(home, /PAPERWORK_ROUTES\.processors[\s\S]*createPaperworkNavigationState\(location/);
-  assert.match(processors, /resolvePaperworkReturnContext\(location, PAPERWORK_ROUTES\.requests/);
+  assert.match(processors, /resolvePaperworkReturnContext\(location, PAPERWORK_ROUTES\.root/);
   assert.match(processors, /contextualBack=\{contextualBack\}/);
   assert.doesNotMatch(processors, /navigate\(-1\)/);
 });
@@ -96,7 +96,7 @@ test('paperwork header uses a compact navigation control and disables it at the 
 });
 
 test('canonical entity ownership comes from platform route metadata', () => {
-  assert.equal(getPlatformRouteMetadata(PAPERWORK_ROUTES.requestDetails('id')).section.to, PAPERWORK_ROUTES.root);
+  assert.equal(getPlatformRouteMetadata(PAPERWORK_ROUTES.requestDetails('id')).section.to, PAPERWORK_ROUTES.requests);
   assert.equal(getPlatformRouteMetadata(PAPERWORK_ROUTES.processorDetails('id')).section.to, PAPERWORK_ROUTES.processors);
   assert.equal(getPlatformRouteMetadata(PAPERWORK_ROUTES.documentDetails('id')).section.to, PAPERWORK_ROUTES.documents);
   const documentCrumbs = getCanonicalBreadcrumbs(PAPERWORK_ROUTES.documentDetails('id'), { currentLabel: 'مستند #55' });

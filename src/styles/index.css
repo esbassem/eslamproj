@@ -116,6 +116,99 @@ select {
   animation: sheet-bottom-out 95ms ease-in both;
 }
 
+.platform-side-sheet-overlay,
+.platform-side-sheet-content {
+  z-index: 40;
+}
+
+.platform-side-sheet-overlay {
+  background-color: rgb(15 23 42 / 24%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.platform-side-sheet-content {
+  box-shadow: 0 18px 45px -24px rgb(15 23 42 / 35%);
+}
+
+/* Keep dense record details proportional inside a constrained side surface.
+   The full-page SaleDetails view and nested portal dialogs remain unchanged. */
+.sale-details-compact {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.sale-details-compact h2 {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.sale-details-compact h3 {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.sale-details-compact .text-2xl {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.sale-details-compact .text-xl {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.sale-details-compact .text-lg {
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
+}
+
+.sale-details-compact .p-4,
+.sale-details-compact .p-6,
+.sale-details-compact .p-5 {
+  padding: 0.75rem;
+}
+
+.sale-details-compact .space-y-4 > :not([hidden]) ~ :not([hidden]),
+.sale-details-compact .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.75rem;
+}
+
+.sale-details-compact .gap-4,
+.sale-details-compact .gap-5,
+.sale-details-compact .gap-6 {
+  gap: 0.75rem;
+}
+
+.sale-details-compact .h-11 {
+  height: 2.25rem;
+}
+
+.sale-details-compact .min-h-14 {
+  min-height: 2.75rem;
+}
+
+.sale-details-compact .h-5.w-5 {
+  height: 1rem;
+  width: 1rem;
+}
+
+.platform-side-sheet-content.sheet-content-right[data-state='open'] {
+  animation: platform-sheet-right-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.platform-side-sheet-content.sheet-content-right[data-state='closed'] {
+  animation: platform-sheet-right-out 110ms ease-in both;
+}
+
+.platform-side-sheet-content.sheet-content-left[data-state='open'] {
+  animation: platform-sheet-left-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.platform-side-sheet-content.sheet-content-left[data-state='closed'] {
+  animation: platform-sheet-left-out 110ms ease-in both;
+}
+
 @keyframes sheet-overlay-in {
   from {
     opacity: 0;
@@ -178,6 +271,50 @@ select {
   }
 }
 
+@keyframes platform-sheet-right-in {
+  from {
+    opacity: 0;
+    transform: translate3d(20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes platform-sheet-right-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(20px, 0, 0);
+  }
+}
+
+@keyframes platform-sheet-left-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes platform-sheet-left-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(-20px, 0, 0);
+  }
+}
+
 @keyframes sheet-bottom-in {
   from {
     opacity: 0;
@@ -197,6 +334,17 @@ select {
   to {
     opacity: 0;
     transform: translate3d(0, 100%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-overlay[data-state],
+  .sheet-content-right[data-state],
+  .sheet-content-left[data-state],
+  .sheet-content-bottom[data-state],
+  .platform-side-sheet-content.sheet-content-right[data-state],
+  .platform-side-sheet-content.sheet-content-left[data-state] {
+    animation-duration: 1ms;
   }
 }
 
@@ -280,6 +428,32 @@ select {
 
 .cash-invoice-backdrop-exit {
   animation: cash-invoice-backdrop-exit 240ms ease-in forwards;
+}
+
+.sales-invoice-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.42) transparent;
+  scrollbar-gutter: stable both-edges;
+}
+
+.sales-invoice-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sales-invoice-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sales-invoice-scrollbar::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.42);
+  background-clip: content-box;
+}
+
+.sales-invoice-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(71, 85, 105, 0.62);
 }
 
 @media print {

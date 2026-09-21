@@ -442,7 +442,12 @@ export const receivablesApi = {
     if (!tenantId || !sourceId) return null;
 
     const client = requireSupabase();
-    const rows = await listByIds(client, 'showroom_sales', 'id, tenant_id, invoice_no, code, total_amount, created_at', [sourceId], tenantId);
-    return rows[0] ?? null;
+    const rows = await listByIds(client, 'sales', 'id, tenant_id, sale_number, total_amount, effective_sale_date, created_at, is_historical', [sourceId], tenantId);
+    const sale = rows[0];
+    return sale ? {
+      ...sale,
+      invoice_no: sale.sale_number,
+      code: sale.sale_number,
+    } : null;
   },
 };

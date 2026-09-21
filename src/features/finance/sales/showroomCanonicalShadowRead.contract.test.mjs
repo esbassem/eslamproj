@@ -2,66 +2,38 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const shadowRead = readFileSync(
-  new URL('../../../../supabase/tests/showroom_canonical_shadow_read_runtime.sql', import.meta.url),
-  'utf8',
-);
-const showroomService = readFileSync(
-  new URL('../../showroom/services/showroom.service.js', import.meta.url),
+const migration = readFileSync(
+  new URL('../../../../supabase/migrations/20260910130000_final_legacy_showroom_retirement.sql', import.meta.url),
   'utf8',
 );
 
-test('shadow read is session-local and contains no production DML', () => {
-  assert.match(shadowRead, /create temporary table shadow_showroom_snapshot/iu);
-  assert.match(shadowRead, /create function pg_temp\.compare_sale_posting/iu);
-  assert.doesNotMatch(shadowRead, /\b(insert into|update|delete from) public\./iu);
-  assert.doesNotMatch(
-    shadowRead,
-    /\b(?:perform|select)\s+public\.(?:post_financial_sale|acquire_financial_engine_binding|finalize_financial_engine_binding|bind_showroom_sale_to_legacy_engine)\s*\(/iu,
-  );
+test('retirement has an audited baseline gate and uses no cascading drops', () => {
+  assert.match(migration, /SHOWROOM_RETIREMENT_BASELINE_DRIFT/);
+  assert.match(migration, /SHOWROOM_RETIREMENT_EXTERNAL_FK_DATA_REMAINS/);
+  assert.match(migration, /lock table[\s\S]*access exclusive mode/iu);
+  assert.doesNotMatch(migration, /drop\s+(?:table|function)[^;]*\bcascade\b/iu);
 });
 
-test('canonical expectation reuses the posting contract resolvers', () => {
-  assert.match(
-    shadowRead,
-    /public\.resolve_functional_account\(\s*context\.tenant_id, 'customer_receivable', context\.branch_id/iu,
-  );
-  assert.match(
-    shadowRead,
-    /public\.resolve_functional_account\(\s*context\.tenant_id, 'sales_revenue', context\.branch_id/iu,
-  );
-  assert.match(
-    shadowRead,
-    /public\.resolve_financial_journal\(\s*context\.tenant_id, 'sale', context\.branch_id, null/iu,
-  );
-  assert.match(shadowRead, /public\.assert_financial_posting_date/iu);
+test('retirement preserves canonical provenance, ledger, paperwork archive, and inventory references', () => {
+  assert.match(migration, /sale_historical_sources\) <> 218/);
+  assert.match(migration, /sale_line_historical_sources\) <> 218/);
+  assert.match(migration, /paperwork_legacy_sale_sources\) <> 2/);
+  assert.match(migration, /reference_type = 'showroom_sale'\) <> 63/);
+  assert.doesNotMatch(migration, /(?:delete from|update) public\.(?:sales|sale_lines|sale_historical_sources|sale_line_historical_sources|account_moves|account_move_lines|financial_payments|account_partial_reconcile|stock_moves|paperwork_legacy_sale_sources)/iu);
 });
 
-test('Showroom adapter emits commercial facts and Legacy extraction uses the bound move only', () => {
-  const adapter = shadowRead.match(
-    /create temporary table shadow_showroom_snapshot as[\s\S]*?create temporary table shadow_exclusions/iu,
-  )?.[0] ?? '';
-  assert.match(adapter, /binding\.legacy_move_id/iu);
-  assert.match(adapter, /sale\.customer_id/iu);
-  assert.match(adapter, /sale\.total_amount/iu);
-  assert.match(adapter, /sale\.sale_date/iu);
-  assert.doesNotMatch(adapter, /receivable_account_id|revenue_account_id|journal_id/iu);
-  assert.match(
-    shadowRead,
-    /move\.id = snapshot\.legacy_move_id/iu,
-  );
+test('all nine operational tables and 28 owned functions are explicitly retired', () => {
+  const tableDrops = migration.match(/drop table public\.showroom_[a-z_]+;/gu) ?? [];
+  const functionDrops = migration.match(/drop function public\.[a-z_]*showroom[a-z_]*\([^;]*\);/gu) ?? [];
+  assert.equal(tableDrops.length, 9);
+  assert.equal(functionDrops.length, 28);
+  assert.match(migration, /drop column original_sale_id/);
+  assert.match(migration, /drop column original_sale_line_id/);
+  assert.match(migration, /drop column sale_return_operation_id/);
 });
 
-test('semantic adoption, policy observation, tenant isolation, and zero-write proof are explicit', () => {
-  assert.match(shadowRead, /mapping\.canonical_semantic_key/iu);
-  assert.match(shadowRead, /H_CLOSED_PERIOD_IS_OBSERVATION_ONLY/iu);
-  assert.match(shadowRead, /SHADOW_COMPARE_CROSS_TENANT_FORBIDDEN/iu);
-  assert.match(shadowRead, /SHADOW_READ_ZERO_WRITE_PROOF_FAILED/iu);
-  assert.match(shadowRead, /financial_engine_bindings[\s\S]*?fingerprint/iu);
-  assert.match(shadowRead, /showroom_sale_linkage/iu);
-});
-
-test('Showroom frontend remains on Legacy confirmation and exposes no shadow reader', () => {
-  assert.match(showroomService, /rpc\(["']complete_showroom_sale["']/u);
-  assert.doesNotMatch(showroomService, /post_financial_sale|canonical_shadow|shadow_read/iu);
+test('generic Financial Core retains canonical and ordinary authorization paths', () => {
+  assert.match(migration, /is_trusted_sales_confirmation_context/);
+  assert.match(migration, /can_perform_financial_action\(uuid,text,uuid,text,uuid,boolean\)/);
+  assert.match(migration, /SHOWROOM_POSTING_CAPABILITY_DETACH_NOT_APPLIED/);
 });

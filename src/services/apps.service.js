@@ -3,6 +3,7 @@ import { ROUTES } from '@/core/config/routes.config';
 import { requireSupabase } from '@/core/lib/supabase';
 import { normalizeModuleRoute } from '@/features/modules/modules.navigation';
 import { filterAccessibleInstalledApps } from '@/core/authorization/appAccess';
+import { createCanonicalSalesNavigationMenus } from '@/features/sales/routes/salesNavigation';
 import { getAppBasePath, normalizeAppCode } from '@/utils/appResolver';
 
 const APP_COLUMNS = 'id, technical_name, name, description, icon, icon_color, route_path, application, technical, installable, is_removable, active, sequence';
@@ -137,6 +138,10 @@ export function buildAppMenusFromWorkspace(appCode, apps, installedMenus, option
   const app = (apps ?? []).find((item) => normalizeAppCode(item.code) === normalizedAppCode);
   if (!app) return [];
 
+  if (normalizedAppCode === 'sales') {
+    return buildMenuTree(createCanonicalSalesNavigationMenus(app));
+  }
+
   const menus = (installedMenus ?? [])
     .filter((menu) => menu.moduleId === app.id || normalizeAppCode(menu.moduleTechnicalName) === normalizedAppCode)
     .map((menu) => normalizeMenu(menu, app))
@@ -147,12 +152,15 @@ export function buildAppMenusFromWorkspace(appCode, apps, installedMenus, option
 
 function filterMenusByAppRules(menus, appCode, options = {}) {
   if (appCode === 'paperwork') {
-    const primaryCodes = new Set(['paperwork.root', 'paperwork.requests', 'paperwork.documents']);
+    const primaryCodes = new Set(['paperwork.root', 'paperwork.overview', 'paperwork.requests', 'paperwork.documents']);
     return menus
       .filter((menu) => primaryCodes.has(menu.code))
       .map((menu) => {
+        if (menu.code === 'paperwork.overview') {
+          return { ...menu, name: 'الرئيسية', href: '/apps/paperwork', routePath: '/apps/paperwork', active: true };
+        }
         if (menu.code === 'paperwork.requests') {
-          return { ...menu, name: 'طلبات الأوراق', href: '/apps/paperwork', routePath: '/apps/paperwork', active: true };
+          return { ...menu, name: 'طلبات الأوراق', href: '/apps/paperwork/requests', routePath: '/apps/paperwork/requests', active: true };
         }
         if (menu.code === 'paperwork.documents') {
           return { ...menu, name: 'المستندات', href: '/apps/paperwork/documents', routePath: '/apps/paperwork/documents', active: true };
@@ -297,6 +305,10 @@ export async function getAppMenus(appCode, options = {}) {
 
   if (!app) {
     return [];
+  }
+
+  if (normalizedAppCode === 'sales') {
+    return buildMenuTree(createCanonicalSalesNavigationMenus(app));
   }
 
   const client = requireSupabase();

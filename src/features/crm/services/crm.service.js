@@ -131,16 +131,7 @@ export const crmService = {
               .eq("id", lead.sold_by)
               .maybeSingle()
           : Promise.resolve({ data: null }),
-        lead.sale_id
-          ? client
-              .from("showroom_sales")
-              .select(
-                "id,sale_number,sale_date,status,crm_installment_application_id",
-              )
-              .eq("tenant_id", tenantId)
-              .eq("id", lead.sale_id)
-              .maybeSingle()
-          : Promise.resolve({ data: null }),
+        Promise.resolve({ data: null, error: null }),
       ],
     );
     if (cancelledUserResult.error || soldUserResult.error || saleResult.error)

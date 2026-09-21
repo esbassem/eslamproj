@@ -5,10 +5,8 @@ import { getAppBasePath } from './appResolver.js';
 test('registered applications launch through their canonical registry routes', () => {
   assert.equal(getAppBasePath('paperwork'), '/apps/paperwork');
   assert.equal(getAppBasePath('products'), '/apps/inventory');
-  assert.equal(getAppBasePath('crm'), '/apps/crm');
   assert.equal(getAppBasePath('accountant_app'), '/apps/accountant');
   assert.equal(getAppBasePath('moto_customer_care'), '/app/moto-customer-care/sales');
-  assert.equal(getAppBasePath('showroom_point'), '/app/showroom_point');
 });
 
 test('unregistered dynamic applications retain the generic fallback', () => {

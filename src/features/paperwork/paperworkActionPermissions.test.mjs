@@ -22,14 +22,11 @@ test('request and document actions use action permissions instead of owner rende
   for(const code of ['CANCEL','CORRECT','AUTHORIZE_RELEASE']) assert.match(documents,new RegExp(`PAPERWORK_PERMISSIONS\\.${code}`));
 });
 
-test('receive UI and Showroom creation use the approved capabilities',()=>{
+test('receive UI uses the approved capabilities after Showroom retirement',()=>{
   const manualReceipt=read('src/features/paperwork/manual-receipt/PaperworkManualReceipt.jsx');
   const processor=read('src/features/paperwork/pages/PaperworkProcessorDetailsPage.jsx');
-  const showroom=read('src/features/showroom/pages/ShowroomSellPage.jsx');
   assert.match(manualReceipt,/PAPERWORK_PERMISSIONS\.RECEIVE/);
   assert.match(processor,/PAPERWORK_PERMISSIONS\.RECEIVE/);
-  assert.match(showroom,/PAPERWORK_PERMISSIONS\.ACCESS/);
-  assert.match(showroom,/PAPERWORK_PERMISSIONS\.SEND/);
 });
 
 test('permission denials use one Arabic error mapper',()=>{
