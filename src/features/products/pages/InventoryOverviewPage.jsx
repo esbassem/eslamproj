@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Boxes, History, MapPin, Package, ShieldCheck, ShoppingCart } from 'lucide-react';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
+import { PageHeader } from '@/core/ui/page-header';
+import { getCanonicalBreadcrumbs } from '@/core/navigation/platformNavigation';
 import { inventoryService } from '@/features/inventory/api/inventory.api';
 import { productsService } from '@/features/products/api/products.api';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
@@ -37,10 +39,11 @@ export function InventoryOverviewPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
-      <header>
-        <h1 className="text-2xl font-black text-slate-950">نظرة عامة على المخزون</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">ملخص المنتجات والقطع الفريدة وأحدث الحركات المسجلة.</p>
-      </header>
+      <PageHeader
+        title="نظرة عامة على المخزون"
+        description="ملخص المنتجات والقطع الفريدة وأحدث الحركات المسجلة."
+        breadcrumbs={getCanonicalBreadcrumbs('/apps/inventory')}
+      />
       {state.error ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{state.error}</div> : null}
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="إجمالي المنتجات" value={state.products} icon={Package} tone="text-slate-700 bg-slate-100" />

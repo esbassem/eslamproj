@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+
+const sql = readFileSync(new URL('../../../supabase/migrations/20260907160000_canonical_sale_cancellation.sql', import.meta.url), 'utf8');
+const command = sql.slice(sql.indexOf('create or replace function public.cancel_sale'));
+const eligibility = sql.slice(sql.indexOf('create or replace function public.get_sale_cancellation_eligibility'), sql.indexOf('create or replace function public.cancel_sale'));
+const reversal = sql.slice(sql.indexOf('create or replace function public.reverse_financial_sale'), sql.indexOf('create or replace function public.guard_canonical_sale_header'));
+
+test('1. Confirmed unpaid undelivered Sale has an explicit eligibility path', () => { assert.match(eligibility, /v_sale\.status <> 'confirmed'/); assert.match(eligibility, /v_has_delivery/); assert.match(eligibility, /v_has_settlement/); });
+test('2. Draft is rejected by the confirmed cancellation command', () => { assert.match(command, /v_sale\.status <> 'confirmed'/); assert.match(command, /SALE_NOT_CONFIRMED/); });
+test('3. Same completed command returns its stored result safely', () => { assert.match(command, /return v_command\.result \|\| jsonb_build_object\('idempotent_replay', true\)/); });
+test('4. Partial delivery is detected from positive delivery-line quantity', () => { assert.match(eligibility, /sale_delivery_lines[\s\S]*quantity > 0/); });
+test('5. Delivered reservation quantity blocks cancellation', () => { assert.match(eligibility, /inventory_reservation_lines[\s\S]*delivered_quantity > 0/); });
+test('6. Recorded settlement facts block cancellation', () => { assert.match(eligibility, /obligation_settlements/); });
+test('7. Partial payment is detected from receivable residual', () => { assert.match(eligibility, /v_posting\.amount - v_receivable_residual/); assert.match(reversal, /v_residual <> v_posting\.amount/); });
+test('8. Tenant is derived only from current authenticated context', () => { assert.match(command, /v_tenant_id uuid := public\.current_tenant_id\(\)/); assert.doesNotMatch(command, /p_tenant/); });
+test('9. Branch scope is enforced on the locked Sale', () => { assert.match(command, /has_branch_access\(v_sale\.branch_id\)/); });
+test('10. sales.cancel and sales.access are required without roles', () => { assert.match(command, /sales\.access/); assert.match(command, /sales\.cancel/); assert.doesNotMatch(command, /role_name|admin|manager/i); });
+test('11. Existing Inventory Core release command is called', () => { assert.match(command, /release_inventory_reservation/); });
+test('12. Serialized release still restores canonical and legacy state projections', () => { assert.match(sql, /state, scope,[\s\S]*invariants remain owned by Inventory Core/); assert.match(sql, /release_inventory_reservation/); });
+test('13. Quantity release remains owned by the canonical Inventory command', () => { assert.match(sql, /Reuse Inventory Core's release command/); assert.doesNotMatch(command, /update public\.inventory_reservation_lines/); });
+test('14. Financial Sale Posting is reversed through the generic Financial primitive', () => { assert.match(command, /reverse_financial_sale/); assert.match(reversal, /create_reversing_account_move/); });
+test('15. Original posting and move are retained', () => { assert.doesNotMatch(reversal, /delete from public\.(financial_sale_postings|account_moves)/); assert.match(reversal, /v_posting\.account_move_id/); });
+test('16. Sale becomes cancelled only after Financial and Inventory operations', () => { const statusUpdate = command.indexOf("update public.sales set\n    status = 'cancelled'"); assert.ok(command.indexOf('reverse_financial_sale') < command.indexOf('release_inventory_reservation')); assert.ok(command.indexOf('release_inventory_reservation') < statusUpdate); });
+test('17. Original Sale number is returned and never rewritten', () => { assert.match(command, /'sale_number', v_sale\.sale_number/); assert.doesNotMatch(command, /set[\s\S]{0,80}sale_number/); });
+test('18. Sale lines are never mutated by cancellation', () => { assert.doesNotMatch(command, /(update|delete from) public\.sale_lines/); });
+test('19. Required business reason is stored in immutable event and reversal', () => { assert.match(command, /v_reason is null/); assert.match(command, /'reason', v_reason/); assert.match(reversal, /v_reason/); });
+test('20. Idempotency prevents duplicate reversal and event', () => { assert.match(command, /on conflict \(tenant_id, command_type, idempotency_key\) do nothing/); assert.match(reversal, /FINANCIAL_SALE_POSTING_ALREADY_REVERSED/); });
+test('21. Expected version is checked under row lock and incremented', () => { assert.match(command, /for update/); assert.match(command, /v_sale\.version <> p_expected_version/); assert.match(command, /v_new_version := v_sale\.version \+ 1/); });
+test('22. Financial failure occurs before Inventory or Sale mutations', () => { assert.ok(command.indexOf('reverse_financial_sale') < command.indexOf('release_inventory_reservation')); assert.ok(command.indexOf('reverse_financial_sale') < command.indexOf('update public.sales set')); });
+test('23. Inventory failure occurs before status and event, preserving atomic rollback', () => { assert.ok(command.indexOf('release_inventory_reservation') < command.indexOf('update public.sales set')); assert.ok(command.indexOf('release_inventory_reservation') < command.indexOf('insert into public.sale_events')); assert.match(sql, /^begin;[\s\S]*commit;\s*$/); });

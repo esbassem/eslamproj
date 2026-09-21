@@ -1,4 +1,11 @@
 import { requireSupabase } from '@/core/lib/supabase';
+import { resolveFunctionalAccount } from '@/features/finance/accounts/api/functionalAccounts.api';
+import { financialSalesContextService } from '@/features/finance/sales/financialSalesContext.service';
+import { settlementService } from '@/features/settlement';
+import {
+  getAllowedCollectionDestinations,
+  getMoneyDestinationSelection,
+} from '@/features/finance/money-destinations/moneyDestinations.service';
 
 const TENANT_FILES_BUCKET = 'tenant-files';
 
@@ -85,6 +92,7 @@ function assertImage(file) {
 }
 
 export const accountantService = {
+  getAllowedCollectionDestinations,
   async getTemporaryAccounts({ tenantId } = {}) {
     requireTenantId(tenantId);
 
@@ -184,20 +192,15 @@ export const accountantService = {
     if (typeResult.error) throw typeResult.error;
     if (!typeResult.data?.id) throw new Error('نوع الحساب المختار غير مستخدم في دليل حسابات الشركة.');
 
-    const { data, error } = await client
-      .from('account_accounts')
-      .insert({
-        tenant_id: tenantId,
-        group_id: groupId,
-        code: normalizedCode,
-        name: normalizedName,
-        account_type: accountType,
-        reconcile: Boolean(reconcile),
-        active: Boolean(active),
-        responsible_user_id: null,
-      })
-      .select('id, group_id, code, name, account_type, reconcile, active')
-      .single();
+    const { data, error } = await client.rpc('create_temporary_account', {
+      p_tenant_id: tenantId,
+      p_group_id: groupId,
+      p_code: normalizedCode,
+      p_name: normalizedName,
+      p_account_type: accountType,
+      p_reconcile: Boolean(reconcile),
+      p_active: Boolean(active),
+    });
 
     if (error) {
       if (error.code === '23505') throw new Error('كود الحساب مستخدم بالفعل، اختر كودًا آخر.');
@@ -238,29 +241,53 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    return fetchAllPages(() => client
+    const accounts = await fetchAllPages(() => client
       .from('account_accounts')
       .select('id, code, name, account_type')
       .eq('tenant_id', tenantId)
       .eq('active', true)
       .order('code', { ascending: true })
       .order('id', { ascending: true }));
+    const [customerResult, entityResult] = await Promise.allSettled([
+      resolveFunctionalAccount({ tenantId, role: 'customer_receivable' }),
+      resolveFunctionalAccount({ tenantId, role: 'payment_entity_receivable' }),
+    ]);
+    const rolesByAccountId = new Map([
+      [customerResult.status === 'fulfilled' ? customerResult.value : null, 'customer_receivable'],
+      [entityResult.status === 'fulfilled' ? entityResult.value : null, 'payment_entity_receivable'],
+    ].filter(([accountId]) => accountId));
+    return accounts.map((account) => ({
+      ...account,
+      functional_role: rolesByAccountId.get(account.id) || null,
+    }));
   },
 
   async getCashLocationsSummary({ tenantId } = {}) {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    const { data, error } = await client
+    const [selection, legacyResult] = await Promise.all([
+      getMoneyDestinationSelection({
+        tenantId,
+        permissionCode: 'financial.audit.view',
+        accessType: 'view',
+        destinationTypes: [
+          'cashbox', 'bank', 'employee_cash_custody', 'pos_drawer', 'wallet',
+        ],
+      }),
+      client
       .from('account_accounts')
       .select('id, code, name, account_type, active, responsible_user_id')
       .eq('tenant_id', tenantId)
       .eq('active', true)
-      .order('code', { ascending: true });
+      .is('money_destination_id', null)
+      .order('code', { ascending: true }),
+    ]);
+    if (legacyResult.error) throw legacyResult.error;
 
-    if (error) throw error;
-
-    const cashAccounts = (data || [])
+    // Explicit reporting adapter: preserve visible historical balances until
+    // controlled tenant-by-tenant legacy cutover.
+    const legacyAccounts = (legacyResult.data || [])
       .filter((account) => {
         const code = String(account.code || '').trim();
         const type = String(account.account_type || '').toLowerCase();
@@ -268,12 +295,26 @@ export const accountantService = {
       })
       .map((account) => ({
         ...account,
+        accountId: account.id,
+        destinationId: null,
+        source: 'legacy',
         kind: account.code === '111001'
           ? 'main'
           : account.responsible_user_id
             ? 'custody'
             : 'cash',
       }));
+    const canonicalAccounts = selection.destinations.map((destination) => ({
+      id: destination.destination_id,
+      accountId: destination.ledger_account_id,
+      destinationId: destination.destination_id,
+      code: null,
+      name: destination.destination_name,
+      responsible_user_id: destination.responsible_user_id,
+      source: 'canonical',
+      kind: destination.destination_type,
+    }));
+    const cashAccounts = [...canonicalAccounts, ...legacyAccounts];
 
     if (!cashAccounts.length) {
       return { totalBalance: 0, locations: [] };
@@ -283,7 +324,7 @@ export const accountantService = {
       .from('account_move_lines')
       .select('id, account_id, debit, credit, account_move:account_moves!inner(state)')
       .eq('tenant_id', tenantId)
-      .in('account_id', cashAccounts.map((account) => account.id))
+      .in('account_id', cashAccounts.map((account) => account.accountId))
       .eq('account_move.state', 'posted')
       .order('id', { ascending: true })));
 
@@ -295,11 +336,14 @@ export const accountantService = {
 
     const locations = cashAccounts.map((account) => ({
       id: account.id,
+      accountId: account.accountId,
+      destinationId: account.destinationId,
+      source: account.source,
       code: account.code,
       name: account.name,
       kind: account.kind,
       responsibleUserId: account.responsible_user_id || null,
-      balance: Math.round((balancesByAccountId.get(account.id) || 0) * 100) / 100,
+      balance: Math.round((balancesByAccountId.get(account.accountId) || 0) * 100) / 100,
     }));
 
     return {
@@ -451,12 +495,16 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
+    const receivableAccountId = await resolveFunctionalAccount({
+      tenantId,
+      role: 'customer_receivable',
+    });
     return fetchAllPages(() => client
       .from('account_accounts')
       .select('id, code, name, account_type')
       .eq('tenant_id', tenantId)
       .eq('active', true)
-      .neq('code', '114001')
+      .neq('id', receivableAccountId)
       .order('code', { ascending: true })
       .order('id', { ascending: true }));
   },
@@ -466,6 +514,7 @@ export const accountantService = {
     saleId,
     amount,
     mode,
+    moneyDestinationId = null,
     destinationAccountId = null,
     openCreditAllocations = [],
     notes = '',
@@ -486,26 +535,25 @@ export const accountantService = {
     if (mode === 'advance_credit' && !allocations.length) throw new Error('اختر اعتمادًا واحدًا على الأقل.');
 
     const client = requireSupabase();
-    if (mode === 'advance_credit') {
-      const { data, error } = await client.rpc('settle_showroom_sale_with_open_credits', {
-        p_tenant_id: tenantId,
-        p_sale_id: saleId,
-        p_allocations: allocations,
-      });
-      if (error) throw new Error(error.message || 'تعذر استخدام رصيد العميل.');
-      return data;
+    if (mode === 'advance_credit' || destinationAccountId) {
+      throw new Error('استخدم شاشة التحصيل الموحدة لاختيار طريقة الدفع المعتمدة.');
     }
-
-    const { data, error } = await client.rpc('settle_showroom_sale_balance', {
-      p_sale_id: saleId,
-      p_amount: safeAmount,
-      p_mode: mode,
-      p_destination_account_id: mode === 'account' ? destinationAccountId : null,
-      p_notes: String(notes || '').trim() || null,
+    const options = await settlementService.getSettlementOptions({ targetType: 'sale', targetId: saleId });
+    const methods = options.settlementMechanisms
+      .find((mechanism) => mechanism.code === 'money_payment')?.paymentMethods || [];
+    const method = methods.find((candidate) => !candidate.requiresMoneyDestination
+      || candidate.moneyDestinations.some((destination) => destination.id === moneyDestinationId));
+    if (!method) throw new Error('لا توجد طريقة دفع معتمدة متوافقة مع مكان التحصيل.');
+    return settlementService.settleObligation({
+      targetType: 'sale',
+      targetId: saleId,
+      mechanism: 'money_payment',
+      amount: safeAmount,
+      paymentMethodId: method.id,
+      moneyDestinationId: method.requiresMoneyDestination ? moneyDestinationId : null,
+      notes,
+      idempotencyKey: globalThis.crypto?.randomUUID?.() || `${saleId}:${Date.now()}`,
     });
-
-    if (error) throw new Error(error.message || 'تعذر تسجيل التسوية.');
-    return data;
   },
 
   async getSalesInvoiceSummary({ tenantId } = {}) {
@@ -513,20 +561,66 @@ export const accountantService = {
 
     const client = requireSupabase();
     const invoices = await fetchAllPages(() => client
-        .from('showroom_sales')
-        .select('id, customer_id, showroom_config_id, sale_number, sale_date, status, account_move_id, created_at')
+        .from('sales')
+        .select('id, customer_id, branch_id, sale_number, effective_sale_date, status, total_amount, is_historical, created_at')
         .eq('tenant_id', tenantId)
         .in('status', ['confirmed', 'pending_payment'])
-        .order('sale_date', { ascending: false })
+        .order('effective_sale_date', { ascending: false })
         .order('created_at', { ascending: false })
         .order('id', { ascending: false }));
 
     if (!invoices.length) return { invoices: [], count: 0, total: 0 };
 
+    const canonicalSaleIds = invoices.map((invoice) => invoice.id);
+    const canonicalLines = await fetchAllPages(() => client.from('sale_lines')
+      .select('id, sale_id, product_id, description, line_position')
+      .eq('tenant_id', tenantId)
+      .in('sale_id', canonicalSaleIds)
+      .order('line_position', { ascending: true }));
+    const canonicalProductIds = unique(canonicalLines.map((line) => line.product_id));
+    const canonicalProducts = canonicalProductIds.length
+      ? await fetchAllPages(() => client.from('product_products')
+        .select('id, display_name').eq('tenant_id', tenantId).in('id', canonicalProductIds))
+      : [];
+    const canonicalProductsById = byId(canonicalProducts);
+    const canonicalNamesBySale = new Map();
+    canonicalLines.forEach((line) => {
+      const names = canonicalNamesBySale.get(line.sale_id) || [];
+      const name = canonicalProductsById.get(line.product_id)?.display_name || line.description || 'منتج';
+      if (!names.includes(name)) names.push(name);
+      canonicalNamesBySale.set(line.sale_id, names);
+    });
+
+    const receiptRows = await Promise.all(invoices.map(async (invoice) => {
+      const receipt = await financialSalesContextService.getSaleReceiptContext({ tenantId, saleId: invoice.id });
+      return {
+        id: invoice.id,
+        saleNumber: receipt.display_number || invoice.sale_number || null,
+        saleDate: receipt.sale_date || invoice.effective_sale_date || invoice.created_at || null,
+        branchId: invoice.branch_id || null,
+        status: invoice.status,
+        historical: invoice.is_historical === true,
+        customerId: invoice.customer_id || null,
+        customerName: receipt.customer || 'عميل غير محدد',
+        productNames: canonicalNamesBySale.get(invoice.id) || [],
+        totalAmount: Number(receipt.receivable_amount ?? invoice.total_amount ?? 0),
+        paidAmount: Number(receipt.allocated_total || 0),
+        remainingAmount: Number(receipt.residual || 0),
+      };
+    }));
+    const canonicalOutstanding = receiptRows.filter((invoice) => invoice.remainingAmount > 0);
+    return {
+      invoices: canonicalOutstanding,
+      count: canonicalOutstanding.length,
+      total: canonicalOutstanding.reduce((sum, invoice) => sum + invoice.remainingAmount, 0),
+    };
+
+    /* istanbul ignore next -- unreachable compatibility shape retained until the accountant UI cleanup */
+
     const saleIds = invoices.map((invoice) => invoice.id);
     const linkedMoveIds = unique(invoices.map((invoice) => invoice.account_move_id));
-    const saleRefs = saleIds.map((saleId) => `showroom_sale:${saleId}`);
-    const [moveIdResults, moveRefResults, receivableAccountsResult] = await Promise.all([
+    const saleRefs = [];
+    const [moveIdResults, moveRefResults, receivableAccountId] = await Promise.all([
       Promise.all(chunks(linkedMoveIds).map((ids) => fetchAllPages(() => client
         .from('account_moves')
         .select('id, ref')
@@ -543,15 +637,8 @@ export const accountantService = {
         .eq('state', 'posted')
         .in('ref', refs)
         .order('id', { ascending: true })))),
-      client
-        .from('account_accounts')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('code', '114001')
-        .eq('active', true),
+      resolveFunctionalAccount({ tenantId, role: 'customer_receivable' }),
     ]);
-
-    if (receivableAccountsResult.error) throw receivableAccountsResult.error;
 
     const accountingMoves = [...moveIdResults, ...moveRefResults].flat();
     const movesById = byId(accountingMoves);
@@ -559,12 +646,12 @@ export const accountantService = {
     const moveBySaleId = new Map();
 
     invoices.forEach((invoice) => {
-      const move = movesById.get(invoice.account_move_id) || movesByRef.get(`showroom_sale:${invoice.id}`) || null;
+      const move = movesById.get(invoice.account_move_id) || null;
       if (move) moveBySaleId.set(invoice.id, move);
     });
 
     const postedMoveIds = unique([...moveBySaleId.values()].map((move) => move.id));
-    const receivableAccountIds = (receivableAccountsResult.data || []).map((account) => account.id);
+    const receivableAccountIds = [receivableAccountId];
     if (!postedMoveIds.length || !receivableAccountIds.length) {
       return { invoices: [], count: 0, total: 0 };
     }
@@ -618,7 +705,7 @@ export const accountantService = {
 
     const customersById = byId(customerResults.flat());
     const saleLineResults = await Promise.all(chunks(saleIds).map((ids) => fetchAllPages(() => client
-      .from('showroom_sale_lines')
+      .from('sale_lines')
       .select('id, sale_id, product_product_id, description, created_at')
       .eq('tenant_id', tenantId)
       .in('sale_id', ids)
@@ -656,7 +743,6 @@ export const accountantService = {
         id: invoice.id,
         saleNumber: invoice.sale_number || null,
         saleDate: invoice.sale_date || invoice.created_at || null,
-        showroomConfigId: invoice.showroom_config_id || null,
         status: invoice.status,
         customerId: invoice.customer_id || null,
         customerName: customersById.get(invoice.customer_id)?.name || 'عميل غير محدد',
@@ -678,22 +764,16 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    const { data: account, error: accountError } = await client
-      .from('account_accounts')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('code', '114002')
-      .eq('active', true)
-      .maybeSingle();
-
-    if (accountError) throw accountError;
-    if (!account?.id) return [];
+    const accountId = await resolveFunctionalAccount({
+      tenantId,
+      role: 'payment_entity_receivable',
+    });
 
     const { data: lines, error: linesError } = await client
       .from('account_move_lines')
       .select('id, move_id, partner_id, debit, credit, created_at, account_move:account_moves!inner(state)')
       .eq('tenant_id', tenantId)
-      .eq('account_id', account.id)
+      .eq('account_id', accountId)
       .eq('account_move.state', 'posted')
       .ilike('label', 'اعتماد دفعة من جهة%')
       .order('created_at', { ascending: false })
@@ -753,22 +833,16 @@ export const accountantService = {
     requireTenantId(tenantId);
 
     const client = requireSupabase();
-    const { data: account, error: accountError } = await client
-      .from('account_accounts')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('code', '114002')
-      .eq('active', true)
-      .maybeSingle();
-
-    if (accountError) throw accountError;
-    if (!account?.id) return 0;
+    const accountId = await resolveFunctionalAccount({
+      tenantId,
+      role: 'payment_entity_receivable',
+    });
 
     const { data: lines, error: linesError } = await client
       .from('account_move_lines')
       .select('debit, credit, account_move:account_moves!inner(state)')
       .eq('tenant_id', tenantId)
-      .eq('account_id', account.id)
+      .eq('account_id', accountId)
       .eq('account_move.state', 'posted')
       .ilike('label', 'اعتماد دفعة من جهة%');
 

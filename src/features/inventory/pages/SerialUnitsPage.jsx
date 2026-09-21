@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Eye, Hash, Search } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/core/ui/badge';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
+import { PageHeader } from '@/core/ui/page-header';
+import { getCanonicalBreadcrumbs } from '@/core/navigation/platformNavigation';
 import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetHeader, SheetTitle } from '@/core/ui/sheet';
 import { inventoryService } from '@/features/inventory/api/inventory.api';
 import { CompleteTrackingUnitWizard } from '@/features/inventory/components/CompleteTrackingUnitWizard';
@@ -23,6 +26,12 @@ const DATA_STATUS_OPTIONS = [
 export function SerialUnitsPage() {
   const { tenant } = useWorkspace();
   const tenantId = tenant?.id;
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const paperworkReturnTo = searchParams.get('paperworkFlow') === 'manual-receipt'
+    && searchParams.get('returnTo') === '/apps/paperwork?flow=manual-receipt'
+    ? searchParams.get('returnTo')
+    : '';
   const [filters, setFilters] = useState({ productId: 'all', status: 'all', dataStatus: 'all', search: '' });
   const [page, setPage] = useState(1);
   const [completionUnit, setCompletionUnit] = useState(null);
@@ -37,6 +46,10 @@ export function SerialUnitsPage() {
   const visibleUnits = filteredUnits.slice((Math.min(page, pageCount) - 1) * PAGE_SIZE, Math.min(page, pageCount) * PAGE_SIZE);
 
   const updateFilter = (key, value) => { setPage(1); setFilters((current) => ({ ...current, [key]: value })); };
+  const returnUnitToPaperwork = (unit) => {
+    if (!paperworkReturnTo || !unit?.id) return;
+    navigate(paperworkReturnTo, { state: { paperworkTrackingUnit: unit } });
+  };
   const openDetails = async (unit) => {
     setDetails({ open: true, unit, data: null, loading: true, error: '' });
     try {
@@ -48,7 +61,12 @@ export function SerialUnitsPage() {
   };
 
   return <div className="space-y-5" dir="rtl">
-    <header><h1 className="text-2xl font-black text-slate-950">القطع الفريدة</h1><p className="mt-1 text-sm font-semibold text-slate-500">كل وحدة فعلية ذات رقم شاسيه أو هوية مستقلة، مرتبطة بتعريف المنتج.</p></header>
+    <PageHeader
+      title="القطع الفريدة"
+      description="كل وحدة فعلية ذات رقم شاسيه أو هوية مستقلة، مرتبطة بتعريف المنتج."
+      breadcrumbs={getCanonicalBreadcrumbs('/apps/inventory/unique-units')}
+    />
+    {paperworkReturnTo ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm"><span className="font-black text-blue-950">اختر قطعة مكتملة للعودة إلى استلام أوراق الملكية.</span><Button type="button" size="sm" variant="secondary" onClick={() => navigate(paperworkReturnTo)}>العودة دون اختيار</Button></div> : null}
     <div className="grid gap-2 lg:grid-cols-[minmax(240px,1fr)_220px_180px_180px]">
       <label className="relative"><Search className="absolute right-3 top-3.5 h-4 w-4 text-slate-400" /><Input value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} className="pr-10" placeholder="ابحث بالمنتج أو رقم القطعة..." /></label>
       <Select value={filters.productId} onChange={(value) => updateFilter('productId', value)}><option value="all">كل المنتجات</option>{products.filter((product) => product.tracking === 'serial').map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</Select>
@@ -63,13 +81,13 @@ export function SerialUnitsPage() {
           <div><p className="truncate text-sm font-black text-slate-950">{unit.isIncomplete ? 'قطعة غير مكتملة' : unit.product?.name || '-'}</p><p className="mt-1 truncate text-xs text-slate-500" title={unit.attributesText}>{unit.attributesText || unit.product?.code || 'بدون خصائص'}</p></div>
           <span className="font-mono text-sm font-bold" dir="ltr">{unit.chassisNumber || unit.trackingNumber}</span><span className="font-mono text-sm font-bold" dir="ltr">{unit.engineNumber || '-'}</span><StatusBadge status={unit.status} />
           <span className="text-sm text-slate-500">غير محدد</span><span className="text-sm text-slate-500">{unit.createdAt ? new Date(unit.createdAt).toLocaleDateString('ar-EG') : '-'}</span>
-          <div className="flex gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => openDetails(unit)}><Eye className="h-4 w-4" /></Button>{unit.isIncomplete ? <Button type="button" size="sm" variant="secondary" onClick={() => setCompletionUnit(unit)}>استكمال</Button> : null}</div>
+          <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => openDetails(unit)}><Eye className="h-4 w-4" /></Button>{unit.isIncomplete ? <Button type="button" size="sm" variant="secondary" onClick={() => setCompletionUnit(unit)}>استكمال</Button> : paperworkReturnTo ? <Button type="button" size="sm" onClick={() => returnUnitToPaperwork(unit)}>اختيار</Button> : null}</div>
         </div>)}</div>
       </div>
       <div className="flex items-center justify-between text-sm font-bold text-slate-600"><span>{filteredUnits.length.toLocaleString('ar-EG')} قطعة</span><div className="flex items-center gap-2"><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronRight className="h-4 w-4" /></Button><span>{Math.min(page, pageCount)} / {pageCount}</span><Button size="sm" variant="secondary" disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}><ChevronLeft className="h-4 w-4" /></Button></div></div>
     </> : <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center"><Hash className="h-10 w-10 text-slate-300" /><h3 className="mt-3 text-lg font-black">لا توجد قطع مطابقة</h3></div>}
     <TrackingUnitDetails details={details} onOpenChange={(open) => setDetails((current) => ({ ...current, open }))} />
-    <CompleteTrackingUnitWizard open={Boolean(completionUnit)} onOpenChange={(open) => { if (!open) setCompletionUnit(null); }} tenantId={tenantId} unit={completionUnit} onCompleted={reload} />
+    <CompleteTrackingUnitWizard open={Boolean(completionUnit)} onOpenChange={(open) => { if (!open) setCompletionUnit(null); }} tenantId={tenantId} unit={completionUnit} onCompleted={async (completed) => { await reload(); if (paperworkReturnTo) returnUnitToPaperwork(completed || completionUnit); }} />
   </div>;
 }
 

@@ -18,7 +18,6 @@ export const PERMISSIONS = Object.freeze({
   PRODUCTS_ACCESS: 'products.access',
   RECEIVABLES_ACCESS: 'receivables.access',
   SETTINGS_ACCESS: 'settings.access',
-  SHOWROOM_POINT_ACCESS: 'showroom_point.access',
 });
 
 export const PERMISSION_CODES = Object.freeze(Object.values(PERMISSIONS));

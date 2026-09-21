@@ -10,28 +10,28 @@ export const SALE_COLUMNS = `
   tenant_id,
   branch_id,
   customer_id,
-  sale_date,
+  sale_date:effective_sale_date,
   status,
   total_amount,
   notes,
-  account_move_id,
+  is_historical,
+  historical_source:sale_historical_sources(financial_account_move_id,source_sale_number),
   created_by,
   created_at,
   updated_at,
-  showroom_config_id
+  sale_number
 `;
 
 export const PARTNER_COLUMNS = 'id, name, phone1, phone2, address, national_id';
 export const SALE_LINE_COLUMNS = `
   id,
   sale_id,
-  product_product_id,
-  tracking_unit_id,
+  product_product_id:product_id,
+  historical_source:sale_line_historical_sources(tracking_unit_id),
   description,
   quantity,
   unit_price,
-  total,
-  ownership_name,
+  total:line_total,
   created_at
 `;
 export const SALE_PAYMENT_MOVE_COLUMNS = `
@@ -54,6 +54,20 @@ export const PAPERWORK_REQUEST_COLUMNS = `
   request_type,
   sale_id,
   sale_line_id,
+  legacy_sale_source:paperwork_legacy_sale_sources(
+    source_system,
+    source_sale_id,
+    source_sale_line_id,
+    source_tracking_unit_id,
+    original_sale_number,
+    original_sale_date,
+    original_sale_status,
+    customer_id,
+    product_id,
+    total_amount,
+    classification,
+    evidence
+  ),
   tracking_unit_id,
   customer_id,
   document_owner_partner_id,

@@ -1,8 +1,7 @@
 import { memo } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowRight, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { ROUTES } from '@/core/config/routes.config';
+import { X } from 'lucide-react';
+import { PlatformHomeLink } from '@/core/ui/platform-home-link';
 import { useAppContext } from '@/contexts/AppContext';
 import { SidebarNav } from '@/features/workspace/components/SidebarNav';
 
@@ -59,7 +58,7 @@ function SidebarContent({ mobile = false }) {
   const accentTextColor = getAccessibleAccentTextColor(sidebarBgColor);
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden border-l border-slate-200 bg-white px-0 pb-8 pt-16 text-slate-950 shadow-[-12px_0_30px_rgba(15,23,42,0.06)] sm:pt-20 lg:px-7 lg:pb-0 lg:pt-14 xl:px-8">
+    <div className="relative h-full min-h-0 w-full overflow-hidden bg-white px-0 pb-8 pt-16 text-slate-950 sm:pt-20 lg:px-7 lg:pb-0 lg:pt-14 xl:px-8">
       <div className="relative flex h-full flex-col">
         {mobile ? (
           <Dialog.Close asChild>
@@ -68,18 +67,14 @@ function SidebarContent({ mobile = false }) {
             </button>
           </Dialog.Close>
         ) : (
-          <Link
-            to={ROUTES.dashboard}
-            aria-label="العودة للوحة التحكم"
+          <PlatformHomeLink
             className="absolute right-4 top-[-3rem] z-10 inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border bg-white shadow-[0_6px_18px_rgba(15,23,42,0.08)] transition duration-100 hover:-translate-y-px active:scale-95 focus:outline-none focus:ring-4 sm:right-8 sm:top-[-3.5rem] lg:right-0 lg:top-[-2rem]"
             style={{
               color: 'rgb(51 65 85)',
               borderColor: 'rgb(226 232 240)',
               '--tw-ring-color': 'rgb(226 232 240)',
             }}
-          >
-            <ArrowRight className="h-5 w-5" />
-          </Link>
+          />
         )}
         <div className="relative mx-4 mt-4 text-right sm:mx-10 lg:mx-0 lg:mt-4" dir="rtl">
           <div className="min-w-0">
@@ -113,8 +108,8 @@ function AppSidebarComponent({ mobile = false, open = false, onOpenChange = () =
   }
 
   return (
-    <aside className="hidden h-screen w-[28rem] self-stretch lg:block xl:w-[30rem]">
-      <div className="fixed inset-y-0 right-0 z-20 h-screen w-[28rem] xl:w-[30rem]">
+    <aside className="hidden h-screen w-[22rem] self-stretch lg:block xl:w-[24rem]">
+      <div className="fixed inset-y-0 right-0 z-20 h-screen w-[22rem] border-l border-slate-200/80 xl:w-[24rem]">
         <SidebarContent />
       </div>
     </aside>

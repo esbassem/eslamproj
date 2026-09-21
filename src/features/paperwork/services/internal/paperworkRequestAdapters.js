@@ -8,6 +8,7 @@ import { mergeTrackingIdentifiers } from './paperworkSalesIntegration';
 const { getPaperworkStageLabel, formatPaperAttributesTextForService } = Core;
 
 export function normalizePaperworkRequest(record, maps = {}) {
+  const legacySaleSource = record.legacy_sale_source?.[0] || null;
   const saleLine = maps.saleLinesMap?.get(record.sale_line_id) || null;
   const trackingUnit = maps.trackingUnitsMap?.get(record.tracking_unit_id) || null;
   const productProductId = trackingUnit?.product_product_id || saleLine?.product_product_id || null;
@@ -39,6 +40,20 @@ export function normalizePaperworkRequest(record, maps = {}) {
     requestType: record.request_type || 'new_document',
     saleId: record.sale_id,
     saleLineId: record.sale_line_id,
+    legacySaleSource: legacySaleSource ? {
+      sourceSystem: legacySaleSource.source_system,
+      sourceSaleId: legacySaleSource.source_sale_id,
+      sourceSaleLineId: legacySaleSource.source_sale_line_id,
+      sourceTrackingUnitId: legacySaleSource.source_tracking_unit_id,
+      originalSaleNumber: legacySaleSource.original_sale_number,
+      originalSaleDate: legacySaleSource.original_sale_date,
+      originalSaleStatus: legacySaleSource.original_sale_status,
+      customerId: legacySaleSource.customer_id,
+      productId: legacySaleSource.product_id,
+      totalAmount: Number(legacySaleSource.total_amount || 0),
+      classification: legacySaleSource.classification,
+      evidence: legacySaleSource.evidence || {},
+    } : null,
     trackingUnitId: record.tracking_unit_id,
     customerId: record.customer_id,
     documentOwnerPartnerId: record.document_owner_partner_id,
@@ -57,7 +72,6 @@ export function normalizePaperworkRequest(record, maps = {}) {
     blockedReason: record.blocked_reason || '',
     deferredReason: record.deferred_reason || '',
     cancelReason: record.cancel_reason || '',
-    saleReturnOperationId: record.sale_return_operation_id || null,
     replacedPaperworkRequestId: record.replaced_paperwork_request_id || null,
     processorCancellationBlockingRequestId: record.processor_cancellation_blocking_request_id || null,
     processorCancellationRequestedAt: record.processor_cancellation_requested_at || null,

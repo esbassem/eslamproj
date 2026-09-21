@@ -1,5 +1,4 @@
-import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { useLocation, useParams } from "react-router-dom";
 import { DocumentActions } from "@/features/paperwork/documents/DocumentActions";
 import { DocumentContext } from "@/features/paperwork/documents/DocumentContext";
 import { paperworkService } from "@/features/paperwork/services/paperwork.service";
@@ -7,7 +6,7 @@ import {
   usePaperworkQuery,
   usePaperworkTenant,
 } from "@/features/paperwork/hooks/usePaperworkQuery";
-import { PaperworkPage } from "@/features/paperwork/shared/PaperworkPage";
+import { PaperworkDetailPage } from "@/features/paperwork/shared/PaperworkDetailPage";
 import {
   DetailSection,
   EmptyState,
@@ -17,6 +16,7 @@ import {
   StatusBadge,
 } from "@/features/paperwork/shared/PaperworkUI";
 import { PAPERWORK_ROUTES } from "@/features/paperwork/routes/paperworkRoutes";
+import { resolvePaperworkReturnContext } from "@/features/paperwork/routes/paperworkNavigation";
 
 const row = (label, value) => (
   <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-3 last:border-0">
@@ -28,15 +28,8 @@ const row = (label, value) => (
 export function PaperworkDocumentDetailsPage() {
   const { documentId } = useParams();
   const tenantId = usePaperworkTenant();
-  const navigate = useNavigate();
   const location = useLocation();
-  const sourceRoute = location.state?.paperworkBackTo;
-  const sourcePath = typeof sourceRoute === "string" ? sourceRoute.split("?")[0] : "";
-  const hasSafeSource =
-    sourcePath === PAPERWORK_ROUTES.vault ||
-    sourcePath === PAPERWORK_ROUTES.documents ||
-    /^\/apps\/paperwork\/requests\/[^/]+$/.test(sourcePath);
-  const backRoute = hasSafeSource ? sourceRoute : PAPERWORK_ROUTES.documents;
+  const returnContext = resolvePaperworkReturnContext(location, PAPERWORK_ROUTES.documents, "المستندات");
   const query = usePaperworkQuery(
     () =>
       tenantId
@@ -46,27 +39,16 @@ export function PaperworkDocumentDetailsPage() {
   );
   const document = query.data;
   return (
-    <PaperworkPage
+    <PaperworkDetailPage
       title={document?.displayTitle || "تفاصيل المستند"}
-      actions={
-        <>
-          <button
-            type="button"
-            onClick={() => navigate(backRoute)}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-3 text-sm font-black"
-          >
-            <ArrowRight className="h-4 w-4" />
-            رجوع
-          </button>
-          {document ? (
+      returnContext={returnContext}
+      actions={document ? (
             <DocumentActions
               document={document}
               tenantId={tenantId}
               onChanged={query.retry}
             />
           ) : null}
-        </>
-      }
     >
       {query.loading ? (
         <PageSkeleton />
@@ -97,6 +79,7 @@ export function PaperworkDocumentDetailsPage() {
               <DocumentContext
                 tenantId={tenantId}
                 requestId={document.paperworkRequestId}
+                returnLabel="المستند"
               />
             </div>
           </DetailSection>
@@ -147,6 +130,6 @@ export function PaperworkDocumentDetailsPage() {
           </div>
         </div>
       )}
-    </PaperworkPage>
+    </PaperworkDetailPage>
   );
 }

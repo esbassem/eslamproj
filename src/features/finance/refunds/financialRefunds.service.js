@@ -1,0 +1,12 @@
+import { requireSupabase } from '@/core/lib/supabase';
+
+function tenant(tenantId) { if (!tenantId) throw new Error('لا توجد شركة نشطة.'); }
+async function call(name, params, fallback) { const { data, error } = await requireSupabase().rpc(name, params); if (error) throw new Error(error.message || fallback); return data; }
+
+export function listRefundableOpenItems({ tenantId, partnerId = null, limit = 100 } = {}) { tenant(tenantId); return call('list_refundable_open_items', { p_tenant: tenantId, p_partner: partnerId, p_limit: limit }, 'تعذر تحميل الأرصدة القابلة للرد.'); }
+export function getRefundEligibility({ tenantId, sourceLineId, partnerId, amount = null } = {}) { tenant(tenantId); return call('get_financial_refund_eligibility', { p_tenant: tenantId, p_line: sourceLineId, p_partner: partnerId, p_amount: amount }, 'تعذر التحقق من أهلية الرد.'); }
+export function createFinancialRefund(input = {}) { tenant(input.tenantId); return call('create_financial_refund', { p_tenant: input.tenantId, p_source_line: input.sourceLineId, p_partner: input.partnerId, p_amount: input.amount, p_currency: input.currencyCode, p_destination: input.moneyDestinationId, p_method: input.paymentMethodId, p_reason: input.reason, p_idempotency: input.idempotencyKey, p_branch: input.branchId ?? null, p_original_payment: input.originalPaymentId ?? null, p_reason_type: input.reasonType ?? null, p_notes: input.notes ?? null, p_source_app: input.sourceApp ?? null, p_source_model: input.sourceModel ?? null, p_source_id: input.sourceId ?? null }, 'تعذر إنشاء طلب الرد المالي.'); }
+export function submitFinancialRefund({ tenantId, refundId } = {}) { tenant(tenantId); return call('submit_financial_refund', { p_tenant: tenantId, p_refund: refundId }, 'تعذر إرسال طلب الرد.'); }
+export function confirmFinancialRefund({ tenantId, refundId } = {}) { tenant(tenantId); return call('confirm_financial_refund', { p_tenant: tenantId, p_refund: refundId }, 'تعذر تأكيد طلب الرد.'); }
+export function rejectFinancialRefund({ tenantId, refundId, reason } = {}) { tenant(tenantId); return call('reject_financial_refund', { p_tenant: tenantId, p_refund: refundId, p_reason: reason }, 'تعذر رفض طلب الرد.'); }
+export function postFinancialRefund({ tenantId, refundId, idempotencyKey } = {}) { tenant(tenantId); return call('post_financial_refund', { p_tenant: tenantId, p_refund: refundId, p_idempotency: idempotencyKey }, 'تعذر ترحيل الرد المالي.'); }

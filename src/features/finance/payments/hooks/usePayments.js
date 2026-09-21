@@ -78,10 +78,6 @@ export function usePayments(options = {}) {
     }
   }, [tenantId]);
 
-  const submitPayment = useCallback(async () => ({
-    error: 'تسجيل الدفع غير مفعل من إعدادات الدفع.',
-  }), []);
-
   return {
     rules,
     cashDestinations,
@@ -89,6 +85,5 @@ export function usePayments(options = {}) {
     isSaving,
     error,
     updateRules,
-    submitPayment,
   };
 }

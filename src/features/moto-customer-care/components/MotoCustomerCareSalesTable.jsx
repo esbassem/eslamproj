@@ -48,7 +48,7 @@ function DetailsLink({ saleId }) {
 
 export function MotoCustomerCareSalesTable({ sales, isLoading, error, emptyTitle, emptyDescription }) {
   if (isLoading) {
-    return <LoadingSpinner title="جاري تحميل عمليات المتابعة" description="يتم جلب مبيعات showroom مع بيانات العملاء." />;
+    return <LoadingSpinner title="جاري تحميل عمليات المتابعة" description="يتم جلب المبيعات مع بيانات العملاء." />;
   }
 
   if (error) {

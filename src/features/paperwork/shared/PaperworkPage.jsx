@@ -1,19 +1,24 @@
-export function PaperworkPage({ title, description, actions, children }) {
+import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { PageHeader } from '@/core/ui/page-header';
+import { getCanonicalBreadcrumbs } from '@/core/navigation/platformNavigation';
+
+export function PaperworkPage({ title, description, actions, showHeaderDivider = true, showTitle = true, children }) {
+  const location = useLocation();
+  const titleRef = useRef(null);
+  useEffect(() => {
+    titleRef.current?.focus({ preventScroll: true });
+  }, [location.pathname]);
+  const canonicalBreadcrumbs = getCanonicalBreadcrumbs(location.pathname, { currentLabel: title });
+  const breadcrumbs = location.pathname === '/apps/paperwork'
+    ? [{ label: title }]
+    : canonicalBreadcrumbs[0]?.label === 'إدارة أوراق الملكية'
+      ? canonicalBreadcrumbs.slice(1)
+      : canonicalBreadcrumbs;
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[1500px] flex-col pb-10">
-      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-950">
-            {title}
-          </h1>
-          {description ? (
-            <p className="mt-1 text-sm font-semibold text-slate-500">
-              {description}
-            </p>
-          ) : null}
-        </div>
-        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
-      </header>
+    <div className="mx-auto flex min-h-full w-full max-w-[1500px] flex-col pb-10 pt-10">
+      <PageHeader breadcrumbs={breadcrumbs} breadcrumbSize="large" title={title} description={description} actions={actions} titleRef={titleRef} showDivider={showHeaderDivider} showTitle={showTitle} />
+      <div className={showTitle ? 'mt-6' : 'mt-2'} />
       {children}
     </div>
   );

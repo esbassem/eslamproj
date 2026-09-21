@@ -20,7 +20,7 @@ import {
 } from '@/core/ui/sheet';
 import { SystemReceiptDialog } from '@/core/receipts';
 import { accountantService } from '@/features/accountant/services/accountant.service';
-import { showroomService } from '@/features/showroom/services/showroom.service';
+import { financialSalesContextService } from '@/features/finance/sales/financialSalesContext.service';
 
 function formatCurrency(value) {
   return `${Number(value ?? 0).toLocaleString('ar-EG')} ج.م`;
@@ -56,7 +56,7 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
     try {
       const nextOperations = await accountantService.listCashLocationOperations({
         tenantId,
-        accountId: location.id,
+        accountId: location.accountId || location.id,
       });
       setOperations(nextOperations);
     } catch (error) {
@@ -126,12 +126,13 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
     setInvoicePayments([]);
     setIsLoadingInvoicePayments(true);
     try {
-      const sale = await showroomService.getSaleDetails({
-        tenantId,
-        saleId: invoice.id,
-        showroomConfigId: invoice.showroomConfigId,
-      });
-      setInvoicePayments(sale.payments || []);
+      const sale = await financialSalesContextService.getSaleReceiptContext({ tenantId, saleId: invoice.id });
+      setInvoicePayments((sale.operations || []).map((operation) => ({
+        id: operation.operation_id,
+        amount: operation.allocated_to_sale,
+        payment_date: operation.occurred_at,
+        payment_method: operation.payment_method,
+      })));
     } catch {
       setInvoicePayments([]);
     } finally {
@@ -163,13 +164,14 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
         tenantId,
         saleId: selectedInvoice.id,
         amount: safeAmount,
-        mode: 'account',
-        destinationAccountId: location.id,
+        mode: location.destinationId ? 'cash' : 'account',
+        moneyDestinationId: location.destinationId || null,
+        destinationAccountId: location.destinationId ? null : location.accountId || location.id,
         notes: collectionNote,
       });
       await Promise.all([
         loadSheetData(),
-        onOperationCreated?.(location.id),
+        onOperationCreated?.(location.accountId || location.id),
       ]);
       setIsInvoicePickerOpen(false);
       setCompletedReceipt({
@@ -230,7 +232,13 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
       .map((line) => [line.accountCode, line.accountName].filter(Boolean).join(' — '))
       .filter(Boolean)
       .join('، ');
-    const saleId = String(operation.reference || '').match(/^showroom_sale:(.+)$/)?.[1] || null;
+    let sourceContext = null;
+    try {
+      sourceContext = await financialSalesContextService.getFinancialSourceContext({ tenantId, moveId: operation.moveId });
+    } catch {
+      sourceContext = null;
+    }
+    const saleId = sourceContext?.canonical_sale_id || null;
     const baseReceipt = {
       type: saleId ? 'invoice_collection' : isIncoming ? 'receipt' : 'payment',
       number: operation.moveId
@@ -265,29 +273,29 @@ export function CashLocationSheet({ location, tenantId, onOpenChange, onOperatio
 
     if (saleId) {
       try {
-        const sale = await showroomService.getSaleReceiptContext({ tenantId, saleId });
-        const payments = sale.payments || [];
+        const sale = await financialSalesContextService.getSaleReceiptContext({ tenantId, saleId });
+        const payments = sale.operations || [];
         const currentPaymentIndex = payments.findIndex(
-          (payment) => payment.account_move_id === operation.moveId,
+          (payment) => payment.operation_id === operation.moveId,
         );
         const paymentsBeforeCurrent = currentPaymentIndex >= 0
           ? payments.slice(0, currentPaymentIndex)
           : payments;
         const paidThroughOperation = payments
           .slice(0, currentPaymentIndex >= 0 ? currentPaymentIndex + 1 : payments.length)
-          .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+          .reduce((sum, payment) => sum + Number(payment.allocated_to_sale || 0), 0);
 
         previousPayments = paymentsBeforeCurrent.map((payment) => ({
-          id: payment.id,
-          amount: payment.amount,
-          date: payment.payment_date,
+          id: payment.operation_id,
+          amount: payment.allocated_to_sale,
+          date: payment.occurred_at,
           label: payment.payment_method,
         }));
         balance = {
           label: 'المتبقي بعد التحصيل',
-          value: formatCurrency(Math.max(Number(sale.totalAmount || 0) - paidThroughOperation, 0)),
+          value: formatCurrency(Math.max(Number(sale.total_amount || 0) - paidThroughOperation, 0)),
         };
-        partyName = sale.customerName || partyName;
+        partyName = sale.customer || partyName;
       } catch {
         previousPayments = [];
         balance = null;

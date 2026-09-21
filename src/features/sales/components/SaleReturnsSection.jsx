@@ -1,0 +1,16 @@
+import { useEffect, useState } from 'react';
+import { BanknoteArrowDown, RotateCcw } from 'lucide-react';
+import { useAuthorization } from '@/core/authorization/useAuthorization';
+import { Button } from '@/core/ui/button';
+import { SaleRefundDialog } from '@/features/sales/components/SaleRefundDialog';
+import { salesReturnService } from '@/features/sales/services/salesReturn.service';
+
+const money = (value, currency) => `${Number(value || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ${currency}`;
+
+export function SaleReturnsSection({ tenantId, saleId, eligibility, onRefunded }) {
+  const { can, isLoading } = useAuthorization(); const [refundOptions, setRefundOptions] = useState(null); const [selected, setSelected] = useState(null);
+  useEffect(() => { let active = true; if (!tenantId || !saleId || isLoading || !can('settlement.refund')) { setRefundOptions(null); return () => { active = false; }; } salesReturnService.getSaleRefundOptions({ tenantId, saleId }).then((value) => { if (active) setRefundOptions(value); }).catch(() => { if (active) setRefundOptions(null); }); return () => { active = false; }; }, [can, eligibility?.financial.refundableAmount, isLoading, saleId, tenantId]);
+  if (!eligibility?.returns?.length) return null;
+  const handleRefunded = async (payload) => { setSelected(null); await onRefunded?.(payload); };
+  return <section className="space-y-3" aria-labelledby="sale-returns-title"><div className="flex items-center gap-2"><RotateCcw className="h-5 w-5 text-orange-700" /><div><h2 id="sale-returns-title" className="text-lg font-black">المرتجعات</h2><p className="text-sm text-slate-500">وقائع مستقلة مع بقاء البيع والتسليم الأصليين في سجل التدقيق.</p></div></div><div className="space-y-3">{eligibility.returns.map((item) => { const refundable = refundOptions?.credits.find((credit) => credit.saleReturnId === item.id); return <article key={item.id} className="rounded-2xl border border-orange-100 bg-white p-4"><header className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-black">{item.returnNumber}</h3><p className="mt-1 text-xs text-slate-500">{item.createdAt ? new Date(item.createdAt).toLocaleString('ar-EG') : '—'} · {item.reason}</p></div><strong className="text-orange-700">{money(item.amount, eligibility.currencyCode)}</strong></header><div className="mt-3 space-y-1 text-sm text-slate-700">{item.lines.map((line, index) => <p key={`${line.saleLineId}:${line.trackingUnitId}:${index}`}>{line.description} — {line.quantity.toLocaleString('ar-EG', { maximumFractionDigits: 4 })}</p>)}</div><div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm"><span>تم رده: <strong>{money(item.refundedAmount, eligibility.currencyCode)}</strong> · متبقٍ قابل للرد: <strong>{money(item.remainingRefundableAmount, eligibility.currencyCode)}</strong></span>{refundOptions?.canRefund && refundable?.refundableAmount > 0 ? <Button type="button" variant="secondary" onClick={() => setSelected(item)}><BanknoteArrowDown className="h-4 w-4" />رد المبلغ</Button> : null}</div></article>; })}</div>{selected ? <SaleRefundDialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }} tenantId={tenantId} saleId={saleId} saleReturn={selected} onRefunded={handleRefunded} /> : null}</section>;
+}

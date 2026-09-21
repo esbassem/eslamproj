@@ -24,7 +24,9 @@ register(['/apps/inventory/unique-units'], 'inventorySerials', 'SerialUnitsPage'
 register(['/apps/inventory/operations/moves'], 'inventoryMoves', 'StockMovesPage');
 register(['/apps/inventory/operations/locations'], 'inventoryLocations', 'InventoryLocationsPage');
 register(['/apps/inventory/operations/counts'], 'inventoryCounts', 'InventoryCountsPage');
-register(['/app/sales', '/app/sales/invoices'], 'invoices', 'InvoicesPage');
+register(['/app/sales'], 'salesOverview', 'SalesOverviewPage');
+register(['/app/sales/new'], 'saleCreate', 'SaleCreatePage');
+register(['/app/sales/invoices'], 'invoices', 'InvoicesPage');
 register(['/app/sales/contracts', '/app/contracts'], 'contracts', 'ContractsPage');
 register(['/app/accounting', '/app/accounting/payments', '/apps/accounting', '/apps/accounting/payments'], 'payments', 'PaymentsPage');
 register(['/app/accounting/journals', '/apps/accounting/journals', '/apps/accountant/journals'], 'settings', 'SettingsPage');
@@ -40,15 +42,11 @@ register(['/photos/settings', '/app/photos/settings'], 'photosSettings', 'Photos
 register(['/app/partners'], 'partners', 'PartnersPage');
 register(['/app/pos'], 'pos', 'PosPage');
 register(['/app/old_cashbox', '/app/old-cashbox', '/apps/old-cashbox'], 'oldCashbox', 'OldCashboxPage');
-register(['/app/showroom_point', '/app/showroom_point/new', '/app/showroom_point/customers', '/app/showroom_point/settings'], 'showroomSell', 'ShowroomSellPage');
 register(['/app/moto-customer-care', '/app/moto-customer-care/dashboard', '/app/moto-customer-care/sales', '/apps/moto-customer-care', '/apps/moto-customer-care/dashboard', '/apps/moto-customer-care/sales'], 'customerCareList', 'MotoCustomerCareSalesFollowUpListPage');
 register(['/apps/paperwork'], 'paperworkHome', 'PaperworkHomePage');
-register(['/apps/paperwork/requests'], 'paperworkRequests', 'PaperworkRequestsPage');
 register(['/apps/paperwork/processors'], 'paperworkProcessors', 'PaperworkProcessorsPage');
 register(['/apps/paperwork/documents'], 'paperworkDocuments', 'PaperworkDocumentsPage');
 register(['/apps/paperwork/vault'], 'paperworkVault', 'PaperworkVaultPage');
 register(['/app/receivables', '/app/receivables/installments', '/apps/receivables', '/apps/receivables/installments'], 'receivables', 'ReceivablesPage');
-register(['/app/settings', '/app/settings/branches', '/app/settings/team', '/app/settings/permissions', '/app/team'], 'settings', 'SettingsPage');
-register(['/app/settings/accounting/cash-locations'], 'cashLocationsSettings', 'CashLocationsSettingsPage');
-
+register(['/app/settings', '/app/settings/financial', '/app/settings/financial/money-destinations', '/app/settings/financial/payment-methods', '/app/settings/branches', '/app/settings/team', '/app/settings/permissions', '/app/team'], 'settings', 'SettingsPage');
 export const MENU_COMPONENTS = routes;

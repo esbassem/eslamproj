@@ -1,32 +1,96 @@
-import { lazy, Suspense, useState } from 'react';
-import { Archive, ArrowLeft, Building2, FilePlus2, Inbox, TriangleAlert } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '@/features/auth/hooks/useAuth';
+import { Archive, ArrowLeft, Building2, ChevronDown, Inbox, Search } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { paperworkReadService } from '@/features/paperwork/services/queries/paperworkRead.service';
 import { usePaperworkQuery, usePaperworkTenant } from '@/features/paperwork/hooks/usePaperworkQuery';
 import { PaperworkPage } from '@/features/paperwork/shared/PaperworkPage';
 import { PageError, PageSkeleton } from '@/features/paperwork/shared/PaperworkUI';
-import { PAPERWORK_ROUTES } from '@/features/paperwork/routes/paperworkRoutes';
-import { useAuthorization } from '@/core/authorization/useAuthorization';
-import { PAPERWORK_PERMISSIONS } from '@/features/paperwork/authorization/paperworkPermissions';
-
-const ManualReceipt = lazy(() => import('@/features/paperwork/manual-receipt/ManualReceiptFlow').then((module) => ({ default: module.ManualReceiptFlow })));
+import { PaperworkManualReceipt } from '@/features/paperwork/manual-receipt/PaperworkManualReceipt';
+import { PAPERWORK_ROUTES, withPaperworkSearch } from '@/features/paperwork/routes/paperworkRoutes';
+import { createPaperworkNavigationState } from '@/features/paperwork/routes/paperworkNavigation';
+import { PaperworkBackButton } from '@/features/paperwork/shared/PaperworkBackButton';
 
 export function PaperworkHomePage() {
   const tenantId = usePaperworkTenant();
-  const { tenant_user: tenantUser } = useAuth();
-  const { can } = useAuthorization();
-  const canReceive = can(PAPERWORK_PERMISSIONS.RECEIVE);
-  const [receiptOpen, setReceiptOpen] = useState(false);
+  const location = useLocation();
   const query = usePaperworkQuery(() => tenantId ? paperworkReadService.getHomeSummary({ tenantId }) : Promise.resolve(null), [tenantId]);
   const cards = query.data ? [
-    { label: 'تحتاج إجراء', value: query.data.actionCount, icon: Inbox, to: `${PAPERWORK_ROUTES.requests}?filter=action` },
-    { label: 'عند الجهات', value: query.data.processorCount, icon: Building2, to: PAPERWORK_ROUTES.processors },
-    { label: 'في الخزنة', value: query.data.vaultCount, icon: Archive, to: PAPERWORK_ROUTES.vault },
-    { label: 'تحتاج مراجعة', value: query.data.reviewCount, icon: TriangleAlert, to: `${PAPERWORK_ROUTES.requests}?filter=action` },
+    { label: 'تحتاج إجراء', description: 'طلبات في انتظار التجهيز', value: query.data.actionCount, icon: Inbox, to: withPaperworkSearch(PAPERWORK_ROUTES.requests, { filter: 'preparation' }) },
+    { label: 'عند الجهات', description: 'طلبات لدى جهات الإصدار', value: query.data.processorCount, icon: Building2, to: PAPERWORK_ROUTES.processors },
+    { label: 'في الخزنة', description: 'مستندات في حيازة الشركة', value: query.data.vaultCount, icon: Archive, to: PAPERWORK_ROUTES.vault },
   ] : [];
-  return <PaperworkPage title="إدارة أوراق الملكية" description="نقطة بدء تشغيلية سريعة دون تحميل قوائم النطاق كاملة." actions={canReceive ? <button type="button" onClick={() => setReceiptOpen(true)} className="inline-flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-700"><FilePlus2 className="h-4 w-4" />استلام ورق جديد</button> : null}>
-    {query.loading ? <PageSkeleton rows={4} /> : query.error ? <PageError message={query.error} onRetry={query.retry} /> : <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({ label, value, icon: Icon, to }) => <Link key={label} to={to} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200"><div className="flex items-center justify-between"><Icon className="h-5 w-5 text-blue-600" /><ArrowLeft className="h-4 w-4 text-slate-400" /></div><div className="mt-5 text-3xl font-black">{value}</div><div className="mt-1 text-sm font-bold text-slate-500">{label}</div></Link>)}</div><section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-black">آخر نشاط</h2><div className="mt-4 divide-y divide-slate-100">{query.data.activity.length ? query.data.activity.map((event) => <div key={event.id} className="flex items-center justify-between gap-4 py-3 text-sm"><span className="font-bold text-slate-700">{event.notes || event.new_stage || event.event_type}</span><time className="flex-none text-xs text-slate-400">{new Date(event.created_at).toLocaleString('ar-EG')}</time></div>) : <p className="py-6 text-center text-sm text-slate-500">لا يوجد نشاط حديث.</p>}</div></section></>}
-    {canReceive && receiptOpen ? <Suspense fallback={null}><ManualReceipt open={receiptOpen} onOpenChange={setReceiptOpen} tenantId={tenantId} userId={tenantUser?.id} onSaved={() => { setReceiptOpen(false); void query.retry(); }} /></Suspense> : null}
-  </PaperworkPage>;
+  return (
+    <PaperworkPage
+      title="إدارة أوراق الملكية"
+      contextualBack={<PaperworkBackButton disabled />}
+      showHeaderDivider={false}
+      showTitle={false}
+    >
+      {query.loading ? <PageSkeleton rows={4} /> : query.error ? <PageError message={query.error} onRetry={query.retry} /> : (
+        <>
+          <div className="mb-5 mt-8 flex max-w-[820px] flex-wrap items-center gap-2.5" aria-label="أدوات عرض الطلبات">
+            <div className="relative w-[240px] max-w-full sm:w-[280px]">
+              <Search className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+              <input
+                type="search"
+                readOnly
+                placeholder="البحث في الطلبات"
+                className="h-8 w-full rounded-lg border border-slate-300 bg-white pr-8 pl-3 text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-500"
+                aria-label="البحث في الطلبات — للعرض فقط"
+              />
+            </div>
+            <button type="button" className="inline-flex h-8 flex-none items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-3 text-xs font-bold text-slate-800" aria-label="تصفية حسب الحالة — للعرض فقط">
+              الحالة
+              <ChevronDown className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:max-w-[720px] xl:grid-cols-3">{cards.map(({ label, description, value, icon: Icon, to }) => (
+            <Link key={label} to={to} state={to === PAPERWORK_ROUTES.processors ? createPaperworkNavigationState(location, { returnLabel: 'الرئيسية' }) : undefined} className="group flex min-h-[140px] flex-col rounded-lg border border-slate-300 bg-white p-4 text-right transition-colors hover:border-slate-400">
+              <div>
+                <h2 className="text-xs font-black text-slate-950">{label}</h2>
+                <p className="mt-1.5 text-[11px] font-semibold text-slate-600">{description}</p>
+              </div>
+              <div className="mt-auto flex items-end justify-between gap-4 pt-6">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-8 w-8 place-items-center rounded-lg border border-slate-300 text-slate-700"><Icon className="h-4 w-4" /></span>
+                  <strong className="text-lg font-black text-slate-950">{value}</strong>
+                </div>
+                <ArrowLeft className="h-4 w-4 text-slate-400 transition-transform group-hover:-translate-x-0.5" />
+              </div>
+            </Link>
+          ))}</div>
+          <section className="mt-8 max-w-[520px] rounded-lg border border-slate-300 bg-white p-5" aria-labelledby="recent-paperwork-requests">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="recent-paperwork-requests" className="text-sm font-black text-slate-950">آخر الطلبات</h2>
+                <p className="mt-1 text-[11px] font-semibold text-slate-500">أحدث طلبات أوراق الملكية المسجلة</p>
+              </div>
+            </div>
+            <div className="mt-5">
+              {query.data.recentRequests.length ? query.data.recentRequests.map((request) => (
+                <Link
+                  key={request.id}
+                  to={PAPERWORK_ROUTES.requestDetails(request.id)}
+                  state={createPaperworkNavigationState(location, { returnLabel: 'الرئيسية' })}
+                  className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-dashed border-slate-200 py-3 text-xs last:border-0 hover:bg-slate-50/60"
+                >
+                  <span className="h-4 w-4 rounded-full border-2 border-emerald-400 border-l-slate-300" aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block truncate font-black text-slate-800">{request.customerName}</span>
+                    <span className="mt-0.5 block truncate text-[10px] font-semibold text-slate-500">{request.productName}</span>
+                  </span>
+                  <span className="flex items-center gap-3 whitespace-nowrap">
+                    <span className="font-mono text-[10px] font-bold text-slate-700">{request.stageLabel}</span>
+                    <span className="font-mono text-[10px] text-slate-500">{new Date(request.createdAt).toLocaleDateString('ar-EG')}</span>
+                  </span>
+                </Link>
+              )) : (
+                <p className="py-7 text-center text-xs font-semibold text-slate-500">لا توجد طلبات حتى الآن.</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      <PaperworkManualReceipt onSaved={() => void query.retry()} />
+    </PaperworkPage>
+  );
 }

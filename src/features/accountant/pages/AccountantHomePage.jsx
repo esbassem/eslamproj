@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -34,8 +35,7 @@ import { partnersService } from '@/features/contacts/services/partners.service';
 import { CashLocationSheet } from '@/features/accountant/components/CashLocationSheet';
 import { LedgerAccountOperationsSheet } from '@/features/accountant/components/LedgerAccountOperationsSheet';
 import { accountantService } from '@/features/accountant/services/accountant.service';
-import { ShowroomSaleViewSheet } from '@/features/showroom/components/ShowroomSaleViewSheet';
-import { showroomService } from '@/features/showroom/services/showroom.service';
+import { SettlementDialog } from '@/features/settlement';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
 const NEW_CUSTOMER_INITIAL_VALUES = {
@@ -52,7 +52,9 @@ const partnerAvatarIconMap = {
   WalletCards,
 };
 
-function isCashAccount(account) {
+// Transitional display-only classifier for historical accounts. Canonical
+// collection choices come from Money Destinations, never from this helper.
+function isLegacyCashAccount(account) {
   const code = String(account?.code || '').trim();
   const type = String(account?.account_type || '').toLowerCase();
   return code.startsWith('111') || type === 'cash' || type === 'cash_equivalent';
@@ -751,6 +753,9 @@ function ApprovalOperationRow({ operation, compact = false }) {
 function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSettled }) {
   const [mode, setMode] = useState('cash');
   const [accounts, setAccounts] = useState([]);
+  const [moneyDestinations, setMoneyDestinations] = useState([]);
+  const [moneyDestinationId, setMoneyDestinationId] = useState('');
+  const [destinationSelectionState, setDestinationSelectionState] = useState('none');
   const [destinationAccountId, setDestinationAccountId] = useState('');
   const [openCredits, setOpenCredits] = useState([]);
   const [creditAmounts, setCreditAmounts] = useState({});
@@ -766,6 +771,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
 
     setMode(invoice?.preferredMode || 'cash');
     setDestinationAccountId('');
+    setMoneyDestinationId('');
     setCreditAmounts({});
     setAmount(String(invoice?.remainingAmount || ''));
     setNotes('');
@@ -777,9 +783,19 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
     if (!open || !tenantId) return undefined;
 
     setIsLoadingAccounts(true);
-    accountantService.listSettlementAccounts({ tenantId })
-      .then((records) => {
-        if (mounted) setAccounts(records);
+    Promise.all([
+      accountantService.listSettlementAccounts({ tenantId }),
+      accountantService.getAllowedCollectionDestinations({
+        tenantId,
+        branchId: invoice?.branchId || null,
+      }),
+    ])
+      .then(([records, selection]) => {
+        if (!mounted) return;
+        setAccounts(records);
+        setMoneyDestinations(selection.destinations);
+        setDestinationSelectionState(selection.selectionState);
+        setMoneyDestinationId(selection.autoSelectedDestinationId || '');
       })
       .catch((loadError) => {
         if (mounted) setError(loadError.message || 'تعذر تحميل حسابات التسوية.');
@@ -791,7 +807,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
     return () => {
       mounted = false;
     };
-  }, [open, tenantId]);
+  }, [invoice?.branchId, open, tenantId]);
 
   useEffect(() => {
     let mounted = true;
@@ -801,10 +817,10 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
     }
 
     setIsLoadingAdvanceBalances(true);
-    showroomService.getCustomerOpenCredits({ tenantId, customerId: invoice.customerId })
+    accountantService.listPaymentEntityCustomerCredits({ tenantId })
       .then((records) => {
         if (!mounted) return;
-        setOpenCredits(records);
+        setOpenCredits((records || []).filter((record) => record.customerId === invoice.customerId));
       })
       .catch((loadError) => {
         if (mounted) setError(loadError.message || 'تعذر تحميل رصيد العميل المقدم.');
@@ -819,6 +835,9 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
   }, [invoice?.customerId, invoice?.preferredMode, invoice?.remainingAmount, open, tenantId]);
 
   const selectedAccount = accounts.find((account) => account.id === destinationAccountId) || null;
+  const selectedMoneyDestination = moneyDestinations.find(
+    (destination) => destination.destination_id === moneyDestinationId,
+  ) || null;
   const openCreditAllocations = openCredits
     .map((credit) => ({
       openCreditLineId: credit.openCreditLineId,
@@ -846,6 +865,10 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
       setError('اختر حساب التسوية.');
       return;
     }
+    if (mode === 'cash' && destinationSelectionState !== 'none' && !moneyDestinationId) {
+      setError('اختر المورد المالي الذي سيستقبل التحصيل.');
+      return;
+    }
     if (mode === 'advance_credit' && !openCreditAllocations.length) {
       setError('اختر اعتمادًا واحدًا على الأقل وحدد مبلغ الاستخدام.');
       return;
@@ -866,6 +889,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
         saleId: invoice.id,
         amount: safeAmount,
         mode,
+        moneyDestinationId: mode === 'cash' ? moneyDestinationId || null : null,
         destinationAccountId,
         openCreditAllocations,
         notes,
@@ -905,7 +929,16 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
 
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[
-                { id: 'cash', label: 'تحصيل نقدي', detail: 'إيداع في الخزنة الرئيسية 111001', icon: WalletCards },
+                {
+                  id: 'cash',
+                  label: 'تحصيل نقدي',
+                  detail: destinationSelectionState === 'single'
+                    ? selectedMoneyDestination?.destination_name || 'تم اختيار المورد المسموح تلقائيًا'
+                    : destinationSelectionState === 'multiple'
+                      ? `${moneyDestinations.length} موارد مسموحة`
+                      : 'مسار Legacy مؤقت — لا توجد Destinations مهيأة',
+                  icon: WalletCards,
+                },
                 { id: 'advance_credit', label: 'رصيد العميل', detail: isLoadingAdvanceBalances ? 'جاري التحميل...' : `${openCredits.length} اعتماد متاح`, icon: CreditCard },
                 { id: 'account', label: 'تسوية على حساب', detail: 'اختيار حساب مقابل', icon: Landmark },
               ].map((option) => {
@@ -931,7 +964,7 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
             <div className="mt-4 space-y-4">
               {mode === 'advance_credit' ? (
                 <div className="space-y-2">
-                  <Label className="text-xs font-black text-slate-600">الاعتمادات المفتوحة على 114001</Label>
+                  <Label className="text-xs font-black text-slate-600">الاعتمادات المفتوحة على ذمم العملاء</Label>
                   {isLoadingAdvanceBalances ? (
                     <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-slate-500">جاري تحميل الاعتمادات...</p>
                   ) : openCredits.length ? (
@@ -1017,6 +1050,32 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
                 </div>
               ) : null}
 
+              {mode === 'cash' && destinationSelectionState !== 'none' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="money-destination" className="text-xs font-black text-slate-600">مورد التحصيل</Label>
+                  <select
+                    id="money-destination"
+                    value={moneyDestinationId}
+                    onChange={(event) => setMoneyDestinationId(event.target.value)}
+                    disabled={isLoadingAccounts || destinationSelectionState === 'single'}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option value="">اختر المورد المالي</option>
+                    {moneyDestinations.map((destination) => (
+                      <option key={destination.destination_id} value={destination.destination_id}>
+                        {destination.destination_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {mode === 'cash' && destinationSelectionState === 'none' ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                  لا توجد Money Destination مهيأة لهذا المستخدم؛ سيُستخدم Legacy Adapter مؤقتًا لهذه المؤسسة.
+                </p>
+              ) : null}
+
               <div className={`grid gap-3 ${mode === 'advance_credit' ? 'grid-cols-1' : 'grid-cols-[0.8fr_1.2fr]'}`}>
                 {mode !== 'advance_credit' ? <div className="min-w-0 space-y-2">
                   <Label htmlFor="settlement-amount" className="text-xs font-black text-slate-600">المبلغ</Label>
@@ -1050,15 +1109,17 @@ function InvoiceSettlementDialog({ open, onOpenChange, tenantId, invoice, onSett
               <p className="text-[10px] font-black text-slate-500">{mode === 'advance_credit' ? 'أثر التسوية' : 'معاينة القيد'}</p>
               {mode === 'advance_credit' ? (
                 <p className="mt-2 text-xs font-bold text-slate-700">
-                  لن يُنشأ قيد جديد. ستُنشأ مصالحة مباشرة بين سطر الفاتورة المدين وسطور الاعتمادات المفتوحة الدائنة على 114001 بقيمة {formatCurrency(safeAmount)}.
+                  لن يُنشأ قيد جديد. ستُنشأ مصالحة مباشرة بين سطر ذمم الفاتورة المدين وسطور الاعتمادات المفتوحة الدائنة بقيمة {formatCurrency(safeAmount)}.
                 </p>
               ) : <div className="mt-2 space-y-1.5 text-xs font-bold">
                 <div className="flex items-center justify-between gap-3 text-emerald-700">
-                  <span>مدين: {mode === 'cash' ? '111001 — الخزنة الرئيسية' : selectedAccount ? `${selectedAccount.code} — ${selectedAccount.name}` : 'حساب التسوية'}</span>
+                  <span>مدين: {mode === 'cash'
+                    ? selectedMoneyDestination?.destination_name || 'Legacy cash adapter'
+                    : selectedAccount ? `${selectedAccount.code} — ${selectedAccount.name}` : 'حساب التسوية'}</span>
                   <span>{formatCurrency(safeAmount)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-red-700">
-                  <span>دائن: 114001 — ذمم العملاء</span>
+                  <span>دائن: حساب ذمم العملاء المهيأ</span>
                   <span>{formatCurrency(safeAmount)}</span>
                 </div>
               </div>}
@@ -1610,9 +1671,9 @@ function AccountantOperationsPanel({
 }) {
   const totalReceivables = Number(salesInvoiceSummary.total || 0) + Number(entityReceivableTotal || 0);
   const isLoadingReceivables = isLoadingSalesInvoiceSummary || isLoadingEntityReceivableTotal;
-  const customerReceivableAccount = receivableAccounts.find((account) => account.code === '114001');
-  const entityReceivableAccount = receivableAccounts.find((account) => account.code === '114002');
-  const otherReceivableAccounts = receivableAccounts.filter((account) => !['114001', '114002'].includes(account.code));
+  const customerReceivableAccount = receivableAccounts.find((account) => account.functional_role === 'customer_receivable');
+  const entityReceivableAccount = receivableAccounts.find((account) => account.functional_role === 'payment_entity_receivable');
+  const otherReceivableAccounts = receivableAccounts.filter((account) => !account.functional_role);
 
   return (
     <section className="customer-care-operations-window customer-care-fade-up min-h-0 p-2 pt-5 text-slate-950 sm:p-3 sm:pt-8 lg:relative lg:z-[80] lg:m-0 lg:flex lg:h-full lg:w-full lg:max-w-none lg:items-center lg:justify-center lg:justify-self-stretch lg:py-3 lg:pe-8 lg:ps-3 lg:pt-10 xl:pe-10 xl:ps-4">
@@ -1639,7 +1700,7 @@ function AccountantOperationsPanel({
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Receipt className="h-4 w-4" /></span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-black text-slate-900">{customerReceivableAccount?.name || 'ذمم فواتير المبيعات'}</p>
-                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{isLoadingSalesInvoiceSummary ? 'جاري التحميل...' : `${customerReceivableAccount?.code || '114001'} · ${salesInvoiceSummary.count} فاتورة مستحقة`}</p>
+                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{isLoadingSalesInvoiceSummary ? 'جاري التحميل...' : `${customerReceivableAccount?.code || 'حساب الذمم'} · ${salesInvoiceSummary.count} فاتورة مستحقة`}</p>
                 </div>
                 <p className="shrink-0 text-xs font-black text-slate-950">{isLoadingSalesInvoiceSummary ? '...' : formatCurrency(salesInvoiceSummary.total)}</p>
                 <ChevronRight className="h-4 w-4 shrink-0 rotate-180 text-slate-300" />
@@ -1649,7 +1710,7 @@ function AccountantOperationsPanel({
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700"><Landmark className="h-4 w-4" /></span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-black text-slate-900">{entityReceivableAccount?.name || 'ذمم لدى الجهات'}</p>
-                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{isLoadingEntityReceivableTotal ? 'جاري التحميل...' : `${entityReceivableAccount?.code || '114002'} · ${approvalOperations.length} عملية مستحقة`}</p>
+                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{isLoadingEntityReceivableTotal ? 'جاري التحميل...' : `${entityReceivableAccount?.code || 'ذمم الجهات'} · ${approvalOperations.length} عملية مستحقة`}</p>
                 </div>
                 <p className="shrink-0 text-xs font-black text-slate-950">{isLoadingEntityReceivableTotal ? '...' : formatCurrency(entityReceivableTotal)}</p>
                 <ChevronRight className="h-4 w-4 shrink-0 rotate-180 text-slate-300" />
@@ -1786,6 +1847,7 @@ function AccountantOperationsPanel({
 }
 
 export function AccountantHomePage() {
+  const navigate = useNavigate();
   const [salesInvoicesOpen, setSalesInvoicesOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [paymentApprovalOpen, setPaymentApprovalOpen] = useState(false);
@@ -1894,7 +1956,7 @@ export function AccountantHomePage() {
         setTemporaryAccountsData(nextTemporaryAccountsData);
         const temporaryAccountIds = new Set(nextTemporaryAccountsData.accounts.map((account) => account.id));
         setAccounts(nextAccounts.filter((account) => (
-          !isCashAccount(account)
+          !isLegacyCashAccount(account)
           && !isReceivableAccount(account)
           && !temporaryAccountIds.has(account.id)
         )));
@@ -2053,7 +2115,7 @@ export function AccountantHomePage() {
         invoices={salesInvoiceSummary.invoices}
         isLoading={isLoadingSalesInvoiceSummary}
         total={salesInvoiceSummary.total}
-        onInvoiceSelect={setSelectedSalesInvoice}
+        onInvoiceSelect={(invoice) => navigate(`/app/sales/${encodeURIComponent(invoice.id)}`)}
       />
       <TemporaryAccountDialog
         open={temporaryAccountOpen}
@@ -2066,7 +2128,7 @@ export function AccountantHomePage() {
               ...current,
               accounts: [...current.accounts, account].sort((first, second) => String(first.code).localeCompare(String(second.code))),
             }));
-          } else if (account.active && isCashAccount(account)) {
+          } else if (account.active && isLegacyCashAccount(account)) {
             setCashSummary((current) => ({
               totalBalance: current?.totalBalance || 0,
               locations: [...(current?.locations || []), { ...account, kind: 'cash', balance: 0 }]
@@ -2100,45 +2162,13 @@ export function AccountantHomePage() {
           setEntityReceivableTotal((current) => current + Number(operation?.amount || 0));
         }}
       />
-      <ShowroomSaleViewSheet
-        sale={selectedSalesInvoice ? {
-          id: selectedSalesInvoice.id,
-          customer_id: selectedSalesInvoice.customerId,
-          customer: { id: selectedSalesInvoice.customerId, name: selectedSalesInvoice.customerName },
-          total_amount: selectedSalesInvoice.totalAmount,
-          accounting_paid_amount: selectedSalesInvoice.paidAmount,
-          accounting_remaining_amount: selectedSalesInvoice.remainingAmount,
-          created_at: selectedSalesInvoice.saleDate,
-        } : null}
-        showroomConfigId={selectedSalesInvoice?.showroomConfigId || null}
-        isOpen={Boolean(selectedSalesInvoice)}
-        onClose={() => {
-          setSelectedSalesInvoice(null);
-        }}
-        onSettleBalance={(sale, options = {}) => {
-          const totalAmount = Number(sale?.total_amount ?? selectedSalesInvoice?.totalAmount ?? 0);
-          const paidAmount = Array.isArray(sale?.payments)
-            ? sale.payments.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0)
-            : Number(selectedSalesInvoice?.paidAmount || 0);
-          setSettlementInvoice({
-            ...selectedSalesInvoice,
-            customerId: sale?.customer?.id || sale?.customer_id || selectedSalesInvoice?.customerId || null,
-            totalAmount,
-            paidAmount,
-            remainingAmount: Math.max(totalAmount - paidAmount, 0),
-            preferredMode: options.preferredMode || 'cash',
-          });
-          setSelectedSalesInvoice(null);
-        }}
-        readOnly
-      />
-      <InvoiceSettlementDialog
+      <SettlementDialog
         open={Boolean(settlementInvoice)}
         onOpenChange={(open) => {
           if (!open) setSettlementInvoice(null);
         }}
-        tenantId={tenantId}
-        invoice={settlementInvoice}
+        targetType="sale"
+        targetId={settlementInvoice?.id || ''}
         onSettled={async () => {
           setSettlementInvoice(null);
           setIsLoadingSalesInvoiceSummary(true);
