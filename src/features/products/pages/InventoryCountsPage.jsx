@@ -46,10 +46,14 @@ function proposedEffect(variance) {
 }
 
 export function InventoryCountsPage() {
-  const { tenant, tenantUser } = useWorkspace();
-  const { can, isLoading: permissionsLoading } = useAuthorization();
+  const { tenant } = useWorkspace();
+  const {
+    can, canAccessBranch, canAccessStockLocation, resourceScope,
+    isLoading: permissionsLoading, isReady: permissionsReady,
+  } = useAuthorization();
   const tenantId = tenant?.id;
-  const userBranchId = tenantUser?.branch_id ?? tenantUser?.branchId ?? '';
+  const defaultBranchId = resourceScope?.defaultBranchId ?? '';
+  const defaultStockLocationId = resourceScope?.defaultStockLocationId ?? '';
   const canAdjust = can('inventory.adjust');
   const [locations, setLocations] = useState([]);
   const [products, setProducts] = useState([]);
@@ -85,19 +89,25 @@ export function InventoryCountsPage() {
   const decisionsComplete = reviewableVariances.every((item) => decisions[item.id]?.action && decisions[item.id]?.reason?.trim());
 
   const reload = async () => {
-    if (!tenantId) return;
+    if (!tenantId || !permissionsReady) return;
     const [nextLocations, nextProducts, nextCounts] = await Promise.all([
       inventoryService.listReceivingLocations({ tenantId }), inventoryService.listProducts(tenantId),
       inventoryService.listInventoryCounts({ tenantId }),
     ]);
-    setLocations(nextLocations); setProducts(nextProducts); setCounts(nextCounts);
+    const authorizedLocations = nextLocations.filter((item) => (
+      canAccessBranch(item.branchId) && canAccessStockLocation(item.id)
+    ));
+    setLocations(authorizedLocations); setProducts(nextProducts); setCounts(nextCounts);
     setLocationId((current) => {
-      if (current && nextLocations.some((item) => item.id === current)) return current;
-      const branchLocations = userBranchId ? nextLocations.filter((item) => item.branchId === userBranchId) : [];
-      return branchLocations.length === 1 ? branchLocations[0].id : nextLocations.length === 1 ? nextLocations[0].id : '';
+      if (current && authorizedLocations.some((item) => item.id === current)) return current;
+      const canonicalDefault = authorizedLocations.find((item) => (
+        item.id === defaultStockLocationId
+        && (!defaultBranchId || item.branchId === defaultBranchId)
+      ));
+      return canonicalDefault?.id ?? '';
     });
   };
-  useEffect(() => { void reload().catch((nextError) => setError(nextError.message)); }, [tenantId, userBranchId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void reload().catch((nextError) => setError(nextError.message)); }, [tenantId, permissionsReady, defaultBranchId, defaultStockLocationId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const preventLoss = (event) => { if (dirty) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('beforeunload', preventLoss);

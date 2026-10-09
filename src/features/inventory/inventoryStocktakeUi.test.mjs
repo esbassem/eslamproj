@@ -12,10 +12,14 @@ test('saved draft observations are restored before editing is enabled', () => {
   assert.match(page, /disabled=\{busy \|\| !draftLoaded/);
 });
 
-test('location selection defaults only from an unambiguous authorized scope', () => {
-  assert.match(page, /branchLocations\.length === 1/);
-  assert.match(page, /nextLocations\.length === 1/);
-  assert.doesNotMatch(page, /nextLocations\[0\]\?\.id/);
+test('location selection uses only valid canonical operational defaults', () => {
+  assert.match(page, /resourceScope\?\.defaultBranchId/);
+  assert.match(page, /resourceScope\?\.defaultStockLocationId/);
+  assert.match(page, /canAccessBranch\(item\.branchId\)/);
+  assert.match(page, /canAccessStockLocation\(item\.id\)/);
+  assert.match(page, /item\.id === defaultStockLocationId/);
+  assert.match(page, /item\.branchId === defaultBranchId/);
+  assert.doesNotMatch(page, /nextLocations\.length === 1/);
   assert.match(page, /اختر الفرع والموقع صراحةً/);
 });
 
