@@ -7,8 +7,8 @@ const PRODUCT_COLUMNS =
 const PRODUCT_VARIANT_COLUMNS =
   'id, tenant_id, product_template_id, display_name, sku, barcode, tracking, sale_price, cost_price, is_active, created_at, updated_at';
 const QUANT_COLUMNS = 'id, tenant_id, product_product_id, quantity_on_hand, reserved_quantity, created_at, updated_at';
-const SERIAL_COLUMNS = 'id, tenant_id, product_product_id, tracking_number, tracking_type, status, data_status, incomplete_reason, notes, created_at, updated_at';
-const MOVE_COLUMNS = 'id, tenant_id, product_product_id, move_type, quantity, created_by, notes, created_at';
+const SERIAL_COLUMNS = 'id, tenant_id, product_product_id, tracking_number, tracking_type, status, data_status, incomplete_reason, notes, current_location_id, created_at, updated_at';
+const MOVE_COLUMNS = 'id, tenant_id, product_product_id, tracking_unit_id, move_type, quantity, reference_type, reference_id, source_location_id, destination_location_id, created_by, notes, created_at';
 const TENANT_USER_COLUMNS = 'id, full_name, email';
 const MOVE_TYPES = new Set(['in', 'out', 'inventory', 'return', 'reserve', 'release']);
 const SERVICE_STOCK_MESSAGE = 'هذا المنتج خدمة ولا يدعم المخزون';
@@ -114,6 +114,7 @@ function normalizeSerial(record) {
     isIncomplete: ['incomplete', 'needs_review'].includes(record.data_status),
     hasDataConsistencyWarning: (record.data_status ?? 'complete') === 'complete' && !record.product_product_id,
     notes: record.notes ?? '',
+    currentLocationId: record.current_location_id ?? null,
     createdAt: record.created_at ?? null,
     updatedAt: record.updated_at ?? null,
   };
@@ -126,8 +127,13 @@ function normalizeMove(record) {
     tenantId: record.tenant_id,
     productId: record.product_product_id,
     productProductId: record.product_product_id,
+    trackingUnitId: record.tracking_unit_id ?? null,
     moveType: record.move_type ?? '',
     quantity: numberValue(record.quantity),
+    referenceType: record.reference_type ?? '',
+    referenceId: record.reference_id ?? null,
+    sourceLocationId: record.source_location_id ?? null,
+    destinationLocationId: record.destination_location_id ?? null,
     userId: record.created_by ?? null,
     notes: record.notes ?? '',
     createdAt: record.created_at ?? null,
@@ -527,18 +533,209 @@ export function normalizeTrackingIdentifierValue(value) {
 }
 
 export const inventoryService = {
+  async listReceivingLocations({ tenantId } = {}) {
+    const client = requireSupabase();
+    if (!tenantId) return [];
+    const { data, error } = await client
+      .from('stock_locations')
+      .select('id, tenant_id, branch_id, name, code, location_type, is_active, branch:branches!stock_locations_branch_tenant_fkey(id, name)')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true)
+      .in('location_type', ['internal', 'showroom'])
+      .order('name');
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((location) => ({
+      id: location.id,
+      branchId: location.branch_id,
+      branchName: location.branch?.name || '',
+      name: location.name,
+      code: location.code,
+      locationType: location.location_type,
+    }));
+  },
+
+  async uploadReceivingAttachment({ tenantId, trackingUnitId, documentType, file } = {}) {
+    const client = requireSupabase();
+    if (!tenantId || !trackingUnitId || !documentType || !file) return null;
+    assertTrackingUnitImage(file);
+    const extension = getFileExtension(file);
+    const filePath = `${tenantId}/tracking-units/${trackingUnitId}/${documentType}-${crypto.randomUUID()}.${extension}`;
+    const { error } = await client.storage.from(TENANT_FILES_BUCKET).upload(filePath, file, {
+      cacheControl: '3600', contentType: file.type || 'image/jpeg', upsert: false,
+    });
+    if (error) throw new Error(error.message || 'تعذر رفع صورة القطعة.');
+    return {
+      bucket_name: TENANT_FILES_BUCKET,
+      file_path: filePath,
+      document_type: documentType,
+      original_file_name: file.name || null,
+      mime_type: file.type || null,
+      file_size: file.size || null,
+    };
+  },
+
+  async receiveInventory({ branchId, destinationLocationId, sourceType, sourceId, lines, idempotencyKey } = {}) {
+    const client = requireSupabase();
+    if (!branchId || !destinationLocationId) throw new Error('اختر موقع الاستلام.');
+    const { data, error } = await client.rpc('receive_inventory', {
+      p_branch_id: branchId,
+      p_destination_location_id: destinationLocationId,
+      p_source_type: sourceType,
+      p_source_id: sourceId,
+      p_lines: lines,
+      p_idempotency_key: idempotencyKey,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async getTransferAvailability({ branchId, locationId, productId } = {}) {
+    if (!branchId || !locationId || !productId) return null;
+    const { data, error } = await requireSupabase().rpc('get_inventory_availability', {
+      p_branch_id: branchId,
+      p_product_id: productId,
+      p_quantity: 1,
+      p_location_id: locationId,
+      p_tracking_unit_id: null,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async transferInventory({ sourceBranchId, sourceLocationId, destinationBranchId, destinationLocationId, sourceType, sourceId, lines, notes, idempotencyKey } = {}) {
+    const { data, error } = await requireSupabase().rpc('transfer_inventory', {
+      p_source_branch_id: sourceBranchId,
+      p_source_location_id: sourceLocationId,
+      p_destination_branch_id: destinationBranchId,
+      p_destination_location_id: destinationLocationId,
+      p_source_type: sourceType,
+      p_source_id: sourceId,
+      p_lines: lines,
+      p_notes: notes || null,
+      p_idempotency_key: idempotencyKey,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async listInventoryCounts({ tenantId } = {}) {
+    const { data, error } = await requireSupabase().from('inventory_counts')
+      .select('id, branch_id, location_id, scope_type, state, started_at, submitted_at, posted_at')
+      .eq('tenant_id', tenantId).order('started_at', { ascending: false }).limit(50);
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  },
+
+  async listCountQuantityProductIds({ tenantId, locationId } = {}) {
+    if (!tenantId || !locationId) return [];
+    const { data, error } = await requireSupabase().from('stock_quants')
+      .select('product_product_id').eq('tenant_id', tenantId).eq('location_id', locationId);
+    if (error) throw new Error(error.message);
+    return [...new Set((data || []).map((item) => item.product_product_id).filter(Boolean))];
+  },
+
+  async startInventoryCount({ branchId, locationId, scopeType = 'full_location', productIds = [], idempotencyKey } = {}) {
+    const { data, error } = await requireSupabase().rpc('start_inventory_count', {
+      p_branch_id: branchId, p_location_id: locationId, p_scope_type: scopeType,
+      p_product_ids: productIds, p_idempotency_key: idempotencyKey,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async getInventoryCount({ countId } = {}) {
+    const { data, error } = await requireSupabase().rpc('get_inventory_count', { p_count_id: countId });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async getInventoryCountUnits({ tenantId, trackingUnitIds = [] } = {}) {
+    const client = requireSupabase();
+    const ids = [...new Set(trackingUnitIds.filter(Boolean))];
+    if (!tenantId || !ids.length) return [];
+    const [{ data: units, error: unitsError }, { data: identifiers, error: identifiersError },
+      { data: types, error: typesError }, { data: states, error: statesError }] = await Promise.all([
+      client.from('stock_tracking_units').select(SERIAL_COLUMNS).eq('tenant_id', tenantId).in('id', ids),
+      client.from('stock_tracking_unit_identifiers').select('tracking_unit_id, identifier_type_id, value')
+        .eq('tenant_id', tenantId).in('tracking_unit_id', ids),
+      client.from('product_tracking_identifier_types').select('id, name, code').eq('tenant_id', tenantId),
+      client.from('inventory_tracking_unit_states').select('tracking_unit_id, state, current_location_id, version')
+        .eq('tenant_id', tenantId).in('tracking_unit_id', ids),
+    ]);
+    if (unitsError) throw new Error(unitsError.message);
+    if (identifiersError) throw new Error(identifiersError.message);
+    if (typesError) throw new Error(typesError.message);
+    if (statesError) throw new Error(statesError.message);
+    const typesById = new Map((types || []).map((type) => [type.id, type]));
+    const identifiersByUnit = (identifiers || []).reduce((map, item) => {
+      const list = map.get(item.tracking_unit_id) || [];
+      list.push({ ...item, type: typesById.get(item.identifier_type_id) });
+      map.set(item.tracking_unit_id, list);
+      return map;
+    }, new Map());
+    const statesByUnit = new Map((states || []).map((state) => [state.tracking_unit_id, state]));
+    return (units || []).map((row) => {
+      const unit = normalizeSerial(row);
+      const unitIdentifiers = identifiersByUnit.get(row.id) || [];
+      const isChassis = (item) => /chassis|شاسيه/i.test(`${item.type?.code || ''} ${item.type?.name || ''}`);
+      const isEngine = (item) => /engine|motor|موتور|محرك/i.test(`${item.type?.code || ''} ${item.type?.name || ''}`);
+      const state = statesByUnit.get(row.id);
+      return {
+        ...unit,
+        chassisNumber: unitIdentifiers.find(isChassis)?.value || '',
+        engineNumber: unitIdentifiers.find(isEngine)?.value || '',
+        canonicalState: state?.state || '',
+        currentLocationId: state?.current_location_id || unit.currentLocationId || null,
+        canonicalVersion: state?.version ?? null,
+      };
+    });
+  },
+
+  async saveInventoryCountObservations({ countId, observations, idempotencyKey } = {}) {
+    const { data, error } = await requireSupabase().rpc('save_inventory_count_observations', {
+      p_count_id: countId, p_observations: observations, p_idempotency_key: idempotencyKey,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async submitInventoryCount({ countId, idempotencyKey } = {}) {
+    const { data, error } = await requireSupabase().rpc('submit_inventory_count', { p_count_id: countId, p_idempotency_key: idempotencyKey });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async postInventoryAdjustment({ countId, decisions, reason, idempotencyKey } = {}) {
+    const { data, error } = await requireSupabase().rpc('post_inventory_adjustment', {
+      p_count_id: countId, p_variance_decisions: decisions, p_reason: reason, p_idempotency_key: idempotencyKey,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async getTrackingUnitDocumentationStatus({ trackingUnitId } = {}) {
+    if (!trackingUnitId) return null;
+    const { data, error } = await requireSupabase().rpc('get_inventory_unit_documentation_status', {
+      p_tracking_unit_id: trackingUnitId,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
   async searchSerialUnitsByIdentifiers({
     tenantId,
     chassisNumber = '',
     engineNumber = '',
+    trackingNumber = '',
     limit = 10,
   } = {}) {
     const client = requireSupabase();
     const normalizedChassis = normalizeTrackingIdentifierValue(chassisNumber);
     const normalizedEngine = normalizeTrackingIdentifierValue(engineNumber);
+    const normalizedTracking = normalizeTrackingIdentifierValue(trackingNumber);
 
     if (!tenantId) throw new Error('لا توجد شركة نشطة.');
-    if (normalizedChassis.length < 6) return { matchSource: '', units: [] };
+    if (Math.max(normalizedChassis.length, normalizedEngine.length, normalizedTracking.length) < 6) return { matchSource: '', units: [] };
 
     const { data: typeRows, error: typesError } = await client
       .from('product_tracking_identifier_types')
@@ -581,26 +778,56 @@ export const inventoryService = {
       );
     };
 
-    let matchSource = 'chassis';
-    let matchedRows = await findMatchingRows(chassisTypeIds, normalizedChassis);
-    if (!matchedRows.length && normalizedEngine.length >= 6) {
-      matchSource = 'engine';
-      matchedRows = await findMatchingRows(engineTypeIds, normalizedEngine);
+    let matchSource = 'tracking';
+    let directUnits = [];
+    if (normalizedTracking.length >= 6) {
+      const loosePattern = `%${Array.from(normalizedTracking).join('%')}`;
+      const { data, error } = await client.from('stock_tracking_units').select(SERIAL_COLUMNS)
+        .eq('tenant_id', tenantId).ilike('tracking_number', loosePattern).limit(Math.max(Number(limit) || 10, 1) * 5);
+      if (error) throw new Error(error.message);
+      directUnits = (data || []).filter((unit) => {
+        const normalized = normalizeTrackingIdentifierValue(unit.tracking_number);
+        return normalized === normalizedTracking || normalized.endsWith(normalizedTracking.slice(-6));
+      });
     }
 
-    const unitIds = [...new Set(matchedRows.map((row) => row.tracking_unit_id).filter(Boolean))];
+    let matchedRows = [];
+    if (!directUnits.length) {
+      const [chassisRows, engineRows] = await Promise.all([
+        findMatchingRows(chassisTypeIds, normalizedChassis),
+        findMatchingRows(engineTypeIds, normalizedEngine),
+      ]);
+      matchSource = chassisRows.length && engineRows.length ? 'identifiers' : chassisRows.length ? 'chassis' : 'engine';
+      matchedRows = [...chassisRows, ...engineRows];
+    }
+
+    const unitIds = [...new Set([
+      ...directUnits.map((unit) => unit.id),
+      ...matchedRows.map((row) => row.tracking_unit_id),
+    ].filter(Boolean))];
     if (!unitIds.length) return { matchSource, units: [] };
 
-    const [{ data: unitRows, error: unitsError }, { data: identifierRows, error: identifiersError }] = await Promise.all([
+    const [{ data: unitRows, error: unitsError }, { data: identifierRows, error: identifiersError }, { data: stateRows, error: statesError }] = await Promise.all([
       client.from('stock_tracking_units').select(SERIAL_COLUMNS).eq('tenant_id', tenantId).in('id', unitIds),
       client
         .from('stock_tracking_unit_identifiers')
         .select('id, tracking_unit_id, identifier_type_id, value, is_not_available')
         .eq('tenant_id', tenantId)
         .in('tracking_unit_id', unitIds),
+      client.from('inventory_tracking_unit_states')
+        .select('tracking_unit_id, state, current_location_id, version')
+        .eq('tenant_id', tenantId).in('tracking_unit_id', unitIds),
     ]);
     if (unitsError) throw new Error(unitsError.message);
     if (identifiersError) throw new Error(identifiersError.message);
+    if (statesError) throw new Error(statesError.message);
+
+    const locationIds = [...new Set((stateRows || []).map((row) => row.current_location_id).filter(Boolean))];
+    const { data: locationRows, error: locationsError } = locationIds.length
+      ? await client.from('stock_locations').select('id, name, branch:branches!stock_locations_branch_tenant_fkey(id, name)')
+        .eq('tenant_id', tenantId).in('id', locationIds)
+      : { data: [], error: null };
+    if (locationsError) throw new Error(locationsError.message);
 
     const productIds = [...new Set((unitRows || []).map((unit) => unit.product_product_id).filter(Boolean))];
     const { data: productRows, error: productsError } = productIds.length
@@ -620,6 +847,8 @@ export const inventoryService = {
 
     const typesById = new Map((typeRows || []).map((type) => [type.id, type]));
     const productsById = byId((productRows || []).map(normalizeInventoryVariant));
+    const statesByUnitId = new Map((stateRows || []).map((row) => [row.tracking_unit_id, row]));
+    const locationsById = new Map((locationRows || []).map((row) => [row.id, row]));
     const identifiersByUnitId = (identifierRows || []).reduce((map, row) => {
       const current = map.get(row.tracking_unit_id) || [];
       const type = typesById.get(row.identifier_type_id);
@@ -644,6 +873,8 @@ export const inventoryService = {
         const engine = identifiers.find((identifier) => isEngineType({ code: identifier.code, name: identifier.label }));
         const storedChassis = normalizeTrackingIdentifierValue(chassis?.value);
         const storedEngine = normalizeTrackingIdentifierValue(engine?.value);
+        const state = statesByUnitId.get(row.id);
+        const location = locationsById.get(state?.current_location_id);
 
         return {
           ...unit,
@@ -651,6 +882,11 @@ export const inventoryService = {
           trackingIdentifiers: identifiers,
           chassisNumber: chassis?.value || '',
           engineNumber: engine?.value || '',
+          canonicalState: state?.state || '',
+          canonicalVersion: state?.version ?? null,
+          currentLocationId: state?.current_location_id || unit.currentLocationId || null,
+          currentLocationName: location?.name || '',
+          currentBranchName: location?.branch?.name || '',
           chassisMatchType: storedChassis === normalizedChassis
             ? 'exact'
             : storedChassis.endsWith(normalizedChassis.slice(-6)) ? 'suffix' : '',
@@ -690,6 +926,8 @@ export const inventoryService = {
     incompleteReason = null,
     registrationSource = null,
   }) {
+    throw new Error('مسار إضافة المخزون القديم مغلق. استخدم استلام المخزون Canonical.');
+    /* c8 ignore start -- retained temporarily for non-runtime migration reference */
     const client = requireSupabase();
     if (allowIncompleteUnit) {
       if (registrationSource !== 'jawab') {
@@ -835,6 +1073,7 @@ export const inventoryService = {
     await increaseQuant(client, { tenantId, productProductId: activeVariantId, quantity: nextQuantity });
     await createMove(client, { tenantId, productProductId: activeVariantId, moveType: 'in', quantity: nextQuantity, userId });
     return { quantity: nextQuantity };
+    /* c8 ignore stop */
   },
 
   async saveTrackingUnitLicense({ tenantId, trackingUnitId, license = {}, userId } = {}) {
@@ -1128,93 +1367,32 @@ export const inventoryService = {
     ]);
     if (error) throw new Error(error.message);
     const moves = (data ?? []).map(normalizeMove);
-    const usersById = await loadUsersById(client, tenantId, moves.map((move) => move.userId));
+    const locationIds = [...new Set(moves.flatMap((move) => [move.sourceLocationId, move.destinationLocationId]).filter(Boolean))];
+    const [{ data: locationRows }, usersById] = await Promise.all([
+      locationIds.length
+        ? client.from('stock_locations').select('id, name, branch:branches!stock_locations_branch_tenant_fkey(name)').eq('tenant_id', tenantId).in('id', locationIds)
+        : Promise.resolve({ data: [] }),
+      loadUsersById(client, tenantId, moves.map((move) => move.userId)),
+    ]);
+    const locationsById = new Map((locationRows ?? []).map((location) => [location.id, `${location.branch?.name ? `${location.branch.name} — ` : ''}${location.name}`]));
 
     return moves.map((move) => ({
       ...move,
       product: productsMap.get(move.productProductId) ?? null,
       userName: usersById.get(move.userId) ?? move.userId ?? '-',
+      sourceLocationName: locationsById.get(move.sourceLocationId) ?? '',
+      destinationLocationName: locationsById.get(move.destinationLocationId) ?? '',
     }));
   },
 
   async consumeStock({ tenantId, productId, productProductId, quantity, userId }) {
-    const client = requireSupabase();
-    const product = await getProduct(client, { tenantId, productId });
-    assertQuantityProduct(product);
-
-    const activeVariantId = productProductId ?? product.id;
-    await decreaseQuant(client, { tenantId, productProductId: activeVariantId, quantity });
-    return createMove(client, { tenantId, productProductId: activeVariantId, moveType: 'out', quantity, userId });
+    void tenantId; void productId; void productProductId; void quantity; void userId;
+    throw new Error('تم إيقاف الصرف القديم للمخزون. استخدم الحجز والتسليم المعتمدين.');
   },
 
   async consumeSerial({ tenantId, productId, productProductId, serialUnitId, userId }) {
-    const client = requireSupabase();
-    const product = await getProduct(client, { tenantId, productId });
-    assertSerialProduct(product);
-    const activeVariantId = productProductId ?? product.id;
-
-    const { data: unit, error: unitError } = await client
-      .from('stock_tracking_units')
-      .select(SERIAL_COLUMNS)
-      .eq('tenant_id', tenantId)
-      .eq('id', serialUnitId)
-      .eq('product_product_id', activeVariantId)
-      .eq('data_status', 'complete')
-      .eq('status', 'in_stock')
-      .maybeSingle();
-
-    if (unitError) throw new Error(unitError.message);
-    if (!unit) throw new Error(SERIAL_UNITS_MESSAGE);
-
-    const { error } = await client.from('stock_tracking_units').update({ status: 'sold' }).eq('id', serialUnitId);
-    if (error) throw new Error(error.message);
-
-    await createMove(client, {
-      tenantId,
-      productProductId: unit.product_product_id ?? activeVariantId,
-      moveType: 'out',
-      quantity: 1,
-      userId,
-    });
-    return normalizeSerial({ ...unit, status: 'sold' });
+    void tenantId; void productId; void productProductId; void serialUnitId; void userId;
+    throw new Error('تم إيقاف صرف الوحدات المتسلسلة القديم. استخدم الحجز والتسليم المعتمدين.');
   },
 
-  async adjustStock({ tenantId, productId, productProductId, quantity, userId }) {
-    const client = requireSupabase();
-    const product = await getProduct(client, { tenantId, productId });
-    assertQuantityProduct(product);
-
-    const nextQuantity = numberValue(quantity);
-    if (nextQuantity < 0) throw new Error('الكمية لا يمكن أن تكون سالبة.');
-
-    const activeVariantId = productProductId ?? product.id;
-    const existing = await getQuantRecord(client, { tenantId, productProductId: activeVariantId });
-    const currentQuantity = numberValue(existing?.quantity);
-    const difference = nextQuantity - currentQuantity;
-
-    if (existing) {
-      const { error } = await client.from('stock_quants').update({ quantity_on_hand: nextQuantity }).eq('id', existing.id);
-      if (error) throw new Error(error.message);
-    } else if (nextQuantity > 0) {
-      const { error } = await client.from('stock_quants').insert({
-        tenant_id: tenantId,
-        product_product_id: activeVariantId,
-        quantity_on_hand: nextQuantity,
-      });
-      if (error) throw new Error(error.message);
-    }
-
-    if (difference !== 0) {
-      await createMove(client, {
-        tenantId,
-        productProductId: activeVariantId,
-        moveType: 'inventory',
-        quantity: Math.abs(difference),
-        userId,
-        notes: difference > 0 ? 'تسوية زيادة' : 'تسوية نقص',
-      });
-    }
-
-    return { quantity: nextQuantity };
-  },
 };
