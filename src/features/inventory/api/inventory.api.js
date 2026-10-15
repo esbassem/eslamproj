@@ -155,7 +155,7 @@ function getFileExtension(file) {
 function assertTrackingUnitImage(file) {
   if (!file) return;
   if (!file.type?.startsWith('image/')) {
-    throw new Error('يمكن رفع صور فقط لصورة الشاسيه أو الموتور.');
+    throw new Error('يمكن رفع صور فقط لمستندات وحدة المخزون.');
   }
 }
 
@@ -554,6 +554,24 @@ export const inventoryService = {
     }));
   },
 
+  async listCategoryInventoryDocuments({ tenantId, categoryId } = {}) {
+    if (!tenantId || !categoryId) return [];
+    const { data, error } = await requireSupabase()
+      .from('product_category_inventory_documents')
+      .select('id, tenant_id, category_id, document_type, name, is_required')
+      .eq('tenant_id', tenantId)
+      .eq('category_id', categoryId)
+      .order('name');
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((item) => ({
+      id: item.id,
+      categoryId: item.category_id,
+      documentType: item.document_type,
+      name: item.name,
+      isRequired: item.is_required,
+    }));
+  },
+
   async uploadReceivingAttachment({ tenantId, trackingUnitId, documentType, file } = {}) {
     const client = requireSupabase();
     if (!tenantId || !trackingUnitId || !documentType || !file) return null;
@@ -705,9 +723,39 @@ export const inventoryService = {
     return data;
   },
 
+  async cancelInventoryCount({ countId, reason, idempotencyKey } = {}) {
+    const { data, error } = await requireSupabase().rpc('cancel_inventory_count', {
+      p_count_id: countId, p_reason: reason, p_idempotency_key: idempotencyKey,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async closeMatchedInventoryCount({ countId, reason, idempotencyKey } = {}) {
+    const { data, error } = await requireSupabase().rpc('close_matched_inventory_count', {
+      p_count_id: countId, p_reason: reason, p_idempotency_key: idempotencyKey,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
   async postInventoryAdjustment({ countId, decisions, reason, idempotencyKey } = {}) {
     const { data, error } = await requireSupabase().rpc('post_inventory_adjustment', {
       p_count_id: countId, p_variance_decisions: decisions, p_reason: reason, p_idempotency_key: idempotencyKey,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async listPendingInventoryReturnReviews() {
+    const { data, error } = await requireSupabase().rpc('list_pending_inventory_return_reviews');
+    if (error) throw new Error(error.message);
+    return Array.isArray(data) ? data : [];
+  },
+
+  async releaseReturnedInventoryUnit({ trackingUnitId, reason, idempotencyKey } = {}) {
+    const { data, error } = await requireSupabase().rpc('release_returned_inventory_unit', {
+      p_tracking_unit_id: trackingUnitId, p_reason: reason, p_idempotency_key: idempotencyKey,
     });
     if (error) throw new Error(error.message);
     return data;
