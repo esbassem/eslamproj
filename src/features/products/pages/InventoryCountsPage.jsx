@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Plus, Search, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Ban, CheckCircle2, ClipboardCheck, Plus, Search, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/core/ui/button';
 import { useAuthorization } from '@/core/authorization/useAuthorization';
@@ -7,6 +7,13 @@ import { inventoryService, normalizeTrackingIdentifierValue } from '@/features/i
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
 const key = (prefix) => `${prefix}:${crypto.randomUUID()}`;
+const attemptKey = (attempts, operation, payload) => {
+  const fingerprint = JSON.stringify(payload);
+  if (attempts.current[operation]?.fingerprint !== fingerprint) {
+    attempts.current[operation] = { fingerprint, idempotencyKey: key(operation) };
+  }
+  return attempts.current[operation].idempotencyKey;
+};
 const labels = { draft: 'مسودة', submitted: 'بانتظار المراجعة', posted: 'مرحّل', cancelled: 'ملغي' };
 const varianceLabels = {
   matched: 'مطابق', missing: 'وحدة مسجلة وغير موجودة فعليًا', unexpected: 'وحدة غير متوقعة في نطاق الجرد',
@@ -54,6 +61,8 @@ export function InventoryCountsPage() {
   const tenantId = tenant?.id;
   const defaultBranchId = resourceScope?.defaultBranchId ?? '';
   const defaultStockLocationId = resourceScope?.defaultStockLocationId ?? '';
+  const canCount = can('inventory.count');
+  const canSubmitCount = can('inventory.count_submit');
   const canAdjust = can('inventory.adjust');
   const [locations, setLocations] = useState([]);
   const [products, setProducts] = useState([]);
@@ -70,12 +79,14 @@ export function InventoryCountsPage() {
   const [dirty, setDirty] = useState(false);
   const [decisions, setDecisions] = useState({});
   const [reason, setReason] = useState('');
+  const [cancelReason, setCancelReason] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [postedResult, setPostedResult] = useState(null);
   const [units, setUnits] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const commandAttempts = useRef({});
 
   const selectedLocation = locations.find((item) => item.id === (active?.location_id || locationId));
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
@@ -148,11 +159,14 @@ export function InventoryCountsPage() {
   };
 
   const start = () => run(async () => {
+    if (!canCount) throw new Error('ليست لديك صلاحية بدء الجرد.');
     const location = locations.find((item) => item.id === locationId);
     if (!location) throw new Error('اختر الفرع وموقع المخزون صراحةً قبل بدء الجرد.');
+    const payload = { branchId: location.branchId, locationId };
     const result = await inventoryService.startInventoryCount({
-      branchId: location.branchId, locationId, idempotencyKey: key('count-start'),
+      ...payload, idempotencyKey: attemptKey(commandAttempts, 'count-start', payload),
     });
+    delete commandAttempts.current['count-start'];
     await openCount(result.count_id); await reload();
   });
 
@@ -190,18 +204,28 @@ export function InventoryCountsPage() {
   };
 
   const saveDraft = async ({ silent = false } = {}) => {
+    if (!canCount) throw new Error('ليست لديك صلاحية حفظ مشاهدات الجرد.');
     if (!draftLoaded || active?.state !== 'draft') throw new Error('المسودة لم تكتمل استعادتها بعد.');
     const validation = validateDraft();
     if (validation) throw new Error(validation);
     const observations = observationPayload(serials, quantities, quantityProducts);
-    await inventoryService.saveInventoryCountObservations({ countId: active.id, observations, idempotencyKey: key('count-save') });
+    const payload = { countId: active.id, observations };
+    await inventoryService.saveInventoryCountObservations({
+      ...payload, idempotencyKey: attemptKey(commandAttempts, 'count-save', payload),
+    });
+    delete commandAttempts.current['count-save'];
     await openCount(active.id);
     if (!silent) setNotice('تم حفظ المشاهدات، ويمكن الرجوع للمسودة لاحقًا بأمان.');
   };
   const save = () => run(() => saveDraft());
   const submit = () => run(async () => {
-    await saveDraft({ silent: true });
-    await inventoryService.submitInventoryCount({ countId: active.id, idempotencyKey: key('count-submit') });
+    if (!canSubmitCount) throw new Error('ليست لديك صلاحية إرسال الجرد.');
+    if (dirty) await saveDraft({ silent: true });
+    const payload = { countId: active.id };
+    await inventoryService.submitInventoryCount({
+      ...payload, idempotencyKey: attemptKey(commandAttempts, 'count-submit', payload),
+    });
+    delete commandAttempts.current['count-submit'];
     await openCount(active.id); await reload(); setNotice('تم إرسال الجرد وتجميده. راجع الفروق قبل أي تعديل.');
   });
 
@@ -210,13 +234,25 @@ export function InventoryCountsPage() {
     setActive(null); setSerials([]); setQuantities({}); setDirty(false); setDraftLoaded(false); setPostedResult(null);
   };
 
+  const cancel = () => run(async () => {
+    if (!canSubmitCount) throw new Error('ليست لديك صلاحية إلغاء الجرد.');
+    if (!cancelReason.trim()) throw new Error('اكتب سببًا واضحًا لإلغاء الجرد.');
+    if (!window.confirm('سيتم إلغاء جلسة الجرد مع الاحتفاظ بتاريخها. هل تريد المتابعة؟')) return;
+    const payload = { countId: active.id, reason: cancelReason.trim() };
+    await inventoryService.cancelInventoryCount({
+      ...payload, idempotencyKey: attemptKey(commandAttempts, 'count-cancel', payload),
+    });
+    delete commandAttempts.current['count-cancel'];
+    await openCount(active.id); await reload(); setCancelReason(''); setNotice('تم إلغاء جلسة الجرد مع الاحتفاظ بتاريخها.');
+  });
+
   const updateDecision = (varianceId, changes) => setDecisions((current) => ({
     ...current, [varianceId]: { action: '', reason: '', ...(current[varianceId] || {}), ...changes },
   }));
   const requestPost = () => {
     if (!canAdjust) { setError('ليست لديك صلاحية اعتماد تعديلات المخزون.'); return; }
     if (unresolvedIdentities.length) { setError('توجد هويات غير معروفة. تحقق منها عبر الاستلام/التبنّي الصحيح ثم أعد الجرد.'); return; }
-    if (!reviewableVariances.length) { setError('لا توجد فروق معلقة للترحيل.'); return; }
+    if (!reviewableVariances.length) { setError('لا توجد فروق معلقة. استخدم إجراء إغلاق الجرد المطابق.'); return; }
     if (!decisionsComplete || !reason.trim()) { setError('اختر قرارًا واكتب سببًا لكل فرق، ثم اكتب سبب الترحيل العام.'); return; }
     setConfirming(true); setError('');
   };
@@ -226,22 +262,38 @@ export function InventoryCountsPage() {
       action: decisions[variance.id].action,
       reviewer_reason: decisions[variance.id].reason.trim(),
     }));
+    const command = { countId: active.id, decisions: payload, reason: reason.trim() };
     const result = await inventoryService.postInventoryAdjustment({
-      countId: active.id, decisions: payload, reason: reason.trim(), idempotencyKey: key('adjustment-post'),
+      ...command, idempotencyKey: attemptKey(commandAttempts, 'adjustment-post', command),
     });
+    delete commandAttempts.current['adjustment-post'];
     setConfirming(false); await openCount(active.id); await reload(); setPostedResult({ ...result, decisions: payload });
     setNotice('تم ترحيل القرارات المعتمدة بنجاح.');
+  });
+
+  const closeMatched = () => run(async () => {
+    if (!canAdjust) throw new Error('ليست لديك صلاحية إغلاق نتيجة الجرد.');
+    if (pendingVariances.length) throw new Error('لا يمكن إغلاق الجرد قبل حسم كل الفروق.');
+    if (!reason.trim()) throw new Error('اكتب سبب إغلاق الجرد المطابق.');
+    if (!window.confirm('لا توجد فروق معلقة ولن تُنشأ حركة أو تسوية مخزون. هل تريد إغلاق الجرد؟')) return;
+    const payload = { countId: active.id, reason: reason.trim() };
+    const result = await inventoryService.closeMatchedInventoryCount({
+      ...payload, idempotencyKey: attemptKey(commandAttempts, 'matched-count-close', payload),
+    });
+    delete commandAttempts.current['matched-count-close'];
+    await openCount(active.id); await reload(); setPostedResult({ ...result, decisions: [] });
+    setNotice('تم إغلاق الجرد المطابق بدون إنشاء حركة أو تسوية مخزون.');
   });
 
   return <div className="space-y-5" dir="rtl">
     <header className="flex flex-wrap items-end justify-between gap-3">
       <div><h1 className="text-2xl font-black text-slate-950">الجرد</h1><p className="mt-1 text-sm font-semibold text-slate-500">سجل الواقع الفيزيائي أولًا، ثم راجع الفروق قبل أي تعديل.</p></div>
-      {!active ? <div className="flex flex-wrap gap-2">
+      {!active && canCount ? <div className="flex flex-wrap gap-2">
         <select aria-label="الفرع وموقع المخزون" className="h-10 min-w-72 rounded-lg border px-3" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
           <option value="">اختر الفرع والموقع</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.branchName} — {location.name}</option>)}
         </select>
         <Button disabled={!locationId || busy} onClick={start}><Plus className="h-4 w-4" />جرد جديد</Button>
-      </div> : <Button variant="secondary" onClick={leaveCount}>العودة للقائمة</Button>}
+      </div> : active ? <Button variant="secondary" onClick={leaveCount}>العودة للقائمة</Button> : null}
     </header>
     {selectedLocation ? <div className="rounded-xl border border-blue-200 bg-blue-50 p-4"><p className="text-xs font-bold text-blue-700">نطاق الجرد الحالي</p><p className="mt-1 text-lg font-black text-blue-950">{selectedLocation.branchName} — {selectedLocation.name}</p></div> : !active ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">اختر الفرع والموقع صراحةً. لن يتم اختيار موقع عشوائي بدلًا منك.</div> : null}
     {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-800">{error}</div> : null}
@@ -257,8 +309,13 @@ export function InventoryCountsPage() {
         {identityResult ? <IdentitySearchResult result={identityResult} countLocationId={active.location_id} onAdd={addObservation} /> : null}
         <div className="space-y-2">{serials.map((item, index) => <ObservedUnit key={`${item.identifier}:${index}`} item={item} onRemove={() => removeObservation(index)} />)}{!serials.length ? <p className="rounded-xl border border-dashed p-5 text-center text-sm text-slate-500">لم تُسجل أي وحدة فعلية بعد.</p> : null}</div>
         {quantityProducts.length ? <div><h2 className="mb-3 font-black">المنتجات المحسوبة بالكمية</h2><div className="grid gap-3 md:grid-cols-2">{quantityProducts.map((product) => <label key={product.id} className="font-bold">{product.displayName || product.name}<span className="mr-1 text-red-600">مطلوب</span><input type="number" min="0" step="0.0001" className="mt-1 h-11 w-full rounded-lg border px-3" value={quantities[product.id] ?? ''} onChange={(event) => setQuantity(product.id, event.target.value)} placeholder="الكمية الموجودة فعليًا" /></label>)}</div></div> : null}
-        <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={busy || !draftLoaded || !dirty} onClick={save}>حفظ المشاهدات</Button><Button disabled={busy || !draftLoaded} onClick={submit}>إرسال وتجميد الجرد</Button>{dirty ? <span className="self-center text-xs font-bold text-amber-700">يوجد عمل غير محفوظ</span> : <span className="self-center text-xs text-emerald-700">كل المشاهدات محفوظة</span>}</div>
+        <div className="flex flex-wrap gap-2">{canCount ? <Button variant="secondary" disabled={busy || !draftLoaded || !dirty} onClick={save}>حفظ المشاهدات</Button> : null}{canSubmitCount ? <Button disabled={busy || !draftLoaded || (dirty && !canCount)} onClick={submit}>إرسال وتجميد الجرد</Button> : null}{dirty ? <span className="self-center text-xs font-bold text-amber-700">يوجد عمل غير محفوظ</span> : <span className="self-center text-xs text-emerald-700">كل المشاهدات محفوظة</span>}</div>
       </>}
+    </section> : null}
+
+    {active && ['draft', 'submitted'].includes(active.state) && canSubmitCount ? <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
+      <label className="block font-bold text-red-950">سبب إلغاء الجرد<input className="mt-2 h-11 w-full rounded-lg border border-red-200 bg-white px-3" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="سبب واضح ومطلوب" /></label>
+      <Button className="mt-3 gap-2" variant="secondary" disabled={busy || !cancelReason.trim()} onClick={cancel}><Ban className="h-4 w-4" />إلغاء جلسة الجرد</Button>
     </section> : null}
 
     {active && active.state !== 'draft' ? <section className="space-y-4">
@@ -267,7 +324,7 @@ export function InventoryCountsPage() {
         {unresolvedIdentities.length ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-800"><AlertTriangle className="ml-2 inline h-4 w-4" />لا يمكن الترحيل وفي الجرد هوية غير معروفة. تحقق منها من مسار الاستلام/التبنّي Canonical، ثم ألغِ هذه الجلسة وأعد الجرد.</div> : null}
         {!permissionsLoading && !canAdjust ? <p className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">المراجعة متاحة للقراءة فقط. اعتماد التعديلات يحتاج صلاحية «تسوية المخزون».</p> : <>
           <label className="block font-bold">سبب الترحيل العام<input className="mt-2 h-11 w-full rounded-lg border px-3" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="مثال: نتيجة الجرد الفيزيائي بتاريخ اليوم" /></label>
-          <Button className="mt-3" disabled={busy || unresolvedIdentities.length > 0 || !decisionsComplete || !reason.trim()} onClick={requestPost}>مراجعة ملخص التغييرات</Button>
+          {pendingVariances.length ? <Button className="mt-3" disabled={busy || unresolvedIdentities.length > 0 || !decisionsComplete || !reason.trim()} onClick={requestPost}>مراجعة ملخص التغييرات</Button> : <Button className="mt-3" disabled={busy || !reason.trim()} onClick={closeMatched}>إغلاق الجرد المطابق</Button>}
         </>}
       </div> : null}
       {confirming ? <ConfirmationSummary variances={reviewableVariances} decisions={decisions} onCancel={() => setConfirming(false)} onConfirm={post} busy={busy} /> : null}
@@ -308,7 +365,7 @@ function ConfirmationSummary({ variances, decisions, onCancel, onConfirm, busy }
 }
 
 function PostResult({ result }) {
-  return <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><CheckCircle2 className="h-7 w-7 text-emerald-700" /><h2 className="mt-2 font-black text-emerald-950">تم ترحيل نتيجة الجرد</h2><p className="mt-1 text-sm">مرجع التسوية: <code>{result.adjustment_id}</code></p><p className="text-sm">تعديلات: {result.decisions.filter((item) => item.action === 'adjust').length} · متجاهلة بقرار: {result.decisions.filter((item) => item.action === 'ignore').length}</p><Link className="mt-3 inline-block font-bold text-blue-700 underline" to="/apps/inventory/stock">العودة إلى أرصدة المخزون</Link></div>;
+  return <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><CheckCircle2 className="h-7 w-7 text-emerald-700" /><h2 className="mt-2 font-black text-emerald-950">تم ترحيل نتيجة الجرد</h2>{result.adjustment_id ? <p className="mt-1 text-sm">مرجع التسوية: <code>{result.adjustment_id}</code></p> : <p className="mt-1 text-sm">الجرد مطابق؛ أُغلق بدون حركة أو تسوية مخزون.</p>}<p className="text-sm">تعديلات: {result.decisions.filter((item) => item.action === 'adjust').length} · متجاهلة بقرار: {result.decisions.filter((item) => item.action === 'ignore').length}</p><Link className="mt-3 inline-block font-bold text-blue-700 underline" to="/apps/inventory/stock">العودة إلى أرصدة المخزون</Link></div>;
 }
 
 function Empty() { return <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed bg-slate-50"><ClipboardCheck className="h-10 w-10 text-slate-300" /><p className="mt-3 font-black">لا توجد جلسات جرد بعد</p></div>; }

@@ -67,6 +67,7 @@ const APP_NAVIGATION = Object.freeze([
       { label: 'حركات المخزون', to: '/apps/inventory/operations/moves' },
       { label: 'المواقع', to: '/apps/inventory/operations/locations' },
       { label: 'الجرد', to: '/apps/inventory/operations/counts' },
+      { label: 'مراجعة المرتجعات', to: '/apps/inventory/operations/returns' },
     ]),
   }),
 ]);

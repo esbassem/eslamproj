@@ -30,6 +30,7 @@ export const routeLoaders = {
   inventoryOverview: cached('inventoryOverview', () => import('@/features/products/pages/InventoryOverviewPage')),
   inventoryLocations: cached('inventoryLocations', () => import('@/features/products/pages/InventoryLocationsPage')),
   inventoryCounts: cached('inventoryCounts', () => import('@/features/products/pages/InventoryCountsPage')),
+  inventoryReturnReviews: cached('inventoryReturnReviews', () => import('@/features/inventory/pages/InventoryReturnReviewsPage')),
   productAttributes: cached('productAttributes', () => import('@/features/products/pages/ProductAttributesPage')),
   productTrackingIdentifiers: cached('productTrackingIdentifiers', () => import('@/features/products/pages/ProductTrackingIdentifiersPage')),
   inventoryStock: cached('inventoryStock', () => import('@/features/inventory/pages/StockListPage')),

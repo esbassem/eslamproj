@@ -24,6 +24,7 @@ register(['/apps/inventory/unique-units'], 'inventorySerials', 'SerialUnitsPage'
 register(['/apps/inventory/operations/moves'], 'inventoryMoves', 'StockMovesPage');
 register(['/apps/inventory/operations/locations'], 'inventoryLocations', 'InventoryLocationsPage');
 register(['/apps/inventory/operations/counts'], 'inventoryCounts', 'InventoryCountsPage');
+register(['/apps/inventory/operations/returns'], 'inventoryReturnReviews', 'InventoryReturnReviewsPage');
 register(['/app/sales'], 'salesOverview', 'SalesOverviewPage');
 register(['/app/sales/new'], 'saleCreate', 'SaleCreatePage');
 register(['/app/sales/invoices'], 'invoices', 'InvoicesPage');
