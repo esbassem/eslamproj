@@ -144,6 +144,11 @@ export function SaleDeliveryDialog({
 
               {!eligibility.eligible ? <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-950">{getSaleDeliveryReasonMessage(eligibility.blockingReasons[0])}</div> : null}
 
+              {delivery.requiresFinancialOverride ? <label className="block rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-black text-amber-950">
+                سبب اعتماد المدير للتسليم
+                <textarea className="mt-2 min-h-24 w-full rounded-xl border border-amber-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-amber-200" maxLength={1000} value={delivery.overrideReason} onChange={(event) => delivery.setOverrideReason(event.target.value)} placeholder="اكتب سبب الاستثناء المالي بوضوح" />
+              </label> : null}
+
               {eligibility.deliverableLines.filter((line) => line.remainingQuantity > 0).map((line) => line.trackingRequirement === 'serial'
                 ? <SerializedLine key={line.saleLineId} line={line} sale={sale} selection={delivery.selection} setTrackingUnit={delivery.setTrackingUnit} />
                 : <QuantityLine key={line.saleLineId} line={line} selection={delivery.selection} setQuantity={delivery.setQuantity} />)}

@@ -17,7 +17,16 @@ const DELIVERY_REASON_MESSAGES = Object.freeze({
   SALE_INVENTORY_RESERVATION_INVALID: 'حجز المخزون لم يعد صالحًا للتسليم.',
   SALE_FULFILLMENT_STATE_INCONSISTENT: 'تغيرت حالة تنفيذ البيع. أعد تحميل البيانات قبل التسليم.',
   SALE_ALREADY_DELIVERED: 'تم تسليم جميع بنود البيع بالفعل.',
+  SALE_FINANCIAL_POSTING_MISSING: 'لا يمكن التسليم قبل اكتمال الترحيل المالي للبيع.',
+  SALE_RECEIVABLE_INVALID: 'تعذر التحقق من الاستحقاق المالي المرتبط بالبيع.',
+  SALE_OUTSTANDING_DUES: 'لا يمكن التسليم لوجود مبلغ مستحق على البيع.',
 });
+
+const FINANCIAL_BLOCK_REASONS = new Set([
+  'SALE_FINANCIAL_POSTING_MISSING',
+  'SALE_RECEIVABLE_INVALID',
+  'SALE_OUTSTANDING_DUES',
+]);
 
 function normalizeTrackingUnit(value = {}) {
   return {
@@ -63,7 +72,22 @@ export function normalizeSaleDeliveryEligibility(value = {}) {
     blockingReasons: Array.isArray(value.blocking_reasons)
       ? value.blocking_reasons.map(text).filter(Boolean)
       : [],
+    commercialEligibility: value.commercial_eligibility && typeof value.commercial_eligibility === 'object'
+      ? {
+          allowed: value.commercial_eligibility.allowed === true,
+          reasonCode: text(value.commercial_eligibility.reason_code),
+          outstandingAmount: quantity(value.commercial_eligibility.outstanding_amount || 0),
+          currencyCode: text(value.commercial_eligibility.currency_code),
+        }
+      : null,
+    canOverrideFinancialBlock: value.can_override_financial_block === true,
   };
+}
+
+export function isSaleDeliveryFinancialOnlyBlocked(eligibility = {}) {
+  return eligibility.eligible !== true
+    && eligibility.blockingReasons?.length > 0
+    && eligibility.blockingReasons.every((reason) => FINANCIAL_BLOCK_REASONS.has(text(reason)));
 }
 
 export function normalizeSaleDeliveryResult(value = {}) {
@@ -117,10 +141,13 @@ export function buildSaleDeliveryLines(eligibility = {}, selection = {}) {
   return deliveryLines;
 }
 
-export function getSaleDeliverySelectionIssue(eligibility = {}, selection = {}) {
-  if (!eligibility.eligible) {
+export function getSaleDeliverySelectionIssue(eligibility = {}, selection = {}, overrideReason = '') {
+  const financialOverride = isSaleDeliveryFinancialOnlyBlocked(eligibility)
+    && eligibility.canOverrideFinancialBlock;
+  if (!eligibility.eligible && !financialOverride) {
     return getSaleDeliveryReasonMessage(eligibility.blockingReasons?.[0]);
   }
+  if (financialOverride && !text(overrideReason)) return 'اكتب سبب اعتماد التسليم رغم المنع المالي.';
   for (const line of eligibility.deliverableLines ?? []) {
     if (line.trackingRequirement === 'serial') continue;
     const rawValue = selection.quantities?.[line.saleLineId];
@@ -140,6 +167,7 @@ export function saleDeliveryFingerprint(payload = {}) {
     saleId: text(payload.saleId),
     expectedVersion: Number(payload.expectedVersion),
     deliveryLines: lines,
+    overrideReason: text(payload.overrideReason),
   });
 }
 

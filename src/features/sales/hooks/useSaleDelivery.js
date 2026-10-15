@@ -5,6 +5,7 @@ import {
   createInitialSaleDeliverySelection,
   getSaleDeliveryReasonMessage,
   getSaleDeliverySelectionIssue,
+  isSaleDeliveryFinancialOnlyBlocked,
   isAuthoritativeSaleDeliveryError,
   resolveSaleDeliveryAttempt,
   saleDeliveryFingerprint,
@@ -28,6 +29,7 @@ export function useSaleDelivery({
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState('');
   const [result, setResult] = useState(null);
+  const [overrideReason, setOverrideReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const submitLockRef = useRef(false);
   const attemptRef = useRef(null);
@@ -72,6 +74,7 @@ export function useSaleDelivery({
       attemptRef.current = null;
       setEligibility(null);
       setSelection(EMPTY_SELECTION);
+      setOverrideReason('');
     }
     setResult(null);
     setError(null);
@@ -89,10 +92,13 @@ export function useSaleDelivery({
     saleId,
     expectedVersion: eligibility?.version,
     deliveryLines,
-  }), [deliveryLines, eligibility?.version, saleId]);
+    overrideReason,
+  }), [deliveryLines, eligibility?.version, overrideReason, saleId]);
+  const requiresFinancialOverride = isSaleDeliveryFinancialOnlyBlocked(eligibility ?? {})
+    && eligibility?.canOverrideFinancialBlock === true;
   const payloadIssue = useMemo(
-    () => eligibility ? getSaleDeliverySelectionIssue(eligibility, selection) : 'جاري تحميل جاهزية التسليم.',
-    [eligibility, selection],
+    () => eligibility ? getSaleDeliverySelectionIssue(eligibility, selection, overrideReason) : 'جاري تحميل جاهزية التسليم.',
+    [eligibility, overrideReason, selection],
   );
   const fingerprint = useMemo(() => saleDeliveryFingerprint(payload), [payload]);
 
@@ -135,6 +141,14 @@ export function useSaleDelivery({
         expectedVersion: payload.expectedVersion,
         deliveryLines: payload.deliveryLines,
         idempotencyKey: attemptRef.current.idempotencyKey,
+        deliveryOverrideId: requiresFinancialOverride
+          ? (attemptRef.current.overrideId ||= (await salesService.authorizeSaleDeliveryOverride({
+              tenantId,
+              saleId,
+              reason: overrideReason,
+              idempotencyKey: `${attemptRef.current.idempotencyKey}:override`,
+            })).override_id)
+          : null,
       });
       let refreshedEligibility = null;
       try {
@@ -181,7 +195,7 @@ export function useSaleDelivery({
       submitLockRef.current = false;
       setSubmitting(false);
     }
-  }, [fingerprint, loadEligibility, payload, payloadIssue, saleId, submitting, tenantId]);
+  }, [fingerprint, loadEligibility, overrideReason, payload, payloadIssue, requiresFinancialOverride, saleId, submitting, tenantId]);
 
   return {
     status,
@@ -190,11 +204,16 @@ export function useSaleDelivery({
     error,
     notice,
     result,
+    overrideReason,
+    requiresFinancialOverride,
     submitting,
     payloadIssue,
-    canSubmit: status === 'ready' && eligibility?.eligible === true && !payloadIssue,
+    canSubmit: status === 'ready'
+      && (eligibility?.eligible === true || requiresFinancialOverride)
+      && !payloadIssue,
     setQuantity,
     setTrackingUnit,
+    setOverrideReason,
     submit,
     retryEligibility: () => loadEligibility({ resetSelection: true }),
   };

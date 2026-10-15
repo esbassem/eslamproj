@@ -5,6 +5,7 @@ import {
   buildSaleDeliveryLines,
   createInitialSaleDeliverySelection,
   getSaleDeliverySelectionIssue,
+  isSaleDeliveryFinancialOnlyBlocked,
   normalizeSaleDeliveryEligibility,
   resolveSaleDeliveryAttempt,
 } from './services/salesDelivery.model.js';
@@ -59,7 +60,7 @@ function saleDetailsFixture(overrides = {}) {
 }
 
 test('1. Deliver is absent for Draft', () => { assert.match(action, /commercialStatus === 'confirmed'/); assert.match(actions, /commercialStatus === 'draft'/); });
-test('2. Deliver appears for a backend-eligible Confirmed deliverable Sale', () => { assert.match(action, /getSaleDeliveryEligibility/); assert.match(action, /options\.eligible/); assert.match(action, />تسليم<\/Button>/); });
+test('2. Deliver appears for a backend-eligible Confirmed deliverable Sale', () => { assert.match(action, /getSaleDeliveryEligibility/); assert.match(action, /currentEligibility\?\.eligible/); assert.match(action, />تسليم<\/Button>/); });
 test('3. Deliver is hidden without sales.deliver', () => { assert.match(action, /SALE_DELIVERY_PERMISSION = 'sales\.deliver'/); assert.match(action, /!canDeliver/); });
 test('4. Deliver is absent for Fully Delivered', () => { assert.match(action, /fulfillment\?\.status !== 'delivered'/); });
 test('5. Deliver is absent when fulfillment is Not Required', () => { assert.match(action, /fulfillment\?\.status !== 'not_required'/); });
@@ -76,11 +77,41 @@ test('15. Retry with unchanged payload keeps the same idempotency key', () => { 
 test('16. Submit lock prevents duplicate Delivery calls', () => { assert.match(hook, /submitLockRef\.current \|\| submitting/); assert.match(hook, /submitLockRef\.current = true/); assert.match(dialog, /disabled=\{!delivery\.canSubmit \|\| delivery\.submitting/); });
 test('17. Successful Delivery refreshes authoritative Sale Details', () => { assert.match(hook, /await onDeliveredRef\.current/); assert.match(page, /onDelivered=\{handleDelivered\}/); assert.match(page, /handleDelivered[\s\S]*details\.reload/); });
 test('18. Partial fulfillment remains a Delivery candidate', () => { assert.match(action, /status !== 'delivered'/); assert.equal(saleDetailsFixture({ fulfillment: { status: 'partially_delivered', required_quantity: 10, delivered_quantity: 4, remaining_quantity: 6 } }).fulfillment.status, 'partially_delivered'); });
-test('19. Full fulfillment removes the action after authoritative refresh', () => { assert.match(action, /payload\.eligibility\.eligible/); assert.match(action, /\(!actionReady && !open\)/); });
+test('19. Full fulfillment removes the action after authoritative refresh', () => { assert.match(action, /payload\?\.eligibility/); assert.match(action, /!isCandidate/); });
 test('20. Delivery leaves Commercial Status unchanged', () => { assert.equal(saleDetailsFixture({ fulfillment: { status: 'delivered', required_quantity: 1, delivered_quantity: 1, remaining_quantity: 0 } }).commercialStatus, 'confirmed'); assert.doesNotMatch(hook + dialog, /setCommercialStatus/); });
 test('21. Delivery leaves Payment Status unchanged', () => { assert.equal(saleDetailsFixture({ fulfillment: { status: 'delivered', required_quantity: 1, delivered_quantity: 1, remaining_quantity: 0 } }).payment.status, 'unpaid'); assert.doesNotMatch(hook + dialog, /setPaymentStatus/); });
 test('22. Version conflict refreshes eligibility and Sale Details without silent retry', () => { assert.match(hook, /SALES_VERSION_CONFLICT[\s\S]*loadEligibility[\s\S]*onVersionConflictRef\.current/); assert.match(hook, /تم تحديث البيع أو تنفيذ عملية عليه من مستخدم آخر/); assert.match(page, /handleDeliveryVersionConflict[\s\S]*details\.reload/); });
 test('23. Stale eligibility errors refresh both eligibility and Sale Details with a safe notice', () => { assert.match(hook, /isAuthoritativeSaleDeliveryError[\s\S]*loadEligibility[\s\S]*onTargetRefreshRef\.current/); assert.match(action, /onTargetRefresh=\{handleTargetRefresh\}/); assert.match(page, /handleDeliveryRefresh[\s\S]*setActionNotice[\s\S]*details\.reload/); });
 test('24. Over-delivery is explained in Arabic', () => { const options = eligibilityFixture(); const selection = createInitialSaleDeliverySelection(options); selection.quantities['line-quantity'] = '11'; assert.match(getSaleDeliverySelectionIssue(options, selection), /أكبر من المتبقي/); assert.match(service, /INVENTORY_OVER_DELIVERY: 'الكمية المطلوبة أكبر من المتبقي/); });
-test('25. Delivery adds no payment policy or paid-state guard', () => { assert.doesNotMatch(action + dialog + hook + model, /outstandingAmount|payment\.status|remaining = 0|full payment requirement/i); });
+test('25. Delivery adds no frontend payment policy or paid-state guard', () => { assert.doesNotMatch(action + dialog + hook, /payment\.status|remaining = 0|full payment requirement/i); assert.match(model, /commercial_eligibility/); });
 test('26. Sales calls only deliver_sale and never Inventory Delivery directly', () => { const deliveryService = service.slice(service.indexOf('export async function getSaleDeliveryEligibility')); assert.match(deliveryService, /rpc\('deliver_sale'/); assert.doesNotMatch(deliveryService + hook + dialog, /commit_inventory_delivery|inventory_deliveries|inventory_delivery_lines/); });
+test('27. Financial blocking is normalized and shown without inventing a frontend payment rule', () => {
+  const options = eligibilityFixture({
+    eligible: false,
+    blocking_reasons: ['SALE_OUTSTANDING_DUES'],
+    commercial_eligibility: { allowed: false, reason_code: 'SALE_OUTSTANDING_DUES', outstanding_amount: 50000, currency_code: 'EGP' },
+    can_override_financial_block: false,
+  });
+  assert.equal(isSaleDeliveryFinancialOnlyBlocked(options), true);
+  assert.equal(options.commercialEligibility.outstandingAmount, 50000);
+  assert.match(action, /getSaleDeliveryReasonMessage/);
+});
+test('28. Authorized manager override requires a reason and uses the canonical authorization RPC', () => {
+  const options = eligibilityFixture({ eligible: false, blocking_reasons: ['SALE_OUTSTANDING_DUES'], can_override_financial_block: true });
+  const selection = createInitialSaleDeliverySelection(options);
+  assert.match(getSaleDeliverySelectionIssue(options, selection, ''), /سبب اعتماد/);
+  assert.equal(getSaleDeliverySelectionIssue(options, selection, 'اعتماد إداري موثق'), '');
+  assert.match(service, /rpc\('authorize_sale_delivery_override'/);
+  assert.match(service, /p_delivery_override_id: deliveryOverrideId/);
+  assert.match(hook, /authorizeSaleDeliveryOverride/);
+  assert.match(dialog, /سبب اعتماد المدير للتسليم/);
+});
+test('29. Override authorization and delivery retries retain one stable attempt identity', () => {
+  assert.match(hook, /attemptRef\.current\.idempotencyKey}:override/);
+  assert.match(hook, /attemptRef\.current\.overrideId/);
+});
+
+test('30. Authorized financial override can enable submit after its reason and inventory selection are valid', () => {
+  assert.match(hook, /eligibility\?\.eligible === true \|\| requiresFinancialOverride/);
+  assert.match(hook, /&& !payloadIssue/);
+});

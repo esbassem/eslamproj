@@ -119,6 +119,13 @@ const SALES_LIST_ERRORS = Object.freeze({
   INVENTORY_SERIAL_DELIVERY_INVALID: 'القطعة المتسلسلة المحددة غير صالحة للتسليم.',
   INVENTORY_TRACKING_STATE_INVALID: 'القطعة لم تعد محجوزة أو متاحة لهذا البيع.',
   INVENTORY_NEGATIVE_STOCK_DENIED: 'لا يمكن تنفيذ التسليم لأن رصيد المخزون غير كافٍ.',
+  SALE_DELIVERY_FINANCIALLY_BLOCKED: 'لا يمكن التسليم لعدم تحقق الأهلية المالية.',
+  SALE_DELIVERY_OVERRIDE_DENIED: 'ليس لديك صلاحية اعتماد استثناء التسليم المالي.',
+  SALE_DELIVERY_OVERRIDE_REASON_REQUIRED: 'سبب استثناء التسليم المالي مطلوب.',
+  SALE_DELIVERY_OVERRIDE_IDEMPOTENCY_INVALID: 'تعذر بدء اعتماد الاستثناء بأمان.',
+  SALE_DELIVERY_OVERRIDE_SALE_INVALID: 'البيع غير صالح لاعتماد استثناء التسليم.',
+  SALE_DELIVERY_OVERRIDE_NOT_REQUIRED: 'لم يعد استثناء التسليم مطلوبًا؛ حدّث بيانات البيع.',
+  SALE_DELIVERY_OVERRIDE_INVALID: 'اعتماد استثناء التسليم غير صالح لهذا البيع.',
   SALES_CANCEL_DENIED: 'ليس لديك صلاحية إلغاء المبيعات.',
   SALES_CANCELLATION_VIEW_DENIED: 'ليس لديك صلاحية عرض جاهزية إلغاء البيع.',
   SALES_CANCELLATION_INPUT_INVALID: 'بيانات طلب الإلغاء غير مكتملة.',
@@ -330,13 +337,23 @@ export async function getSaleDeliveryEligibility({ tenantId, saleId } = {}) {
   return rpc('get_sale_delivery_eligibility', { p_sale_id: saleId }, normalizeSaleDeliveryEligibility);
 }
 
-export async function deliverSale({ tenantId, saleId, expectedVersion, deliveryLines, idempotencyKey } = {}) {
+export async function authorizeSaleDeliveryOverride({ tenantId, saleId, reason, idempotencyKey } = {}) {
+  if (!tenantId || !saleId) throw new Error('بيانات البيع غير مكتملة.');
+  return rpc('authorize_sale_delivery_override', {
+    p_sale_id: saleId,
+    p_reason: reason,
+    p_idempotency_key: idempotencyKey,
+  });
+}
+
+export async function deliverSale({ tenantId, saleId, expectedVersion, deliveryLines, idempotencyKey, deliveryOverrideId = null } = {}) {
   if (!tenantId || !saleId) throw new Error('بيانات البيع غير مكتملة.');
   return rpc('deliver_sale', {
     p_sale_id: saleId,
     p_expected_version: expectedVersion,
     p_delivery_lines: deliveryLines,
     p_idempotency_key: idempotencyKey,
+    p_delivery_override_id: deliveryOverrideId,
   }, normalizeSaleDeliveryResult);
 }
 
@@ -373,6 +390,7 @@ export const salesService = Object.freeze({
   getSaleReadiness,
   confirmSale,
   getSaleDeliveryEligibility,
+  authorizeSaleDeliveryOverride,
   deliverSale,
   getSaleCancellationEligibility,
   cancelSale,
