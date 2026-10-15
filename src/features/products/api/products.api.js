@@ -5,12 +5,13 @@ const PRODUCT_TEMPLATE_COLUMNS =
 const PRODUCT_VARIANT_COLUMNS =
   'id, tenant_id, product_template_id, display_name, sku, barcode, tracking, sale_price, cost_price, is_active, created_at, updated_at';
 const ATTRIBUTE_COLUMNS =
-  'id, tenant_id, name, behavior, creates_variant, show_in_variant_name, display_type, show_in_pos_filter, is_filterable, use_in_sku, sort_order, is_active, created_at, updated_at';
+  'id, tenant_id, name, behavior, creates_variant, show_in_variant_name, display_type, input_mode, show_in_pos_filter, is_filterable, use_in_sku, sort_order, is_active, created_at, updated_at';
 const ATTRIBUTE_VALUE_COLUMNS =
   'id, tenant_id, attribute_id, name, code, color_hex, image_url, extra_price, show_in_variant_name, sort_order, is_active, created_at, updated_at';
 const CATEGORY_ATTRIBUTE_COLUMNS = 'id, tenant_id, category_id, attribute_id, is_required, display_order, created_at';
 const TRACKING_IDENTIFIER_TYPE_COLUMNS = 'id, tenant_id, code, name, data_type, is_active, input_schema, created_at';
 const CATEGORY_TRACKING_IDENTIFIER_COLUMNS = 'id, tenant_id, category_id, identifier_type_id, is_required, allow_not_available, sequence, created_at';
+const CATEGORY_INVENTORY_DOCUMENT_COLUMNS = 'id, tenant_id, category_id, document_type, name, is_required, created_at';
 const TRACKING_UNIT_COLUMNS =
   'id, tenant_id, product_product_id, tracking_number, tracking_type, status, data_status, incomplete_reason, notes, created_at, updated_at';
 
@@ -130,6 +131,7 @@ function normalizeAttribute(record) {
     createsVariant: record.creates_variant ?? (behavior !== 'informational'),
     showInVariantName: record.show_in_variant_name ?? true,
     displayType: record.display_type ?? 'select',
+    inputMode: record.input_mode ?? 'catalog',
     showInPosFilter: record.show_in_pos_filter ?? false,
     isFilterable: record.is_filterable ?? false,
     useInSku: record.use_in_sku ?? false,
@@ -242,6 +244,19 @@ function normalizeCategoryTrackingIdentifierLink(record) {
     isRequired: record.is_required ?? false,
     allowNotAvailable: record.allow_not_available ?? false,
     sequence: Number(record.sequence) || 0,
+    createdAt: record.created_at ?? null,
+  };
+}
+
+function normalizeCategoryInventoryDocument(record) {
+  if (!record) return null;
+  return {
+    id: record.id,
+    tenantId: record.tenant_id,
+    categoryId: record.category_id,
+    documentType: record.document_type ?? '',
+    name: record.name ?? '',
+    isRequired: record.is_required ?? true,
     createdAt: record.created_at ?? null,
   };
 }
@@ -456,7 +471,7 @@ async function listCategoryTrackingIdentifierDefinitions(client, { tenantId, cat
     .sort((left, right) => {
       const orderDiff = (left.sequence ?? 0) - (right.sequence ?? 0);
       if (orderDiff !== 0) return orderDiff;
-      return String(left.name ?? '').localeCompare(String(right.name ?? ''));
+      return String(left.identifierTypeId ?? '').localeCompare(String(right.identifierTypeId ?? ''));
     });
 }
 
@@ -1399,6 +1414,7 @@ export const productAttributeService = {
       creates_variant: payload.createsVariant ?? true,
       show_in_variant_name: payload.showInVariantName ?? true,
       display_type: payload.displayType || 'select',
+      input_mode: payload.inputMode === 'text' ? 'text' : 'catalog',
       show_in_pos_filter: payload.showInPosFilter ?? false,
       is_filterable: payload.isFilterable ?? false,
       use_in_sku: payload.useInSku ?? false,
@@ -1589,6 +1605,46 @@ export const productCategoryTrackingIdentifierService = {
   },
 };
 
+export const productCategoryInventoryDocumentService = {
+  async listDocuments(tenantId) {
+    const client = requireSupabase();
+    const { data, error } = await client
+      .from('product_category_inventory_documents')
+      .select(CATEGORY_INVENTORY_DOCUMENT_COLUMNS)
+      .eq('tenant_id', tenantId)
+      .order('name');
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(normalizeCategoryInventoryDocument);
+  },
+
+  async syncDocuments({ tenantId, categoryId, documents }) {
+    const client = requireSupabase();
+    const normalized = (documents ?? []).map((document) => ({
+      tenant_id: tenantId,
+      category_id: categoryId,
+      document_type: document.documentType.trim().toLowerCase(),
+      name: document.name.trim(),
+      is_required: Boolean(document.isRequired),
+    }));
+    const retainedTypes = normalized.map((document) => document.document_type);
+    let deleteQuery = client
+      .from('product_category_inventory_documents')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('category_id', categoryId);
+    if (retainedTypes.length) deleteQuery = deleteQuery.not('document_type', 'in', `(${retainedTypes.join(',')})`);
+    const { error: deleteError } = await deleteQuery;
+    if (deleteError) throw new Error(deleteError.message);
+    if (normalized.length) {
+      const { error: upsertError } = await client
+        .from('product_category_inventory_documents')
+        .upsert(normalized, { onConflict: 'tenant_id,category_id,document_type' });
+      if (upsertError) throw new Error(upsertError.message);
+    }
+    return normalized;
+  },
+};
+
 export const productAttributeValueService = {
   async listValues(tenantId) {
     const client = requireSupabase();
@@ -1605,6 +1661,14 @@ export const productAttributeValueService = {
 
   async saveValue({ tenantId, id, payload }) {
     const client = requireSupabase();
+    const { data: attribute, error: attributeError } = await client
+      .from('product_attributes')
+      .select('input_mode')
+      .eq('tenant_id', tenantId)
+      .eq('id', payload.attributeId)
+      .single();
+    if (attributeError) throw new Error(attributeError.message);
+    if (attribute.input_mode === 'text') throw new Error('الخاصية النصية الحرة لا تقبل قيم كتالوج.');
     const body = {
       tenant_id: tenantId,
       attribute_id: payload.attributeId,

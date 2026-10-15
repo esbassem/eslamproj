@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
+import { useAuthorization } from '@/core/authorization/useAuthorization';
 import {
   Sheet,
   SheetBody,
@@ -12,6 +13,16 @@ import {
   SheetTitle,
 } from '@/core/ui/sheet';
 import { inventoryService } from '@/features/inventory/api/inventory.api';
+import { BulkReceivingGrid } from '@/features/inventory/components/BulkReceivingGrid';
+import { createBulkReceivingRow, summarizeBulkRows, validateBulkReceivingRows } from '@/features/inventory/bulkReceiving.model';
+import {
+  createReceivingInputSignature,
+  filterAuthorizedReceivingLocations,
+  getPrimaryTrackingIdentifier,
+  getOrCreateReceivingAttempt,
+  prepareReceivingAttempt,
+  resolveReceivingDefaultLocation,
+} from '@/features/inventory/receivingUi.model';
 import {
   productCategoryService,
   productCategoryTrackingIdentifierService,
@@ -22,74 +33,32 @@ import {
 const SERVICE_STOCK_MESSAGE = 'هذا المنتج خدمة ولا يدعم المخزون';
 const SERIAL_UNITS_MESSAGE = 'هذا المنتج متتبع بالسيريال ويجب تحديد الوحدات';
 
-function getIdentifierSlots(definition) {
-  const schemaSlots = definition?.inputSchema?.slots ?? definition?.input_schema?.slots ?? definition?.slots ?? [];
-  return Array.isArray(schemaSlots) ? schemaSlots : [];
-}
-
-function isAllowedIdentifierCharacter(character, type) {
-  if (!type) return true;
-  if (type === 'numeric') return /^\d$/.test(character);
-  if (type === 'english_letter') return /^[A-Za-z]$/.test(character);
-  if (type === 'arabic_letter') return /^[\u0621-\u064A]$/.test(character);
-  return true;
-}
-
-function sanitizeIdentifierValue(definition, value) {
-  const slots = getIdentifierSlots(definition);
-  const rawCharacters = Array.from(String(value ?? ''));
-
-  if (!slots.length) {
-    return String(value ?? '');
-  }
-
-  const nextCharacters = [];
-  for (const character of rawCharacters) {
-    const slot = slots[nextCharacters.length];
-    if (!slot) break;
-    if (isAllowedIdentifierCharacter(character, slot.type)) {
-      nextCharacters.push(character);
-    }
-  }
-
-  return nextCharacters.join('');
-}
-
-function validateIdentifierValueAgainstSchema(definition, value) {
-  const slots = getIdentifierSlots(definition);
-  if (!slots.length || !value) return true;
-
-  const characters = Array.from(String(value));
-  if (characters.length !== slots.length) {
-    return `قيمة "${definition.name}" يجب أن تكون ${slots.length} خانة.`;
-  }
-
-  const invalidIndex = characters.findIndex((character, index) => !isAllowedIdentifierCharacter(character, slots[index]?.type));
-  if (invalidIndex >= 0) {
-    return `الخانة ${invalidIndex + 1} في "${definition.name}" لا تطابق نوع الخانة المطلوب.`;
-  }
-
-  return true;
-}
-
 export function AddStockDialog({ open, onOpenChange, tenantId, userId, products, onSaved }) {
+  const {
+    can, canAccessBranch, canAccessStockLocation, resourceScope, isReady: authorizationReady,
+  } = useAuthorization();
+  const canManageCatalog = can('products.manage');
   const [productId, setProductId] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [quickCategoryId, setQuickCategoryId] = useState('');
   const [categories, setCategories] = useState([]);
   const [localProducts, setLocalProducts] = useState([]);
   const [quantity, setQuantity] = useState('1');
-  const [serialText, setSerialText] = useState('');
+  const [bulkRows, setBulkRows] = useState([]);
   const [trackingIdentifierDefinitions, setTrackingIdentifierDefinitions] = useState([]);
-  const [trackingIdentifierValues, setTrackingIdentifierValues] = useState({});
-  const [trackingIdentifierNotAvailable, setTrackingIdentifierNotAvailable] = useState({});
   const [variantContext, setVariantContext] = useState(null);
-  const [attributeSelections, setAttributeSelections] = useState({});
+  const [documentDefinitions, setDocumentDefinitions] = useState([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [error, setError] = useState('');
   const [isLoadingAttributes, setIsLoadingAttributes] = useState(false);
   const [isLoadingTrackingIdentifiers, setIsLoadingTrackingIdentifiers] = useState(false);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [receivingLocations, setReceivingLocations] = useState([]);
+  const [destinationLocationId, setDestinationLocationId] = useState('');
+  const [submissionKey, setSubmissionKey] = useState('');
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const submissionAttemptRef = useRef(null);
 
   const allProducts = useMemo(() => [...products, ...localProducts], [localProducts, products]);
   const selectedProduct = useMemo(() => allProducts.find((product) => product.id === productId) ?? null, [allProducts, productId]);
@@ -105,19 +74,23 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
     const search = productSearch.trim().toLowerCase();
     return Boolean(search) && stockProducts.some((product) => String(product.name ?? '').trim().toLowerCase() === search);
   }, [productSearch, stockProducts]);
-  const serialNumbers = useMemo(() => serialText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean), [serialText]);
-  const duplicateSerialNumbers = useMemo(() => {
-    const seen = new Set();
-    const duplicates = new Set();
-
-    for (const serial of serialNumbers) {
-      if (seen.has(serial)) duplicates.add(serial);
-      seen.add(serial);
-    }
-
-    return [...duplicates];
-  }, [serialNumbers]);
   const isSerial = selectedProduct?.tracking === 'serial';
+  const primaryTrackingIdentifier = useMemo(
+    () => getPrimaryTrackingIdentifier(trackingIdentifierDefinitions),
+    [trackingIdentifierDefinitions],
+  );
+  const validatedBulkRows = useMemo(
+    () => validateBulkReceivingRows(bulkRows, trackingIdentifierDefinitions, variantContext?.attributes ?? [], documentDefinitions),
+    [bulkRows, documentDefinitions, trackingIdentifierDefinitions, variantContext?.attributes],
+  );
+  const bulkSummary = useMemo(() => summarizeBulkRows(validatedBulkRows), [validatedBulkRows]);
+  const serialNumbers = useMemo(() => validatedBulkRows.map((row) => row.trackingNumber), [validatedBulkRows]);
+  const trackingIdentifierValues = useMemo(() => Object.fromEntries(validatedBulkRows.map((row) => [row.trackingNumber, row.identities])), [validatedBulkRows]);
+  const trackingIdentifierNotAvailable = useMemo(() => Object.fromEntries(validatedBulkRows.map((row) => [row.trackingNumber, row.identityNotAvailable ?? {}])), [validatedBulkRows]);
+  const unitAttributeSelections = useMemo(() => Object.fromEntries(validatedBulkRows.map((row) => [row.trackingNumber, row.attributes])), [validatedBulkRows]);
+  const unitDocumentFiles = useMemo(() => Object.fromEntries(validatedBulkRows.map((row) => [row.trackingNumber, row.documents])), [validatedBulkRows]);
+  const defaultBranchId = resourceScope?.defaultBranchId ?? '';
+  const defaultStockLocationId = resourceScope?.defaultStockLocationId ?? '';
 
   useEffect(() => {
     if (!open) return;
@@ -126,16 +99,42 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
     setQuickCategoryId('');
     setLocalProducts([]);
     setQuantity('1');
-    setSerialText('');
+    setBulkRows([]);
     setTrackingIdentifierDefinitions([]);
-    setTrackingIdentifierValues({});
-    setTrackingIdentifierNotAvailable({});
     setVariantContext(null);
-    setAttributeSelections({});
+    setDocumentDefinitions([]);
     setError('');
+    setReceivingLocations([]);
+    setDestinationLocationId('');
+    setSubmissionKey(crypto.randomUUID());
+    setIsReviewOpen(false);
+    submissionAttemptRef.current = null;
     setIsLoadingAttributes(false);
     setIsLoadingTrackingIdentifiers(false);
   }, [open]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!open || !tenantId || !authorizationReady) return undefined;
+    inventoryService.listReceivingLocations({ tenantId })
+      .then((locations) => {
+        if (!mounted) return;
+        const authorizedLocations = filterAuthorizedReceivingLocations(locations, {
+          canAccessBranch, canAccessStockLocation,
+        });
+        setReceivingLocations(authorizedLocations);
+        setDestinationLocationId((current) => {
+          if (current && authorizedLocations.some((location) => location.id === current)) return current;
+          return resolveReceivingDefaultLocation(authorizedLocations, {
+            defaultBranchId, defaultStockLocationId,
+          });
+        });
+      })
+      .catch((loadError) => {
+        if (mounted) setError(loadError.message || 'تعذر تحميل مواقع الاستلام.');
+      });
+    return () => { mounted = false; };
+  }, [authorizationReady, canAccessBranch, canAccessStockLocation, defaultBranchId, defaultStockLocationId, open, tenantId]);
 
   useEffect(() => {
     let mounted = true;
@@ -166,31 +165,22 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
 
     if (!open || !tenantId || !productId) {
       setVariantContext(null);
-      setAttributeSelections({});
       setIsLoadingAttributes(false);
       return undefined;
     }
 
     setIsLoadingAttributes(true);
     setVariantContext(null);
-    setAttributeSelections({});
 
     productVariantService
       .getTemplateVariantContext({ tenantId, productTemplateId: selectedProduct?.productTemplateId ?? productId })
       .then((context) => {
         if (!mounted) return;
         setVariantContext(context);
-        setAttributeSelections(
-          (context.attributes ?? []).reduce((state, attribute) => {
-            state[attribute.id] = '';
-            return state;
-          }, {}),
-        );
       })
       .catch((loadError) => {
         if (!mounted) return;
         setVariantContext(null);
-        setAttributeSelections({});
         setError(loadError.message || 'تعذر تحميل خواص المنتج.');
       })
       .finally(() => {
@@ -208,16 +198,12 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
 
     if (!open || !tenantId || !selectedProduct?.categoryId || !isSerial) {
       setTrackingIdentifierDefinitions([]);
-      setTrackingIdentifierValues({});
-      setTrackingIdentifierNotAvailable({});
       setIsLoadingTrackingIdentifiers(false);
       return undefined;
     }
 
     setIsLoadingTrackingIdentifiers(true);
     setTrackingIdentifierDefinitions([]);
-    setTrackingIdentifierValues({});
-    setTrackingIdentifierNotAvailable({});
 
     productCategoryTrackingIdentifierService
       .listCategoryIdentifiers({ tenantId, categoryId: selectedProduct.categoryId })
@@ -241,69 +227,52 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
   }, [isSerial, open, selectedProduct?.categoryId, tenantId]);
 
   useEffect(() => {
-    if (!serialNumbers.length) {
-      setTrackingIdentifierValues({});
-      setTrackingIdentifierNotAvailable({});
-      return;
+    let mounted = true;
+
+    if (!open || !tenantId || !selectedProduct?.categoryId || !isSerial) {
+      setDocumentDefinitions([]);
+      setIsLoadingDocuments(false);
+      return undefined;
     }
 
-    setTrackingIdentifierValues((current) => {
-      const next = {};
-      serialNumbers.forEach((serial) => {
-        next[serial] = current[serial] ?? {};
+    setIsLoadingDocuments(true);
+    setDocumentDefinitions([]);
+    inventoryService.listCategoryInventoryDocuments({
+      tenantId,
+      categoryId: selectedProduct.categoryId,
+    })
+      .then((definitions) => {
+        if (mounted) setDocumentDefinitions(definitions);
+      })
+      .catch((loadError) => {
+        if (!mounted) return;
+        setDocumentDefinitions([]);
+        setError(loadError.message || 'تعذر تحميل متطلبات الصور.');
+      })
+      .finally(() => {
+        if (mounted) setIsLoadingDocuments(false);
       });
-      return next;
-    });
-    setTrackingIdentifierNotAvailable((current) => {
-      const next = {};
-      serialNumbers.forEach((serial) => {
-        next[serial] = current[serial] ?? {};
-      });
-      return next;
-    });
-  }, [serialNumbers]);
+
+    return () => { mounted = false; };
+  }, [isSerial, open, selectedProduct?.categoryId, tenantId]);
 
   const handleSelectProduct = (product) => {
+    const hasEnteredData = bulkRows.some((row) => Object.values(row.identities).some(Boolean)
+      || Object.values(row.attributes).some(Boolean) || Object.values(row.documents).some(Boolean));
+    if (productId && product.id !== productId && hasEnteredData
+      && !window.confirm('تغيير المنتج سيمسح الوحدات غير المحفوظة. هل تريد المتابعة؟')) return;
     setError('');
     setProductId(product.id);
     setProductSearch(product.name);
-    setSerialText('');
-    setTrackingIdentifierValues({});
-    setTrackingIdentifierNotAvailable({});
+    setBulkRows(product.tracking === 'serial' ? [createBulkReceivingRow()] : []);
+    setIsReviewOpen(false);
+    submissionAttemptRef.current = null;
     setQuantity('1');
   };
 
-  const handleTrackingIdentifierValueChange = (serial, identifierType, value) => {
-    const nextValue = sanitizeIdentifierValue(identifierType, value);
-
-    setTrackingIdentifierValues((current) => ({
-      ...current,
-      [serial]: {
-        ...(current[serial] ?? {}),
-        [identifierType.identifierTypeId]: nextValue,
-      },
-    }));
-  };
-
-  const handleTrackingIdentifierNotAvailableChange = (serial, definition, checked) => {
-    setTrackingIdentifierNotAvailable((current) => ({
-      ...current,
-      [serial]: {
-        ...(current[serial] ?? {}),
-        [definition.identifierTypeId]: checked,
-      },
-    }));
-
-    if (checked) {
-      setTrackingIdentifierValues((current) => ({
-        ...current,
-        [serial]: {
-          ...(current[serial] ?? {}),
-          [definition.identifierTypeId]: '',
-        },
-      }));
-    }
-  };
+  const rowHasData = (row) => Object.values(row?.identities ?? {}).some(Boolean)
+    || Object.values(row?.attributes ?? {}).some(Boolean)
+    || Object.values(row?.documents ?? {}).some(Boolean);
 
   const handleQuickCreateProduct = async () => {
     const name = productSearch.trim();
@@ -360,7 +329,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
     }
   };
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (event, confirmed = false) => {
     event.preventDefault();
 
     if (!productId) {
@@ -368,7 +337,13 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
       return;
     }
 
-    if (isLoadingAttributes || isLoadingTrackingIdentifiers) {
+    const destination = receivingLocations.find((location) => location.id === destinationLocationId);
+    if (!destination) {
+      setError('اختر موقع الاستلام.');
+      return;
+    }
+
+    if (isLoadingAttributes || isLoadingTrackingIdentifiers || isLoadingDocuments) {
       return;
     }
 
@@ -382,75 +357,66 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
       return;
     }
 
-    if (duplicateSerialNumbers.length) {
-      setError('يوجد IMEI / Serial مكرر داخل الإدخال الحالي.');
+    if (!isSerial && (!Number.isFinite(Number(quantity)) || Number(quantity) <= 0)) {
+      setError('أدخل كمية صحيحة أكبر من صفر.');
       return;
     }
 
-    if (isSerial && trackingIdentifierDefinitions.length) {
-      for (const serial of serialNumbers) {
-        for (const definition of trackingIdentifierDefinitions) {
-          const value = String(trackingIdentifierValues[serial]?.[definition.identifierTypeId] ?? '').trim();
-          const isNotAvailable = Boolean(trackingIdentifierNotAvailable[serial]?.[definition.identifierTypeId]);
-          if (definition.isRequired && !value && !(definition.allowNotAvailable && isNotAvailable)) {
-            setError(`أدخل قيمة "${definition.name}" للوحدة ${serial}.`);
-            return;
-          }
-          const schemaValidation = validateIdentifierValueAgainstSchema(definition, value);
-          if (schemaValidation !== true) {
-            setError(schemaValidation);
-            return;
-          }
-        }
-      }
-    }
-
-    const invalidAttributeSelection = (variantContext?.attributes ?? []).find((attribute) => {
-      const selectedValueId = attributeSelections[attribute.id];
-      if (!selectedValueId) return false;
-      return !(attribute.values ?? []).some((value) => value.id === selectedValueId);
-    });
-
-    if (invalidAttributeSelection) {
-      setError(`قيمة "${invalidAttributeSelection.name}" غير صالحة.`);
+    if (isSerial && bulkSummary.errors) {
+      setError(`راجع بيانات ${bulkSummary.errors} وحدة قبل الحفظ.`);
       return;
     }
 
-    const missingRequiredAttribute = (variantContext?.attributes ?? []).find(
-      (attribute) => attribute.isRequired && !attributeSelections[attribute.id],
-    );
-
-    if (missingRequiredAttribute) {
-      setError(`اختر قيمة "${missingRequiredAttribute.name}" قبل الحفظ.`);
+    if (!confirmed) {
+      setError('');
+      setIsReviewOpen(true);
       return;
     }
 
     try {
       setIsSubmitting(true);
       setError('');
-      const attributeValueIds = Object.values(attributeSelections).filter(Boolean);
-      const trackingIdentifierPayload = Object.fromEntries(serialNumbers.map((serial) => [
-        serial,
-        Object.fromEntries(trackingIdentifierDefinitions.map((definition) => [
-          definition.identifierTypeId,
-          {
-            value: trackingIdentifierValues[serial]?.[definition.identifierTypeId] ?? '',
-            isNotAvailable: Boolean(trackingIdentifierNotAvailable[serial]?.[definition.identifierTypeId]),
-          },
-        ])),
-      ]));
-      await inventoryService.addStock({
-        tenantId,
-        productId,
-        attributeValueIds,
-        quantity,
-        serialNumbers,
-        trackingIdentifierValuesBySerial: trackingIdentifierPayload,
-        userId,
+      const inputSignature = createReceivingInputSignature({
+        productId, quantity, destination, serialNumbers, trackingIdentifierValues,
+        trackingIdentifierNotAvailable, primaryTrackingIdentifier, unitAttributeSelections, unitDocumentFiles,
       });
+      const nextSubmissionKey = submissionAttemptRef.current && submissionAttemptRef.current.inputSignature !== inputSignature
+        ? crypto.randomUUID()
+        : submissionKey;
+      const attempt = await getOrCreateReceivingAttempt({
+        currentAttempt: submissionAttemptRef.current,
+        inputSignature,
+        prepare: () => prepareReceivingAttempt({
+          tenantId,
+          productId,
+          quantity,
+          destination,
+          serialNumbers,
+          isSerial,
+          trackingIdentifierDefinitions,
+          primaryTrackingIdentifier,
+          trackingIdentifierValues,
+          trackingIdentifierNotAvailable,
+          attributes: variantContext?.attributes ?? [],
+          unitAttributeSelections,
+          documentDefinitions,
+          unitDocumentFiles,
+          submissionKey: nextSubmissionKey,
+          uploadAttachment: (payload) => inventoryService.uploadReceivingAttachment(payload),
+        }),
+      });
+      submissionAttemptRef.current = attempt;
+      if (nextSubmissionKey !== submissionKey) setSubmissionKey(nextSubmissionKey);
+      const result = await inventoryService.receiveInventory(attempt.request);
+      const incompleteCount = (result?.units ?? []).filter((unit) => unit.documentation?.status === 'INCOMPLETE').length;
+      const documentationNotice = incompleteCount || attempt.uploadFailureCount
+        ? `تم الاستلام بنجاح، مع ${incompleteCount} وحدة مستنداتها غير مكتملة${attempt.uploadFailureCount ? ` و${attempt.uploadFailureCount} صورة تعذر رفعها` : ''}.`
+        : '';
+      setIsReviewOpen(false);
       onOpenChange(false);
-      await onSaved?.();
+      await onSaved?.({ ...result, documentationNotice });
     } catch (submitError) {
+      setIsReviewOpen(false);
       setError(submitError.message || 'تعذر إضافة المخزون.');
     } finally {
       setIsSubmitting(false);
@@ -459,33 +425,44 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="mx-auto max-h-[92vh] w-full max-w-3xl">
+      <SheetContent side="right" className="h-full w-full !max-w-[720px]" dir="rtl">
         <SheetDismissButton />
-        <SheetHeader>
-          <SheetTitle>إضافة مخزون</SheetTitle>
+        <SheetHeader className="flex-shrink-0 px-5 py-3">
+          <SheetTitle className="text-lg">إضافة مخزون</SheetTitle>
         </SheetHeader>
-        <form className="flex h-full flex-col" onSubmit={handleSubmit}>
-          <SheetBody className="grid gap-4 md:grid-cols-2">
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => handleSubmit(event, false)}>
+          <SheetBody className="grid content-start gap-3 px-5 py-3 text-[13px] md:grid-cols-[250px_250px_minmax(0,1fr)]">
+            <div className="w-full space-y-2">
+              <Label htmlFor="inventory-receiving-location">موقع الاستلام</Label>
+              <select id="inventory-receiving-location" value={destinationLocationId} onChange={(event) => {
+                if (event.target.value !== destinationLocationId && bulkRows.some(rowHasData)
+                  && !window.confirm('تغيير موقع الاستلام سيطبق على كل الوحدات غير المحفوظة. هل تريد المتابعة؟')) return;
+                setDestinationLocationId(event.target.value);
+                submissionAttemptRef.current = null;
+              }} className="h-9 w-full rounded-lg border border-border bg-white px-3 text-[13px]">
+                <option value="">اختر الموقع</option>
+                {receivingLocations.map((location) => <option key={location.id} value={location.id}>{location.branchName} — {location.name}</option>)}
+              </select>
+            </div>
             {isLoadingAttributes ? (
               <LoadingAttributesState />
             ) : (
               <>
-                <div className="space-y-2">
+                <div className="w-full space-y-2">
                   <Label htmlFor="inventory-product">المنتج</Label>
                   {productId && selectedProduct ? (
-                    <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3">
-                      <div className="min-w-0 truncate text-sm font-extrabold text-slate-950">{selectedProduct.name}</div>
+                    <div className="flex h-9 items-center justify-between gap-3 rounded-lg border border-border bg-white px-3">
+                      <div className="min-w-0 truncate text-[13px] font-semibold text-slate-950">{selectedProduct.name}</div>
                       <button
                         type="button"
                         onClick={() => {
+                          const hasEnteredData = bulkRows.some((row) => Object.values(row.identities).some(Boolean) || Object.values(row.attributes).some(Boolean) || Object.values(row.documents).some(Boolean));
+                          if (hasEnteredData && !window.confirm('تغيير المنتج سيمسح الوحدات غير المحفوظة. هل تريد المتابعة؟')) return;
                           setProductId('');
                           setProductSearch('');
                           setVariantContext(null);
-                          setAttributeSelections({});
-                          setSerialText('');
+                          setBulkRows([]);
                           setTrackingIdentifierDefinitions([]);
-                          setTrackingIdentifierValues({});
-                          setTrackingIdentifierNotAvailable({});
                           setError('');
                         }}
                         className="flex-shrink-0 text-xs font-extrabold text-[rgb(2,27,76)] underline-offset-4 hover:underline"
@@ -497,15 +474,14 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                     <>
                       <Input
                         id="inventory-product"
+                        className="h-9 rounded-lg px-3 text-[13px]"
                         value={productSearch}
                         onChange={(event) => {
                           setProductSearch(event.target.value);
                           setProductId('');
                           setVariantContext(null);
-                          setAttributeSelections({});
+                          setBulkRows([]);
                           setTrackingIdentifierDefinitions([]);
-                          setTrackingIdentifierValues({});
-                          setTrackingIdentifierNotAvailable({});
                           setError('');
                         }}
                         placeholder="ابحث باسم المنتج"
@@ -528,7 +504,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                           )}
                         </div>
                       ) : null}
-                      {productSearch.trim() && !hasExactProductMatch ? (
+                      {canManageCatalog && productSearch.trim() && !hasExactProductMatch ? (
                         <div className="space-y-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3">
                           <div className="text-xs font-bold text-slate-500">إنشاء منتج سريع</div>
                           <select
@@ -550,170 +526,42 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                   )}
                 </div>
 
-                {variantContext?.attributes?.length ? (
-                  <>
-                    {variantContext.attributes.map((attribute) => (
-                      <div key={attribute.id} className="space-y-2">
-                        <Label htmlFor={`inventory-attribute-${attribute.id}`}>{attribute.name}</Label>
-                        <AttributeValuePicker
-                          attribute={attribute}
-                          value={attributeSelections[attribute.id] ?? ''}
-                          onChange={(valueId) => setAttributeSelections((current) => ({ ...current, [attribute.id]: valueId }))}
-                        />
-                        {attribute.isRequired ? <div className="text-xs font-semibold text-amber-700">هذا الحقل مطلوب.</div> : null}
-                      </div>
-                    ))}
-                  </>
-                ) : null}
+                {productId && !isSerial ? <div className="space-y-2">
+                  <Label htmlFor="inventory-unit-count">الكمية</Label>
+                  <Input id="inventory-unit-count" type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                </div> : null}
 
                 {!productId ? null : isSerial ? (
-                  <>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="inventory-serials">IMEI / Serial</Label>
-                      <textarea
-                        id="inventory-serials"
-                        value={serialText}
-                        onChange={(event) => setSerialText(event.target.value)}
-                        placeholder="سطر لكل IMEI"
-                        className="min-h-44 w-full rounded-xl border border-border bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-slate-200"
-                      />
-                      <div className="text-xs font-semibold text-slate-500">سيتم إضافة {serialNumbers.length} وحدة.</div>
-                    </div>
-
-                    {isLoadingTrackingIdentifiers ? (
-                      <div className="flex min-h-28 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-500 md:col-span-2">
-                        جاري تحميل تعريفات التتبع...
-                      </div>
-                    ) : trackingIdentifierDefinitions.length && serialNumbers.length ? (
-                      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
-                        <div>
-                          <div className="text-sm font-extrabold text-slate-950">تعريفات التتبع</div>
-                          <div className="mt-1 text-xs font-semibold text-slate-500">تظهر حسب التصنيف المرتبط بالمنتج.</div>
-                        </div>
-
-                        <div className="space-y-4">
-                          {serialNumbers.map((serial) => (
-                            <div key={serial} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-                              <div className="mb-3 text-xs font-extrabold text-slate-600" dir="ltr">{serial}</div>
-                              <div className="grid gap-3 md:grid-cols-2">
-                                {trackingIdentifierDefinitions.map((definition) => {
-                                  const slots = getIdentifierSlots(definition);
-                                  const isNotAvailable = Boolean(trackingIdentifierNotAvailable[serial]?.[definition.identifierTypeId]);
-                                  return (
-                                    <div key={`${serial}-${definition.identifierTypeId}`} className="space-y-2">
-                                      <div className="flex items-center justify-between gap-3">
-                                        <Label htmlFor={`tracking-identifier-${serial}-${definition.identifierTypeId}`}>
-                                          {definition.name}
-                                          {definition.isRequired ? <span className="text-red-600"> *</span> : null}
-                                        </Label>
-                                        {definition.allowNotAvailable ? (
-                                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
-                                            <input
-                                              type="checkbox"
-                                              checked={isNotAvailable}
-                                              onChange={(event) => handleTrackingIdentifierNotAvailableChange(serial, definition, event.target.checked)}
-                                            />
-                                            لا يوجد
-                                          </label>
-                                        ) : null}
-                                      </div>
-                                      <Input
-                                        id={`tracking-identifier-${serial}-${definition.identifierTypeId}`}
-                                        type="text"
-                                        inputMode={slots.length > 0 && slots.every((slot) => slot.type === 'numeric') ? 'numeric' : 'text'}
-                                        maxLength={slots.length || undefined}
-                                        value={trackingIdentifierValues[serial]?.[definition.identifierTypeId] ?? ''}
-                                        onChange={(event) => handleTrackingIdentifierValueChange(serial, definition, event.target.value)}
-                                        disabled={isNotAvailable}
-                                        dir={slots.length > 0 ? 'ltr' : 'rtl'}
-                                      />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="space-y-2">
-                    <Label htmlFor="inventory-quantity">الكمية</Label>
-                    <Input id="inventory-quantity" type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-                  </div>
-                )}
+                  isLoadingTrackingIdentifiers || isLoadingDocuments ? (
+                    <div className="flex min-h-28 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-500 md:col-span-3">جاري تحميل بيانات الوحدات...</div>
+                  ) : <BulkReceivingGrid rows={bulkRows} onRowsChange={(nextRows) => { setBulkRows(nextRows); setQuantity(String(nextRows.length)); setError(''); submissionAttemptRef.current = null; }} identifierDefinitions={trackingIdentifierDefinitions} attributes={variantContext?.attributes ?? []} documentDefinitions={documentDefinitions} />
+                ) : null}
               </>
             )}
 
-            {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 md:col-span-2">{error}</div> : null}
+            {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 md:col-span-3">{error}</div> : null}
           </SheetBody>
-          <SheetFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>إلغاء</Button>
-            <Button type="submit" disabled={isSubmitting || isLoadingAttributes || isLoadingTrackingIdentifiers || isCreatingProduct}>{isSubmitting ? 'جارٍ الإضافة...' : 'إضافة'}</Button>
+          <SheetFooter className="flex-shrink-0 bg-white px-5 py-3">
+            <div className="min-w-0 text-xs font-bold text-slate-600">{isSerial && productId ? <span>{bulkSummary.total} وحدة — <span className="text-emerald-700">{bulkSummary.complete} مكتملة</span> — <span className={bulkSummary.errors ? 'text-red-700' : ''}>{bulkSummary.errors} تحتاج مراجعة</span></span> : productId ? <span>الكمية: {quantity}</span> : <span>اختر الموقع والمنتج للبدء</span>}</div>
+            <div className="flex flex-shrink-0 gap-2"><Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>إلغاء</Button>
+            <Button type="submit" disabled={isSubmitting || isLoadingAttributes || isLoadingTrackingIdentifiers || isLoadingDocuments || isCreatingProduct}>{isSubmitting ? 'جارٍ الإضافة...' : 'مراجعة واستلام'}</Button></div>
           </SheetFooter>
         </form>
+        <ReceivingReviewSheet open={isReviewOpen} onOpenChange={setIsReviewOpen} product={selectedProduct} destination={receivingLocations.find((location) => location.id === destinationLocationId)} summary={bulkSummary} isSerial={isSerial} quantity={quantity} isSubmitting={isSubmitting} onConfirm={() => handleSubmit({ preventDefault() {} }, true)} />
       </SheetContent>
     </Sheet>
   );
 }
 
-function AttributeValuePicker({ attribute, value, onChange }) {
-  if (attribute.behavior === 'commercial' || attribute.displayType === 'buttons' || attribute.displayType === 'radio' || attribute.displayType === 'color') {
-    return (
-      <div className="flex flex-wrap gap-2">
-        {!attribute.isRequired ? (
-          <button
-            type="button"
-            onClick={() => onChange('')}
-            className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-              !value ? 'border-[rgb(2,27,76)] bg-[rgb(2,27,76)] text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            بدون
-          </button>
-        ) : null}
-        {(attribute.values ?? []).map((item) => {
-          const active = value === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onChange(item.id)}
-              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                active ? 'border-[rgb(2,27,76)] bg-[rgb(2,27,76)] text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {attribute.displayType === 'color' ? (
-                <span
-                  className={`inline-flex h-4 w-4 rounded-full border ${active ? 'border-white/70' : 'border-slate-300'}`}
-                  style={{ backgroundColor: item.colorHex || '#cbd5e1' }}
-                />
-              ) : null}
-              <span>{item.name}</span>
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <select
-      id={`inventory-attribute-${attribute.id}`}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="h-11 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-200"
-    >
-      <option value="">{attribute.isRequired ? 'اختر قيمة' : 'بدون'}</option>
-      {(attribute.values ?? []).map((item) => (
-        <option key={item.id} value={item.id}>
-          {item.name}
-        </option>
-      ))}
-    </select>
-  );
+function ReceivingReviewSheet({ open, onOpenChange, product, destination, summary, isSerial, quantity, isSubmitting, onConfirm }) {
+  return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent side="right" className="max-w-lg" dir="rtl"><SheetDismissButton /><SheetHeader><SheetTitle>مراجعة الاستلام</SheetTitle></SheetHeader><SheetBody className="space-y-4">
+    <div className="rounded-xl border bg-slate-50 p-4 text-sm"><div><b>المنتج:</b> {product?.name}</div><div className="mt-2"><b>الموقع:</b> {destination ? `${destination.branchName} — ${destination.name}` : '—'}</div></div>
+    {isSerial ? <div className="grid grid-cols-2 gap-3"><ReviewMetric label="إجمالي الوحدات" value={summary.total} /><ReviewMetric label="مكتملة تشغيليًا" value={summary.complete} /><ReviewMetric label="توثيق ناقص غير مانع" value={summary.incompleteDocuments} /><ReviewMetric label="أخطاء مانعة" value={summary.errors} /></div> : <ReviewMetric label="الكمية المستلمة" value={quantity} />}
+    {isSerial && summary.incompleteDocuments ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">سيتم الاستلام مع بقاء حالة التوثيق ناقصة للوحدات الموضحة.</div> : null}
+  </SheetBody><SheetFooter><Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>رجوع</Button><Button type="button" onClick={onConfirm} disabled={isSubmitting || summary.errors > 0}>{isSubmitting ? 'جارٍ الحفظ...' : 'تأكيد الاستلام'}</Button></SheetFooter></SheetContent></Sheet>;
 }
+
+function ReviewMetric({ label, value }) { return <div className="rounded-xl border bg-white p-3"><div className="text-xs font-bold text-slate-500">{label}</div><div className="mt-1 text-xl font-black">{value}</div></div>; }
 
 function LoadingAttributesState() {
   return (
