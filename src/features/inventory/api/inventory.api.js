@@ -1215,6 +1215,47 @@ export const inventoryService = {
     return { path, bucket: TENANT_FILES_BUCKET, documentType };
   },
 
+  async listStockBalances({
+    branchId = null,
+    locationId = null,
+    search = '',
+    categoryId = null,
+    page = 1,
+    pageSize = 25,
+  } = {}) {
+    const { data, error } = await requireSupabase().rpc('list_inventory_stock_balances', {
+      p_branch_id: branchId || null,
+      p_location_id: locationId || null,
+      p_search: search.trim() || null,
+      p_category_id: categoryId || null,
+      p_page: page,
+      p_page_size: pageSize,
+    });
+    if (error) throw new Error(error.message);
+
+    return {
+      items: (data?.items ?? []).map((item) => ({
+        product: {
+          id: item.product_id,
+          productTemplateId: item.product_template_id,
+          name: item.template_name || item.display_name || '',
+          displayName: item.display_name || item.template_name || '',
+          code: item.code || '',
+          barcode: item.barcode || '',
+          categoryId: item.category_id || null,
+          tracking: item.tracking || 'none',
+          productType: 'goods',
+        },
+        availableQuantity: numberValue(item.available_quantity),
+        reservedQuantity: numberValue(item.reserved_quantity),
+        totalQuantity: numberValue(item.total_quantity),
+      })),
+      total: Number(data?.total ?? 0),
+      page: Number(data?.page ?? page),
+      pageSize: Number(data?.page_size ?? pageSize),
+    };
+  },
+
   async getStock({ tenantId }) {
     const client = requireSupabase();
     const [productsMap, quantsResult, serialResult] = await Promise.all([

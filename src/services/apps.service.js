@@ -181,6 +181,33 @@ function filterMenusByAppRules(menus, appCode, options = {}) {
     return menus.filter((menu) => menu.active !== false);
   }
 
+  if (appCode === 'products') {
+    const permissions = new Set(options.permissionCodes ?? []);
+    const ownerOverride = options.userRole === 'owner';
+    const canAny = (...codes) => ownerOverride || codes.some((code) => permissions.has(code));
+    const inventoryRead = canAny(
+      'inventory.read', 'inventory.availability', 'inventory.receive', 'inventory.transfer',
+    );
+    const inventoryOperations = canAny(
+      'inventory.count', 'inventory.count_submit', 'inventory.adjust', 'inventory.return_review_release',
+    );
+    const catalogRead = canAny('products.access', 'products.manage');
+    const allowedCodes = new Set([
+      'products.root',
+      'inventory.overview',
+      ...(inventoryRead ? ['inventory.stock_group'] : []),
+      ...(inventoryOperations ? ['inventory.operations_group'] : []),
+      ...(catalogRead || inventoryRead ? ['inventory.configuration_group'] : []),
+      ...(inventoryRead ? ['inventory.stock', 'inventory.unique_units', 'inventory.moves', 'inventory.locations'] : []),
+      ...(canAny('inventory.count', 'inventory.count_submit', 'inventory.adjust') ? ['inventory.counts'] : []),
+      ...(canAny('inventory.return_review_release') ? ['inventory.return_reviews'] : []),
+      ...(catalogRead ? ['inventory.products', 'products.attributes', 'products.tracking_identifiers'] : []),
+    ]);
+
+    if (!inventoryRead && !inventoryOperations && !catalogRead) return [];
+    return menus.filter((menu) => menu.active !== false && allowedCodes.has(menu.code));
+  }
+
   return menus.filter((menu) => menu.active !== false);
 }
 
@@ -214,7 +241,13 @@ function buildMenuTree(rows) {
     }
   });
 
-  return roots;
+  const pruneEmptyGroups = (items) => items.flatMap((item) => {
+    const children = pruneEmptyGroups(item.children ?? []);
+    if (!item.routePath && !item.href && !children.length) return [];
+    return [{ ...item, children }];
+  });
+
+  return pruneEmptyGroups(roots);
 }
 
 function fallbackApps() {

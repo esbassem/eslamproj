@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { inventoryService } from '@/features/inventory/api/inventory.api';
 
-export function useStock(tenantId) {
+const EMPTY_RESULT = { items: [], total: 0, page: 1, pageSize: 25 };
+
+export function useStock(tenantId, filters = {}) {
   const [stock, setStock] = useState([]);
   const [products, setProducts] = useState([]);
+  const [pagination, setPagination] = useState(EMPTY_RESULT);
   const [isLoading, setIsLoading] = useState(false);
+  const [isProductsLoading, setIsProductsLoading] = useState(false);
   const [error, setError] = useState('');
 
   const reload = useCallback(async () => {
     if (!tenantId) {
       setStock([]);
-      setProducts([]);
+      setPagination(EMPTY_RESULT);
       return;
     }
 
@@ -18,22 +22,35 @@ export function useStock(tenantId) {
     setError('');
 
     try {
-      const [nextStock, nextProducts] = await Promise.all([
-        inventoryService.getStock({ tenantId }),
-        inventoryService.listProducts(tenantId),
-      ]);
-      setStock(nextStock);
-      setProducts(nextProducts);
+      const result = await inventoryService.listStockBalances(filters);
+      setStock(result.items);
+      setPagination(result);
     } catch (loadError) {
+      setStock([]);
+      setPagination(EMPTY_RESULT);
       setError(loadError.message || 'تعذر تحميل المخزون.');
     } finally {
       setIsLoading(false);
     }
-  }, [tenantId]);
+  }, [filters.branchId, filters.categoryId, filters.locationId, filters.page, filters.pageSize, filters.search, tenantId]);
 
   useEffect(() => {
-    reload();
+    void reload();
   }, [reload]);
 
-  return { stock, products, isLoading, error, reload };
+  useEffect(() => {
+    let mounted = true;
+    if (!tenantId) {
+      setProducts([]);
+      return undefined;
+    }
+    setIsProductsLoading(true);
+    inventoryService.listProducts(tenantId)
+      .then((nextProducts) => { if (mounted) setProducts(nextProducts); })
+      .catch(() => { if (mounted) setProducts([]); })
+      .finally(() => { if (mounted) setIsProductsLoading(false); });
+    return () => { mounted = false; };
+  }, [tenantId]);
+
+  return { stock, products, pagination, isLoading, isProductsLoading, error, reload };
 }

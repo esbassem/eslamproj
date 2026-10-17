@@ -16,7 +16,7 @@ const STATUS_CARDS = [
 export function InventoryOverviewPage() {
   const { tenant } = useWorkspace();
   const tenantId = tenant?.id;
-  const [state, setState] = useState({ loading: true, error: '', products: 0, units: [], moves: [] });
+  const [state, setState] = useState({ loading: true, error: '', products: 0, units: [], moves: [], locations: 0 });
 
   useEffect(() => {
     let mounted = true;
@@ -26,8 +26,9 @@ export function InventoryOverviewPage() {
       productsService.listProducts(tenantId),
       inventoryService.getSerialUnits({ tenantId }),
       inventoryService.getStockMoves({ tenantId }),
-    ]).then(([products, units, moves]) => {
-      if (mounted) setState({ loading: false, error: '', products: products.length, units, moves: moves.slice(0, 6) });
+      inventoryService.listReceivingLocations({ tenantId }),
+    ]).then(([products, units, moves, locations]) => {
+      if (mounted) setState({ loading: false, error: '', products: products.length, units, moves: moves.slice(0, 6), locations: locations.length });
     }).catch((error) => {
       if (mounted) setState((current) => ({ ...current, loading: false, error: error.message || 'تعذر تحميل نظرة المخزون.' }));
     });
@@ -52,7 +53,7 @@ export function InventoryOverviewPage() {
       </section>
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Metric {...STATUS_CARDS[2]} value={counts.sold || 0} />
-        <Metric label="المواقع" value="غير مفعّل" icon={MapPin} tone="text-slate-500 bg-slate-100" compact />
+        <Metric label="مواقع المخزون النشطة" value={state.locations} icon={MapPin} tone="text-slate-500 bg-slate-100" compact />
         <Metric label="الحركات المسجلة" value={state.moves.length ? 'آخر 6' : 0} icon={History} tone="text-violet-700 bg-violet-50" compact />
       </section>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">

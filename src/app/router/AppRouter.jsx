@@ -54,6 +54,7 @@ export function AppRouter() {
               <Route path={ROUTES.onboarding} element={<OnboardingPage />} />
               <Route element={<PlatformRuntimeLayout />}>
               {modeRoutes.map(renderModeRoute)}
+              <Route path="/apps/inventory/products/categories" element={<Navigate to="/apps/inventory/products" replace />} />
               <Route path="/products/tracking-identifiers" element={<Navigate to="/apps/inventory/products/tracking-identifiers" replace />} />
               <Route path="/app/products/*" element={<LegacyInventoryRedirect sourceBase="/app/products" targetBase="/apps/inventory" />} />
               <Route path="/apps/products/*" element={<LegacyInventoryRedirect sourceBase="/apps/products" targetBase="/apps/inventory" />} />

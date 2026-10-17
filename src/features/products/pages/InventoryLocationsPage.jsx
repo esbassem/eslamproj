@@ -59,7 +59,7 @@ function LocationSheet({ open, location, branches, onOpenChange, onSave }) {
         <form className="flex h-full flex-col" onSubmit={submit}>
           <SheetHeader>
             <SheetTitle>{location ? 'تعديل موقع المخزون' : 'إضافة موقع مخزون'}</SheetTitle>
-            <SheetDescription>الموقع يتبع فرعًا محددًا، ولا يُربط بأرصدة المخزون في هذه المرحلة.</SheetDescription>
+            <SheetDescription>الموقع يتبع فرعًا محددًا ويُستخدم في الأرصدة وعمليات المخزون.</SheetDescription>
             <SheetDismissButton />
           </SheetHeader>
           <SheetBody className="space-y-4">
@@ -166,7 +166,7 @@ export function InventoryLocationsPage() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-slate-950">مواقع المخزون</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">تعريف المواقع التابعة للفروع. لم يتم ربط الأرصدة أو القطع بهذه المواقع بعد.</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">تعريف مواقع المخزون التابعة للفروع والمستخدمة في الأرصدة والعمليات.</p>
         </div>
         {isOwner ? <Button onClick={() => { setEditing(null); setSheetOpen(true); }} className="gap-2" disabled={!branches.length}><Plus className="h-4 w-4" />إضافة موقع</Button> : null}
       </header>
