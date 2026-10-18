@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeftRight, ChevronLeft, ChevronRight, Layers, Plus, Search } from 'lucide-react';
 import { Badge } from '@/core/ui/badge';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
@@ -18,6 +19,7 @@ import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 const PAGE_SIZE = 25;
 
 export function StockListPage() {
+  const [searchParams] = useSearchParams();
   const { tenant, tenantUser } = useWorkspace();
   const {
     can, canAccessBranch, canAccessStockLocation, resourceScope,
@@ -34,6 +36,7 @@ export function StockListPage() {
   const [categories, setCategories] = useState([]);
   const [filtersError, setFiltersError] = useState('');
   const defaultsApplied = useRef(false);
+  const shortcutHandled = useRef(false);
   const query = useMemo(() => ({
     branchId: branchId || null,
     locationId: locationId || null,
@@ -56,6 +59,21 @@ export function StockListPage() {
   const canReadStock = authorizationReady && (
     can('inventory.read') || can('inventory.availability') || canReceive || canTransfer
   );
+
+  useEffect(() => {
+    if (shortcutHandled.current || !authorizationReady) return;
+    const action = searchParams.get('action');
+    if (action === 'receive' && canReceive && !isProductsLoading) {
+      shortcutHandled.current = true;
+      setReceivingNotice('');
+      setAddOpen(true);
+    } else if (action === 'transfer' && canTransfer) {
+      shortcutHandled.current = true;
+      setReceivingNotice('اختر المنتج المطلوب من القائمة ثم اضغط «نقل».');
+    } else if (action && !['receive', 'transfer'].includes(action)) {
+      shortcutHandled.current = true;
+    }
+  }, [authorizationReady, canReceive, canTransfer, isProductsLoading, searchParams]);
 
   useEffect(() => {
     setPage(1);

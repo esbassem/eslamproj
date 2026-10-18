@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, RotateCcw } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
+import { PageHeader } from '@/core/ui/page-header';
+import { getCanonicalBreadcrumbs } from '@/core/navigation/platformNavigation';
 import { useAuthorization } from '@/core/authorization/useAuthorization';
 import { inventoryService } from '@/features/inventory/api/inventory.api';
 
@@ -51,12 +53,13 @@ export function InventoryReturnReviewsPage() {
     } finally { setReleasingId(''); }
   };
 
-  if (authorizationReady && !canRelease) {
+  if (!authorizationReady) return <LoadingSpinner title="جاري التحقق من صلاحيات مراجعة المرتجعات" />;
+  if (!canRelease) {
     return <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900" dir="rtl">ليست لديك صلاحية مراجعة وإتاحة الوحدات المرتجعة.</div>;
   }
 
   return <div className="space-y-5" dir="rtl">
-    <header><h1 className="text-2xl font-black text-slate-950">مراجعة المرتجعات</h1><p className="mt-1 text-sm font-semibold text-slate-500">وحدات متسلسلة مرتجعة وموقوفة لحين المراجعة الفعلية.</p></header>
+    <PageHeader title="مراجعة المرتجعات" description="وحدات متسلسلة مرتجعة وموقوفة لحين المراجعة الفعلية." breadcrumbs={getCanonicalBreadcrumbs('/apps/inventory/operations/returns')} />
     {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-800">{error}</div> : null}
     {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800">{notice}</div> : null}
     {loading ? <LoadingSpinner title="جاري تحميل المرتجعات" /> : <div className="space-y-3">

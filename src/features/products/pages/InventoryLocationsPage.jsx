@@ -6,6 +6,8 @@ import { EmptyState } from '@/core/ui/empty-state';
 import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
+import { PageHeader } from '@/core/ui/page-header';
+import { getCanonicalBreadcrumbs } from '@/core/navigation/platformNavigation';
 import {
   Sheet,
   SheetBody,
@@ -163,13 +165,7 @@ export function InventoryLocationsPage() {
 
   return (
     <div className="space-y-5" dir="rtl">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-slate-950">مواقع المخزون</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">تعريف مواقع المخزون التابعة للفروع والمستخدمة في الأرصدة والعمليات.</p>
-        </div>
-        {isOwner ? <Button onClick={() => { setEditing(null); setSheetOpen(true); }} className="gap-2" disabled={!branches.length}><Plus className="h-4 w-4" />إضافة موقع</Button> : null}
-      </header>
+      <PageHeader title="مواقع المخزون" description="تعريف مواقع المخزون التابعة للفروع والمستخدمة في الأرصدة والعمليات." breadcrumbs={getCanonicalBreadcrumbs('/apps/inventory/operations/locations')} actions={isOwner ? <Button onClick={() => { setEditing(null); setSheetOpen(true); }} className="gap-2" disabled={!branches.length}><Plus className="h-4 w-4" />إضافة موقع</Button> : null} />
 
       {!isOwner ? <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">يمكنك عرض المواقع فقط. الإدارة متاحة لمالك الشركة.</div> : null}
       {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{notice}</div> : null}

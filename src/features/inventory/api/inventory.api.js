@@ -533,6 +533,41 @@ export function normalizeTrackingIdentifierValue(value) {
 }
 
 export const inventoryService = {
+  async getDashboardSummary() {
+    const { data, error } = await requireSupabase().rpc('get_inventory_dashboard_summary');
+    if (error) {
+      throw new Error(error.message === 'INVENTORY_DASHBOARD_DENIED'
+        ? 'ليست لديك صلاحية عرض نظرة المخزون.'
+        : error.message || 'تعذر تحميل نظرة المخزون.');
+    }
+    return {
+      metrics: {
+        stockedProductCount: Number(data?.metrics?.stocked_product_count || 0),
+        serialUnitCount: Number(data?.metrics?.serial_unit_count || 0),
+        availableQuantity: Number(data?.metrics?.available_quantity || 0),
+        reservedQuantity: Number(data?.metrics?.reserved_quantity || 0),
+        totalQuantity: Number(data?.metrics?.total_quantity || 0),
+        incompleteUnitCount: Number(data?.metrics?.incomplete_unit_count || 0),
+        missingImageUnitCount: Number(data?.metrics?.missing_image_unit_count || 0),
+        locationCount: Number(data?.metrics?.location_count || 0),
+      },
+      attentionUnits: Array.isArray(data?.attention_units) ? data.attention_units.map((unit) => ({
+        id: unit.id,
+        productId: unit.product_id,
+        productName: unit.product_name || 'وحدة غير مكتملة',
+        trackingNumber: unit.tracking_number || '',
+        dataStatus: unit.data_status || 'complete',
+        incompleteReason: unit.incomplete_reason || null,
+        needsData: Boolean(unit.needs_data),
+        needsImage: Boolean(unit.needs_image),
+        branchId: unit.branch_id,
+        branchName: unit.branch_name || '',
+        locationId: unit.location_id,
+        locationName: unit.location_name || '',
+      })) : [],
+    };
+  },
+
   async listReceivingLocations({ tenantId } = {}) {
     const client = requireSupabase();
     if (!tenantId) return [];
