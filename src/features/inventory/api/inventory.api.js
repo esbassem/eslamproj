@@ -1386,6 +1386,30 @@ export const inventoryService = {
     };
   },
 
+  async getSerialUnitDetails({ trackingUnitId, timelinePage = 1, timelinePageSize = 25 }) {
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('get_inventory_serial_unit_details', {
+      p_unit_id: trackingUnitId,
+      p_timeline_page: timelinePage,
+      p_timeline_page_size: timelinePageSize,
+    });
+    if (error) {
+      const denied = error.code === '42501' || error.message?.includes('DENIED');
+      const missing = error.code === 'P0002' || error.message?.includes('NOT_FOUND');
+      const next = new Error(denied ? 'لا تملك صلاحية عرض هذه الوحدة.' : missing ? 'الوحدة غير موجودة.' : error.message);
+      next.code = denied ? 'denied' : missing ? 'not_found' : error.code;
+      throw next;
+    }
+
+    const attachments = await Promise.all((data?.attachments ?? []).map(async (attachment) => {
+      const { data: signed, error: signedError } = await client.storage
+        .from(attachment.bucket_name)
+        .createSignedUrl(attachment.file_path, 900);
+      return { ...attachment, url: signedError ? null : signed?.signedUrl ?? null };
+    }));
+    return { ...data, attachments };
+  },
+
   async listJawabIdentifierDefinitions({ tenantId } = {}) {
     const client = requireSupabase();
     if (!tenantId) return [];

@@ -35,6 +35,7 @@ export const routeLoaders = {
   productTrackingIdentifiers: cached('productTrackingIdentifiers', () => import('@/features/products/pages/ProductTrackingIdentifiersPage')),
   inventoryStock: cached('inventoryStock', () => import('@/features/inventory/pages/StockListPage')),
   inventorySerials: cached('inventorySerials', () => import('@/features/inventory/pages/SerialUnitsPage')),
+  inventorySerialDetails: cached('inventorySerialDetails', () => import('@/features/inventory/pages/SerialUnitDetailsPage')),
   inventoryMoves: cached('inventoryMoves', () => import('@/features/inventory/pages/StockMovesPage')),
   pos: cached('pos', () => import('@/features/pos/pages/PosPage')),
   invoices: cached('invoices', () => import('@/features/invoices/pages/InvoicesPage')),

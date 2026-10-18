@@ -21,6 +21,7 @@ register(['/apps/inventory/products/attributes'], 'productAttributes', 'ProductA
 register(['/apps/inventory/products/tracking-identifiers'], 'productTrackingIdentifiers', 'ProductTrackingIdentifiersPage');
 register(['/apps/inventory/stock'], 'inventoryStock', 'StockListPage');
 register(['/apps/inventory/unique-units'], 'inventorySerials', 'SerialUnitsPage');
+register(['/apps/inventory/unique-units/:unitId'], 'inventorySerialDetails', 'SerialUnitDetailsPage');
 register(['/apps/inventory/operations/moves'], 'inventoryMoves', 'StockMovesPage');
 register(['/apps/inventory/operations/locations'], 'inventoryLocations', 'InventoryLocationsPage');
 register(['/apps/inventory/operations/counts'], 'inventoryCounts', 'InventoryCountsPage');

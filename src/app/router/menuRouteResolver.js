@@ -15,5 +15,12 @@ export function resolveMenuComponent(route) {
       ? normalizedRoute.replace(/^\/app\//, '/apps/')
       : '';
 
-  return MENU_COMPONENTS[normalizedRoute] ?? MENU_COMPONENTS[alternateRoute] ?? null;
+  const direct = MENU_COMPONENTS[normalizedRoute] ?? MENU_COMPONENTS[alternateRoute];
+  if (direct) return direct;
+
+  return Object.entries(MENU_COMPONENTS).find(([pattern]) => {
+    if (!pattern.includes('/:')) return false;
+    const expression = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:\w+/g, '[^/]+');
+    return new RegExp(`^${expression}$`).test(normalizedRoute);
+  })?.[1] ?? null;
 }

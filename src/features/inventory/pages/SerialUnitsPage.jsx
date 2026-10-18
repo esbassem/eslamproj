@@ -1,14 +1,12 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Eye, Hash, Search } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/core/ui/badge';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
 import { PageHeader } from '@/core/ui/page-header';
 import { getCanonicalBreadcrumbs } from '@/core/navigation/platformNavigation';
-import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetHeader, SheetTitle } from '@/core/ui/sheet';
-import { inventoryService } from '@/features/inventory/api/inventory.api';
 import { CompleteTrackingUnitWizard } from '@/features/inventory/components/CompleteTrackingUnitWizard';
 import { useSerialUnits } from '@/features/inventory/hooks/useSerialUnits';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
@@ -27,15 +25,20 @@ export function SerialUnitsPage() {
   const { tenant } = useWorkspace();
   const tenantId = tenant?.id;
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const paperworkReturnTo = searchParams.get('paperworkFlow') === 'manual-receipt'
     && searchParams.get('returnTo') === '/apps/paperwork?flow=manual-receipt'
     ? searchParams.get('returnTo')
     : '';
-  const [filters, setFilters] = useState({ productId: 'all', status: 'all', dataStatus: 'all', search: '' });
-  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState({
+    productId: searchParams.get('product') || 'all',
+    status: searchParams.get('status') || 'all',
+    dataStatus: searchParams.get('dataStatus') || 'all',
+    search: searchParams.get('q') || '',
+  });
+  const [page, setPage] = useState(Math.max(Number(searchParams.get('page')) || 1, 1));
   const [completionUnit, setCompletionUnit] = useState(null);
-  const [details, setDetails] = useState({ open: false, unit: null, data: null, loading: false, error: '' });
   const { serialUnits, products, isLoading, error, reload } = useSerialUnits(tenantId, filters);
   const filteredUnits = useMemo(() => {
     const query = filters.search.trim().toLowerCase();
@@ -45,20 +48,33 @@ export function SerialUnitsPage() {
   const pageCount = Math.max(1, Math.ceil(filteredUnits.length / PAGE_SIZE));
   const visibleUnits = filteredUnits.slice((Math.min(page, pageCount) - 1) * PAGE_SIZE, Math.min(page, pageCount) * PAGE_SIZE);
 
-  const updateFilter = (key, value) => { setPage(1); setFilters((current) => ({ ...current, [key]: value })); };
+  const updateUrlState = (nextFilters, nextPage) => {
+    const params = new URLSearchParams(searchParams);
+    const mapping = { search: 'q', productId: 'product', status: 'status', dataStatus: 'dataStatus' };
+    Object.entries(mapping).forEach(([key, parameter]) => {
+      const value = nextFilters[key];
+      if (!value || value === 'all') params.delete(parameter); else params.set(parameter, value);
+    });
+    if (nextPage > 1) params.set('page', String(nextPage)); else params.delete('page');
+    setSearchParams(params, { replace: true });
+  };
+  const updateFilter = (key, value) => {
+    const next = { ...filters, [key]: value };
+    setPage(1);
+    setFilters(next);
+    updateUrlState(next, 1);
+  };
+  const updatePage = (nextPage) => {
+    setPage(nextPage);
+    updateUrlState(filters, nextPage);
+  };
   const returnUnitToPaperwork = (unit) => {
     if (!paperworkReturnTo || !unit?.id) return;
     navigate(paperworkReturnTo, { state: { paperworkTrackingUnit: unit } });
   };
-  const openDetails = async (unit) => {
-    setDetails({ open: true, unit, data: null, loading: true, error: '' });
-    try {
-      const data = await inventoryService.getTrackingUnitDetails({ tenantId, trackingUnitId: unit.id });
-      setDetails({ open: true, unit, data, loading: false, error: '' });
-    } catch (loadError) {
-      setDetails({ open: true, unit, data: null, loading: false, error: loadError.message || 'تعذر تحميل تفاصيل القطعة.' });
-    }
-  };
+  const openDetails = (unit) => navigate(
+    `/apps/inventory/unique-units/${unit.id}?returnTo=${encodeURIComponent(`${location.pathname}${location.search}`)}`,
+  );
 
   return <div className="space-y-5" dir="rtl">
     <PageHeader
@@ -84,24 +100,12 @@ export function SerialUnitsPage() {
           <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => openDetails(unit)}><Eye className="h-4 w-4" /></Button>{unit.isIncomplete ? <Button type="button" size="sm" variant="secondary" onClick={() => setCompletionUnit(unit)}>استكمال</Button> : paperworkReturnTo ? <Button type="button" size="sm" onClick={() => returnUnitToPaperwork(unit)}>اختيار</Button> : null}</div>
         </div>)}</div>
       </div>
-      <div className="flex items-center justify-between text-sm font-bold text-slate-600"><span>{filteredUnits.length.toLocaleString('ar-EG')} قطعة</span><div className="flex items-center gap-2"><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronRight className="h-4 w-4" /></Button><span>{Math.min(page, pageCount)} / {pageCount}</span><Button size="sm" variant="secondary" disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}><ChevronLeft className="h-4 w-4" /></Button></div></div>
+      <div className="flex items-center justify-between text-sm font-bold text-slate-600"><span>{filteredUnits.length.toLocaleString('ar-EG')} قطعة</span><div className="flex items-center gap-2"><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => updatePage(page - 1)}><ChevronRight className="h-4 w-4" /></Button><span>{Math.min(page, pageCount)} / {pageCount}</span><Button size="sm" variant="secondary" disabled={page >= pageCount} onClick={() => updatePage(page + 1)}><ChevronLeft className="h-4 w-4" /></Button></div></div>
     </> : <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center"><Hash className="h-10 w-10 text-slate-300" /><h3 className="mt-3 text-lg font-black">لا توجد قطع مطابقة</h3></div>}
-    <TrackingUnitDetails details={details} onOpenChange={(open) => setDetails((current) => ({ ...current, open }))} />
     <CompleteTrackingUnitWizard open={Boolean(completionUnit)} onOpenChange={(open) => { if (!open) setCompletionUnit(null); }} tenantId={tenantId} unit={completionUnit} onCompleted={async (completed) => { await reload(); if (paperworkReturnTo) returnUnitToPaperwork(completed || completionUnit); }} />
   </div>;
 }
 
-function TrackingUnitDetails({ details, onOpenChange }) {
-  const unit = details.unit;
-  return <Sheet open={details.open} onOpenChange={onOpenChange}><SheetContent side="left" className="max-w-xl" dir="rtl"><SheetDismissButton /><SheetHeader><SheetTitle>تفاصيل القطعة الفريدة</SheetTitle></SheetHeader><SheetBody className="space-y-5">
-    {details.loading ? <LoadingSpinner title="جاري تحميل التفاصيل" /> : details.error ? <Alert>{details.error}</Alert> : unit ? <>
-      <div className="grid gap-3 sm:grid-cols-2"><Detail label="المنتج" value={unit.product?.name || '-'} /><Detail label="رقم القطعة" value={unit.trackingNumber} ltr /><Detail label="الحالة" value={STATUS_OPTIONS.find((option) => option.value === unit.status)?.label || unit.status} /><Detail label="الموقع الحالي" value="غير محدد في النظام" /></div>
-      <DetailsBlock title="أرقام التعريف" rows={details.data?.identifiers} /><DetailsBlock title="الخصائص" rows={details.data?.attributes} />
-    </> : null}
-  </SheetBody></SheetContent></Sheet>;
-}
-function DetailsBlock({ title, rows = [] }) { return <section><h3 className="mb-2 font-black">{title}</h3><div className="divide-y divide-slate-100 rounded-xl border border-slate-200">{rows.length ? rows.map((row) => <div key={`${row.id}-${row.value}`} className="flex justify-between gap-4 px-3 py-2 text-sm"><span className="font-bold text-slate-500">{row.name}</span><span className="font-black">{row.value}</span></div>) : <p className="p-3 text-sm text-slate-500">لا توجد بيانات.</p>}</div></section>; }
-function Detail({ label, value, ltr }) { return <div className="rounded-xl border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 font-black" dir={ltr ? 'ltr' : undefined}>{value}</p></div>; }
 function Select({ value, onChange, children }) { return <select value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-slate-200">{children}</select>; }
 function StatusBadge({ status }) { const label = STATUS_OPTIONS.find((option) => option.value === status)?.label || status; return <div><Badge variant={status === 'in_stock' ? 'success' : status === 'reserved' ? 'warning' : 'default'}>{label}</Badge></div>; }
 function Alert({ children }) { return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{children}</div>; }
