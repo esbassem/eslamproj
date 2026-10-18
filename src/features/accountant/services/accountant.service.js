@@ -458,39 +458,6 @@ export const accountantService = {
     return accountantService.listCashLocationOperations({ tenantId, accountId });
   },
 
-  async createCashLocationOperation({
-    tenantId,
-    cashAccountId,
-    counterAccountId,
-    direction,
-    amount,
-    note,
-  } = {}) {
-    requireTenantId(tenantId);
-    if (!cashAccountId) throw new Error('اختر الخزنة أو العهدة.');
-    if (!counterAccountId) throw new Error('اختر الحساب المقابل.');
-
-    const safeAmount = Math.round(toMoney(amount) * 100) / 100;
-    if (safeAmount <= 0) throw new Error('اكتب مبلغًا صحيحًا أكبر من صفر.');
-    if (!['in', 'out'].includes(direction)) throw new Error('اختر نوع العملية.');
-
-    const normalizedNote = String(note || '').trim();
-    if (!normalizedNote) throw new Error('اكتب بيان العملية.');
-
-    const client = requireSupabase();
-    const { data, error } = await client.rpc('create_cash_location_operation', {
-      p_tenant_id: tenantId,
-      p_cash_account_id: cashAccountId,
-      p_counter_account_id: counterAccountId,
-      p_direction: direction,
-      p_amount: safeAmount,
-      p_notes: normalizedNote,
-    });
-
-    if (error) throw new Error(error.message || 'تعذر تسجيل العملية النقدية.');
-    return data;
-  },
-
   async listSettlementAccounts({ tenantId } = {}) {
     requireTenantId(tenantId);
 
