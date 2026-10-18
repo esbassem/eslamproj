@@ -1472,6 +1472,39 @@ export const inventoryService = {
     return data;
   },
 
+  async listStockMovements({
+    search = '', branchId = null, locationId = null, movementType = null,
+    dateFrom = null, dateTo = null, page = 1, pageSize = 25,
+  } = {}) {
+    const { data, error } = await requireSupabase().rpc('list_inventory_stock_movements', {
+      p_search: search.trim() || null,
+      p_branch_id: branchId || null,
+      p_location_id: locationId || null,
+      p_movement_type: movementType || null,
+      p_date_from: dateFrom || null,
+      p_date_to: dateTo || null,
+      p_page: page,
+      p_page_size: pageSize,
+    });
+    if (error) {
+      const messages = {
+        INVENTORY_STOCK_MOVEMENTS_DENIED: 'ليست لديك صلاحية عرض حركات المخزون.',
+        INVENTORY_BRANCH_ACCESS_DENIED: 'الفرع المحدد خارج نطاق صلاحياتك.',
+        INVENTORY_LOCATION_ACCESS_DENIED: 'موقع المخزون المحدد خارج نطاق صلاحياتك.',
+        INVENTORY_MOVEMENT_DATE_RANGE_INVALID: 'نطاق التاريخ غير صحيح.',
+        INVENTORY_MOVEMENT_TYPE_INVALID: 'نوع الحركة المحدد غير صحيح.',
+      };
+      throw new Error(messages[error.message] || error.message || 'تعذر تحميل حركات المخزون.');
+    }
+    return {
+      items: Array.isArray(data?.items) ? data.items : [],
+      locations: Array.isArray(data?.locations) ? data.locations : [],
+      total: Number(data?.total ?? 0),
+      page: Number(data?.page ?? page),
+      pageSize: Number(data?.pageSize ?? pageSize),
+    };
+  },
+
   async getStockMoves({ tenantId }) {
     const client = requireSupabase();
     const [{ data, error }, productsMap] = await Promise.all([
