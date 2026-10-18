@@ -303,10 +303,28 @@ test('permission and location helpers enforce readiness, scope, and valid defaul
   }), 'allowed');
   assert.equal(resolveReceivingDefaultLocation(authorized, {
     defaultBranchId: 'branch-2', defaultStockLocationId: 'allowed',
+  }), 'allowed');
+  assert.equal(resolveReceivingDefaultLocation([], {
+    defaultBranchId: 'branch-1', defaultStockLocationId: 'allowed',
   }), '');
+  assert.equal(resolveReceivingDefaultLocation([
+    { id: 'first', branchId: 'branch-1' },
+    { id: 'second', branchId: 'branch-1' },
+  ], {}), '');
+  assert.equal(resolveReceivingDefaultLocation([
+    { id: 'first', branchId: 'branch-1' },
+    { id: 'second', branchId: 'branch-1' },
+  ], { defaultBranchId: 'branch-1', defaultStockLocationId: 'second' }), 'second');
   assert.equal(canShowReceivingAction({ authorizationReady: true, canReceive: true }), true);
   assert.equal(canShowReceivingAction({ authorizationReady: false, canReceive: true }), false);
   assert.equal(canShowReceivingAction({ authorizationReady: true, canReceive: false }), false);
+});
+
+test('receiving auto-selects only one available location and blocks an empty location list', () => {
+  assert.match(addStock, /receivingLocations\.length === 0/);
+  assert.match(addStock, /لا توجد مواقع مخزون متاحة للاستلام ضمن صلاحياتك/);
+  assert.match(addStock, /current && authorizedLocations\.some\(\(location\) => location\.id === current\)/);
+  assert.match(receivingModel, /if \(locations\.length === 1\) return locations\[0\]\.id/);
 });
 
 test('the existing transfer action remains connected', () => {

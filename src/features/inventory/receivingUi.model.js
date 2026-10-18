@@ -40,6 +40,7 @@ export function resolveReceivingDefaultLocation(
   locations = [],
   { defaultBranchId = '', defaultStockLocationId = '' } = {},
 ) {
+  if (locations.length === 1) return locations[0].id;
   return locations.find((location) => (
     location.id === defaultStockLocationId
     && (!defaultBranchId || location.branchId === defaultBranchId)

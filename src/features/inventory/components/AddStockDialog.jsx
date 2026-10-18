@@ -32,6 +32,7 @@ import {
 
 const SERVICE_STOCK_MESSAGE = 'هذا المنتج خدمة ولا يدعم المخزون';
 const SERIAL_UNITS_MESSAGE = 'هذا المنتج متتبع بالسيريال ويجب تحديد الوحدات';
+const NO_RECEIVING_LOCATIONS_MESSAGE = 'لا توجد مواقع مخزون متاحة للاستلام ضمن صلاحياتك.';
 
 export function AddStockDialog({ open, onOpenChange, tenantId, userId, products, onSaved }) {
   const {
@@ -54,6 +55,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
   const [isLoadingTrackingIdentifiers, setIsLoadingTrackingIdentifiers] = useState(false);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingReceivingLocations, setIsLoadingReceivingLocations] = useState(false);
   const [receivingLocations, setReceivingLocations] = useState([]);
   const [destinationLocationId, setDestinationLocationId] = useState('');
   const [submissionKey, setSubmissionKey] = useState('');
@@ -104,6 +106,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
     setVariantContext(null);
     setDocumentDefinitions([]);
     setError('');
+    setIsLoadingReceivingLocations(true);
     setReceivingLocations([]);
     setDestinationLocationId('');
     setSubmissionKey(crypto.randomUUID());
@@ -116,6 +119,8 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
   useEffect(() => {
     let mounted = true;
     if (!open || !tenantId || !authorizationReady) return undefined;
+    setIsLoadingReceivingLocations(true);
+    setReceivingLocations([]);
     inventoryService.listReceivingLocations({ tenantId })
       .then((locations) => {
         if (!mounted) return;
@@ -132,6 +137,9 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
       })
       .catch((loadError) => {
         if (mounted) setError(loadError.message || 'تعذر تحميل مواقع الاستلام.');
+      })
+      .finally(() => {
+        if (mounted) setIsLoadingReceivingLocations(false);
       });
     return () => { mounted = false; };
   }, [authorizationReady, canAccessBranch, canAccessStockLocation, defaultBranchId, defaultStockLocationId, open, tenantId]);
@@ -339,7 +347,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
 
     const destination = receivingLocations.find((location) => location.id === destinationLocationId);
     if (!destination) {
-      setError('اختر موقع الاستلام.');
+      setError(receivingLocations.length ? 'اختر موقع الاستلام.' : NO_RECEIVING_LOCATIONS_MESSAGE);
       return;
     }
 
@@ -439,10 +447,13 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                   && !window.confirm('تغيير موقع الاستلام سيطبق على كل الوحدات غير المحفوظة. هل تريد المتابعة؟')) return;
                 setDestinationLocationId(event.target.value);
                 submissionAttemptRef.current = null;
-              }} className="h-9 w-full rounded-lg border border-border bg-white px-3 text-[13px]">
-                <option value="">اختر الموقع</option>
+              }} disabled={isLoadingReceivingLocations || receivingLocations.length === 0} className="h-9 w-full rounded-lg border border-border bg-white px-3 text-[13px] disabled:bg-slate-100 disabled:text-slate-500">
+                <option value="">{isLoadingReceivingLocations ? 'جارٍ تحميل المواقع...' : 'اختر الموقع'}</option>
                 {receivingLocations.map((location) => <option key={location.id} value={location.id}>{location.branchName} — {location.name}</option>)}
               </select>
+              {!isLoadingReceivingLocations && receivingLocations.length === 0 ? (
+                <div className="text-xs font-bold text-red-700">{NO_RECEIVING_LOCATIONS_MESSAGE}</div>
+              ) : null}
             </div>
             {isLoadingAttributes ? (
               <LoadingAttributesState />
@@ -544,7 +555,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
           <SheetFooter className="flex-shrink-0 bg-white px-5 py-3">
             <div className="min-w-0 text-xs font-bold text-slate-600">{isSerial && productId ? <span>{bulkSummary.total} وحدة — <span className="text-emerald-700">{bulkSummary.complete} مكتملة</span> — <span className={bulkSummary.errors ? 'text-red-700' : ''}>{bulkSummary.errors} تحتاج مراجعة</span></span> : productId ? <span>الكمية: {quantity}</span> : <span>اختر الموقع والمنتج للبدء</span>}</div>
             <div className="flex flex-shrink-0 gap-2"><Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>إلغاء</Button>
-            <Button type="submit" disabled={isSubmitting || isLoadingAttributes || isLoadingTrackingIdentifiers || isLoadingDocuments || isCreatingProduct}>{isSubmitting ? 'جارٍ الإضافة...' : 'مراجعة واستلام'}</Button></div>
+            <Button type="submit" disabled={isSubmitting || isLoadingReceivingLocations || receivingLocations.length === 0 || !destinationLocationId || isLoadingAttributes || isLoadingTrackingIdentifiers || isLoadingDocuments || isCreatingProduct}>{isSubmitting ? 'جارٍ الإضافة...' : 'مراجعة واستلام'}</Button></div>
           </SheetFooter>
         </form>
         <ReceivingReviewSheet open={isReviewOpen} onOpenChange={setIsReviewOpen} product={selectedProduct} destination={receivingLocations.find((location) => location.id === destinationLocationId)} summary={bulkSummary} isSerial={isSerial} quantity={quantity} isSubmitting={isSubmitting} onConfirm={() => handleSubmit({ preventDefault() {} }, true)} />
