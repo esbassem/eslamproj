@@ -20,6 +20,8 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/core/ui/button';
+import { PERMISSIONS } from '@/core/authorization/permissions';
+import { useAuthorization } from '@/core/authorization/useAuthorization';
 import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
 import {
@@ -168,6 +170,8 @@ function PaymentApprovalForm({
   resetSignal = 0,
   entityResetSignal = 0,
 }) {
+  const { can } = useAuthorization();
+  const canCreateCustomer = can(PERMISSIONS.PARTNERS_CREATE_CUSTOMER);
   const [customers, setCustomers] = useState([]);
   const [customerSearch, setCustomerSearch] = useState('');
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
@@ -301,6 +305,10 @@ function PaymentApprovalForm({
   };
 
   const handleCreateCustomer = async (payload) => {
+    if (!canCreateCustomer) {
+      return { ok: false, error: 'غير مصرح لك بإنشاء عملاء.' };
+    }
+
     setIsCustomerSubmitting(true);
 
     try {
@@ -379,7 +387,7 @@ function PaymentApprovalForm({
                     className="pr-10"
                   />
                 </div>
-                <button
+                {canCreateCustomer ? <button
                   type="button"
                   onClick={() => setIsCustomerSheetOpen(true)}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
@@ -387,7 +395,7 @@ function PaymentApprovalForm({
                   title="إضافة عميل جديد"
                 >
                   <UserPlus className="h-5 w-5" />
-                </button>
+                </button> : null}
               </div>
 
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -563,7 +571,7 @@ function PaymentApprovalForm({
         ) : null}
       </form>
 
-      <PartnerFormSheet
+      {canCreateCustomer ? <PartnerFormSheet
         open={isCustomerSheetOpen}
         onOpenChange={setIsCustomerSheetOpen}
         initialValues={NEW_CUSTOMER_INITIAL_VALUES}
@@ -578,7 +586,7 @@ function PaymentApprovalForm({
         accentHeader
         hideDismissButton
         inlineSubmit
-      />
+      /> : null}
     </>
   );
 }

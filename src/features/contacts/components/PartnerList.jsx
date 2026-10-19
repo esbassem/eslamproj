@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { PERMISSIONS } from '@/core/authorization/permissions';
+import { useAuthorization } from '@/core/authorization/useAuthorization';
 import { Badge } from '@/core/ui/badge';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
 import { ContactsHeader } from '@/features/contacts/components/ContactsHeader';
@@ -49,7 +51,7 @@ function getDisplayName(partner) {
   return partner.name || '-';
 }
 
-function ChildContactsSection({ partner, contacts = [], onAdd, onEdit, onArchive }) {
+function ChildContactsSection({ partner, contacts = [], onAdd, onEdit, onArchive, canCreate, canUpdate, canArchive }) {
   if (!canHaveChildContacts(partner)) {
     return null;
   }
@@ -61,13 +63,15 @@ function ChildContactsSection({ partner, contacts = [], onAdd, onEdit, onArchive
           <h4 className="text-sm font-black text-slate-900">جهات الاتصال التابعة</h4>
           <p className="mt-0.5 text-xs font-semibold text-slate-500">أشخاص للتواصل التشغيلي مع بقاء الحسابات على الجهة الرئيسية.</p>
         </div>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 transition hover:bg-slate-100"
-          onClick={() => onAdd(partner)}
-        >
-          إضافة جهة اتصال تابعة
-        </button>
+        {canCreate ? (
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+            onClick={() => onAdd(partner)}
+          >
+            إضافة جهة اتصال تابعة
+          </button>
+        ) : null}
       </div>
 
       {contacts.length ? (
@@ -81,14 +85,16 @@ function ChildContactsSection({ partner, contacts = [], onAdd, onEdit, onArchive
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-700 transition hover:bg-slate-50"
-                  onClick={() => onEdit(contact, partner)}
-                >
-                  تعديل
-                </button>
-                {contact.isActive ? (
+                {canUpdate ? (
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-700 transition hover:bg-slate-50"
+                    onClick={() => onEdit(contact, partner)}
+                  >
+                    تعديل
+                  </button>
+                ) : null}
+                {canArchive && contact.isActive ? (
                   <button
                     type="button"
                     className="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50"
@@ -116,6 +122,12 @@ function formatMoney(value) {
 
 export function PartnerList({ filterType = 'all', createInitialValues = null }) {
   const { tenant } = useWorkspace();
+  const { can } = useAuthorization();
+  const canCreateAnyPartner = can(PERMISSIONS.PARTNERS_CREATE);
+  const canCreateCustomer = can(PERMISSIONS.PARTNERS_CREATE_CUSTOMER);
+  const canCreate = canCreateAnyPartner || (filterType === 'customer' && canCreateCustomer);
+  const canUpdate = can(PERMISSIONS.PARTNERS_UPDATE);
+  const canArchive = can(PERMISSIONS.PARTNERS_ARCHIVE);
   const [searchParams, setSearchParams] = useSearchParams();
   const [partners, setPartners] = useState([]);
   const [childContactsByParent, setChildContactsByParent] = useState(new Map());
@@ -178,17 +190,23 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
       return;
     }
 
-    setEditingPartner(null);
-    setChildParentPartner(null);
-    setIsSheetOpen(true);
+    if (canCreate) {
+      setEditingPartner(null);
+      setChildParentPartner(null);
+      setIsSheetOpen(true);
+    }
     setSearchParams((current) => {
       const nextParams = new URLSearchParams(current);
       nextParams.delete('quickCreate');
       return nextParams;
     }, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [canCreate, searchParams, setSearchParams]);
 
   const handleCreate = async (payload) => {
+    if (!canCreate) {
+      return { ok: false, error: 'غير مصرح لك بإنشاء جهات اتصال.' };
+    }
+
     if (!tenant?.id) {
       return { ok: false, error: 'لا توجد شركة نشطة.' };
     }
@@ -197,6 +215,13 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
       setIsSubmitting(true);
       await partnersService.createPartner({
         tenantId: tenant.id,
+        ...payload,
+        ...(!canCreateAnyPartner ? {
+          isCustomer: true,
+          isSupplier: false,
+          customerRank: 1,
+          supplierRank: 0,
+        } : {}),
         ...(childParentPartner ? {
           parentId: childParentPartner.id,
           contactType: 'contact',
@@ -204,7 +229,6 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
           customerRank: 0,
           supplierRank: 0,
         } : {}),
-        ...payload,
       });
       await loadPartners();
       setIsSheetOpen(false);
@@ -218,6 +242,10 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
   };
 
   const handleUpdate = async (payload) => {
+    if (!canUpdate) {
+      return { ok: false, error: 'غير مصرح لك بتعديل جهات الاتصال.' };
+    }
+
     if (!tenant?.id || !editingPartner?.id) {
       return { ok: false, error: 'بيانات جهة الاتصال غير مكتملة.' };
     }
@@ -249,6 +277,8 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
   };
 
   const handleArchive = async (partner) => {
+    if (!canArchive) return;
+
     const isConfirmed = window.confirm(`تأكيد أرشفة ${partner.name || 'جهة الاتصال'}؟`);
     if (!isConfirmed) return;
 
@@ -262,11 +292,13 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
 
   const activeCount = useMemo(() => partners.filter((partner) => partner.isActive).length, [partners]);
   const openChildForm = (parentPartner) => {
+    if (!canCreate) return;
     setEditingPartner(null);
     setChildParentPartner(parentPartner);
     setIsSheetOpen(true);
   };
   const editChildContact = (childContact, parentPartner) => {
+    if (!canUpdate) return;
     setEditingPartner(childContact);
     setChildParentPartner(parentPartner);
     setIsSheetOpen(true);
@@ -282,11 +314,11 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
         filterType={filterType}
-        onAdd={() => {
+        onAdd={canCreate ? () => {
           setEditingPartner(null);
           setChildParentPartner(null);
           setIsSheetOpen(true);
-        }}
+        } : null}
       />
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -336,7 +368,7 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <button
+                        {canUpdate ? <button
                           type="button"
                           className="rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-700 transition hover:bg-slate-50"
                           onClick={() => {
@@ -346,8 +378,8 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
                           }}
                         >
                           تعديل
-                        </button>
-                        {partner.isActive ? (
+                        </button> : null}
+                        {canArchive && partner.isActive ? (
                           <button
                             type="button"
                             className="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50"
@@ -368,6 +400,9 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
                           onAdd={openChildForm}
                           onEdit={editChildContact}
                           onArchive={handleArchive}
+                          canCreate={canCreateAnyPartner}
+                          canUpdate={canUpdate}
+                          canArchive={canArchive}
                         />
                       </td>
                     </tr>
@@ -392,6 +427,9 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
                 childContacts={childContactsByParent.get(partner.id) || []}
                 onAddChild={openChildForm}
                 onEditChild={editChildContact}
+                canCreate={canCreateAnyPartner}
+                canUpdate={canUpdate}
+                canArchive={canArchive}
               />
             ))}
           </div>
@@ -402,7 +440,7 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
         </div>
       )}
 
-      <PartnerFormSheet
+      {(editingPartner ? canUpdate : canCreate) ? <PartnerFormSheet
         open={isSheetOpen}
         onOpenChange={(open) => {
           setIsSheetOpen(open);
@@ -417,8 +455,8 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
         parentPartner={childParentPartner}
         childContactMode={Boolean(childParentPartner)}
         hideAccountingFields={Boolean(childParentPartner)}
-        hideTypeFields={Boolean(childParentPartner)}
-      />
+        hideTypeFields={Boolean(childParentPartner) || !canCreateAnyPartner}
+      /> : null}
     </section>
   );
 }

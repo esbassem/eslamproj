@@ -21,6 +21,8 @@ import { partnersService } from '@/features/contacts/services/partners.service';
 import { receivablesApi } from '@/features/receivables/api/receivables.api';
 import { ReceivableDetailsSheet } from '@/features/receivables/components/ReceivableDetailsSheet';
 import { ReceivableCreateSheet } from '@/features/receivables/components/ReceivableManualCreateSheet';
+import { PERMISSIONS } from '@/core/authorization/permissions';
+import { useAuthorization } from '@/core/authorization/useAuthorization';
 
 const statusLabels = {
   draft: 'مسودة',
@@ -393,6 +395,8 @@ function InstallmentForm({ receivable, onSubmit, isSaving, error }) {
 }
 
 export function ReceivablesPage() {
+  const { can } = useAuthorization();
+  const canCreateCustomer = can(PERMISSIONS.PARTNERS_CREATE_CUSTOMER);
   const { tenant, tenant_user: tenantUser } = useAuth();
   const tenantId = tenant?.id ?? null;
   const currentTenantUserId = tenantUser?.id ?? null;
@@ -499,6 +503,10 @@ export function ReceivablesPage() {
   };
 
   const handleCreateCustomer = async (payload) => {
+    if (!canCreateCustomer) {
+      return { ok: false, error: 'غير مصرح لك بإنشاء عملاء.' };
+    }
+
     if (!tenantId) {
       return { ok: false, error: 'لا توجد شركة نشطة.' };
     }
@@ -510,8 +518,8 @@ export function ReceivablesPage() {
         ...payload,
         isCustomer: true,
         customerRank: 1,
-        isSupplier: Boolean(payload.isSupplier),
-        supplierRank: payload.isSupplier ? 1 : 0,
+        isSupplier: false,
+        supplierRank: 0,
       });
       const normalizedCustomer = {
         ...createdCustomer,
@@ -596,7 +604,7 @@ export function ReceivablesPage() {
           branchId={currentBranchId}
           createdBy={currentTenantUserId}
           onCreated={handleManualReceivableCreated}
-          onCreateCustomer={handleCreateCustomer}
+          onCreateCustomer={canCreateCustomer ? handleCreateCustomer : null}
           isCustomerSubmitting={isCustomerSubmitting}
         />
       ) : null}

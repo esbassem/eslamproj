@@ -710,7 +710,7 @@ export function ReceivableCreateSheet({
                       className="h-[52px] rounded-xl border border-slate-200 bg-white px-5 pr-11 text-base font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-200"
                     />
                   </div>
-                  <button
+                  {onCreateCustomer ? <button
                     type="button"
                     onClick={() => {
                       setCustomerSheetMode('customer');
@@ -721,7 +721,7 @@ export function ReceivableCreateSheet({
                     title="إضافة عميل جديد"
                   >
                     <UserPlus className="h-5 w-5" />
-                  </button>
+                  </button> : null}
                 </div>
 
                 {filteredCustomers.length > 0 ? (
@@ -857,7 +857,7 @@ export function ReceivableCreateSheet({
                           className="h-[52px] rounded-xl border border-slate-200 bg-white px-5 pr-11 text-base font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
                         />
                       </div>
-                      <button
+                      {onCreateCustomer ? <button
                         type="button"
                         onClick={() => {
                           setCustomerSheetMode('guarantor');
@@ -869,7 +869,7 @@ export function ReceivableCreateSheet({
                         title="إضافة ضامن جديد"
                       >
                         <UserPlus className="h-5 w-5" />
-                      </button>
+                      </button> : null}
                     </div>
 
                     {selectedGuarantors.length >= guarantorLimit ? (
@@ -1244,7 +1244,7 @@ export function ReceivableCreateSheet({
         </SheetContent>
       </Sheet>
 
-      <PartnerFormSheet
+      {onCreateCustomer ? <PartnerFormSheet
         open={isCustomerSheetOpen}
         onOpenChange={setIsCustomerSheetOpen}
         initialValues={NEW_CUSTOMER_INITIAL_VALUES}
@@ -1259,7 +1259,7 @@ export function ReceivableCreateSheet({
         accentHeader
         hideDismissButton
         inlineSubmit
-      />
+      /> : null}
 
       <Dialog.Root open={isAmountConfirmOpen} onOpenChange={setIsAmountConfirmOpen}>
         <Dialog.Portal>

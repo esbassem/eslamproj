@@ -76,10 +76,6 @@ function escapeSearchTerm(value) {
 function buildPartnerPayload(data) {
   const payload = {};
 
-  if (Object.prototype.hasOwnProperty.call(data, 'tenantId') || Object.prototype.hasOwnProperty.call(data, 'tenant_id')) {
-    payload.tenant_id = data.tenantId ?? data.tenant_id;
-  }
-
   if (Object.prototype.hasOwnProperty.call(data, 'name')) {
     payload.name = data.name?.trim() || null;
   }
@@ -140,10 +136,6 @@ function buildPartnerPayload(data) {
     payload.is_company = data.isCompany ?? data.is_company;
   }
 
-  if (Object.prototype.hasOwnProperty.call(data, 'isActive') || Object.prototype.hasOwnProperty.call(data, 'active')) {
-    payload.active = data.isActive ?? data.active;
-  }
-
   if (Object.prototype.hasOwnProperty.call(data, 'customerRank') || Object.prototype.hasOwnProperty.call(data, 'customer_rank')) {
     payload.customer_rank = toNumber(data.customerRank ?? data.customer_rank, 0);
   }
@@ -162,20 +154,6 @@ function buildPartnerPayload(data) {
 
   if (Object.prototype.hasOwnProperty.call(data, 'isSupplier')) {
     payload.supplier_rank = data.isSupplier ? Math.max(payload.supplier_rank ?? 0, 1) : 0;
-  }
-
-  if (
-    Object.prototype.hasOwnProperty.call(data, 'receivableAccountId') ||
-    Object.prototype.hasOwnProperty.call(data, 'property_account_receivable_id')
-  ) {
-    payload.property_account_receivable_id = data.receivableAccountId ?? data.property_account_receivable_id ?? null;
-  }
-
-  if (
-    Object.prototype.hasOwnProperty.call(data, 'payableAccountId') ||
-    Object.prototype.hasOwnProperty.call(data, 'property_account_payable_id')
-  ) {
-    payload.property_account_payable_id = data.payableAccountId ?? data.property_account_payable_id ?? null;
   }
 
   const hasParentField = Object.prototype.hasOwnProperty.call(payload, 'parent_id');
@@ -517,9 +495,9 @@ export const partnersService = {
   async createPartner(payload) {
     const client = requireSupabase();
     const { identityCardFrontFile, identityCardBackFile, ...partnerPayload } = payload || {};
-    const body = buildPartnerPayload({ active: true, ...partnerPayload });
+    const body = buildPartnerPayload(partnerPayload);
 
-    const { data, error } = await client.from('partners').insert(body).select('*').single();
+    const { data, error } = await client.rpc('create_partner', { p_payload: body }).single();
 
     if (error) {
       throw new Error(error.message || 'تعذر إنشاء جهة الاتصال.');
@@ -544,12 +522,10 @@ export const partnersService = {
     const { identityCardFrontFile, identityCardBackFile, ...partnerPayload } = payload || {};
     const body = buildPartnerPayload(partnerPayload);
 
-    let query = client.from('partners').update(body).eq('id', id);
-    if (tenantId) {
-      query = query.eq('tenant_id', tenantId);
-    }
-
-    const { data, error } = await query.select('*').single();
+    const { data, error } = await client.rpc('update_partner', {
+      p_partner_id: id,
+      p_payload: body,
+    }).single();
 
     if (error) {
       throw new Error(error.message || 'تعذر تعديل جهة الاتصال.');
@@ -565,22 +541,32 @@ export const partnersService = {
     return normalizePartner(data);
   },
 
-  async archivePartner({ id, tenantId }) {
+  async archivePartner({ id }) {
     if (!id) {
       throw new Error('معرف جهة الاتصال مطلوب للأرشفة.');
     }
 
     const client = requireSupabase();
 
-    let query = client.from('partners').update({ active: false }).eq('id', id);
-    if (tenantId) {
-      query = query.eq('tenant_id', tenantId);
-    }
-
-    const { data, error } = await query.select('*').single();
+    const { data, error } = await client.rpc('archive_partner', { p_partner_id: id }).single();
 
     if (error) {
       throw new Error(error.message || 'تعذر أرشفة جهة الاتصال.');
+    }
+
+    return normalizePartner(data);
+  },
+
+  async reactivatePartner({ id } = {}) {
+    if (!id) {
+      throw new Error('معرف جهة الاتصال مطلوب لإعادة التفعيل.');
+    }
+
+    const client = requireSupabase();
+    const { data, error } = await client.rpc('reactivate_partner', { p_partner_id: id }).single();
+
+    if (error) {
+      throw new Error(error.message || 'تعذر إعادة تفعيل جهة الاتصال.');
     }
 
     return normalizePartner(data);

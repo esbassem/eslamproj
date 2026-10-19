@@ -3,6 +3,11 @@
 export const PERMISSIONS = Object.freeze({
   ACCOUNTANT_APP_ACCESS: 'accountant_app.access',
   CONTACTS_ACCESS: 'contacts.access',
+  PARTNERS_CREATE: 'partners.create',
+  PARTNERS_CREATE_CUSTOMER: 'partners.create_customer',
+  PARTNERS_UPDATE: 'partners.update',
+  PARTNERS_ARCHIVE: 'partners.archive',
+  PARTNERS_REACTIVATE: 'partners.reactivate',
   CRM_ACCESS: 'crm.access',
   MOTO_CUSTOMER_CARE_ACCESS: 'moto_customer_care.access',
   OLD_CASHBOX_ACCESS: 'old_cashbox.access',

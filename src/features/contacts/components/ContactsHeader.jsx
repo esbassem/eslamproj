@@ -26,10 +26,12 @@ export function ContactsHeader({
           <h1 className="text-2xl font-bold text-slate-950">{title}</h1>
           <p className="text-sm text-slate-500">{subtitle}</p>
         </div>
-        <Button onClick={onAdd} className="gap-2">
-          <Plus className="h-4 w-4" />
-          إضافة جهة اتصال
-        </Button>
+        {onAdd ? (
+          <Button onClick={onAdd} className="gap-2">
+            <Plus className="h-4 w-4" />
+            إضافة جهة اتصال
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">

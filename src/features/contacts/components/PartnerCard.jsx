@@ -32,6 +32,9 @@ export function PartnerCard({
   childContacts = [],
   onAddChild,
   onEditChild,
+  canCreate = false,
+  canUpdate = false,
+  canArchive = false,
 }) {
   return (
     <article className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -60,10 +63,12 @@ export function PartnerCard({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" className="h-8" onClick={() => onEdit(partner)}>
-          تعديل
-        </Button>
-        {partner.isActive ? (
+        {canUpdate ? (
+          <Button variant="secondary" className="h-8" onClick={() => onEdit(partner)}>
+            تعديل
+          </Button>
+        ) : null}
+        {canArchive && partner.isActive ? (
           <Button variant="ghost" className="h-8 text-red-600 hover:text-red-700" onClick={() => onArchive(partner)}>
             أرشفة
           </Button>
@@ -74,13 +79,15 @@ export function PartnerCard({
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
           <div className="flex items-center justify-between gap-2">
             <h4 className="text-sm font-black text-slate-900">جهات الاتصال التابعة</h4>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-black text-slate-700"
-              onClick={() => onAddChild?.(partner)}
-            >
-              إضافة
-            </button>
+            {canCreate ? (
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-black text-slate-700"
+                onClick={() => onAddChild?.(partner)}
+              >
+                إضافة
+              </button>
+            ) : null}
           </div>
           {childContacts.length ? (
             <div className="mt-2 grid gap-2">
@@ -93,13 +100,15 @@ export function PartnerCard({
                         {[contact.functionTitle, contact.phone].filter(Boolean).join(' - ') || 'لا توجد بيانات إضافية'}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700"
-                      onClick={() => onEditChild?.(contact, partner)}
-                    >
-                      تعديل
-                    </button>
+                    {canUpdate ? (
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700"
+                        onClick={() => onEditChild?.(contact, partner)}
+                      >
+                        تعديل
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))}

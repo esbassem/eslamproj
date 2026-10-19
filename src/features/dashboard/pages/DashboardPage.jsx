@@ -7,6 +7,8 @@ import { recordAppOpen, scheduleLikelyAppPreloads } from '@/app/router/appPreloa
 import { markNavigationStart } from '@/app/router/navigationPerformance';
 import { uiExperiments } from '@/core/config/app.config';
 import { ROUTES } from '@/core/config/routes.config';
+import { PERMISSIONS } from '@/core/authorization/permissions';
+import { useAuthorization } from '@/core/authorization/useAuthorization';
 import { useI18n } from '@/core/i18n/useI18n';
 import { Button } from '@/core/ui/button';
 import {
@@ -55,6 +57,8 @@ function getReadableColor(hexColor) {
 }
 
 export function DashboardPage() {
+  const { can } = useAuthorization();
+  const canCreateCustomer = can(PERMISSIONS.PARTNERS_CREATE_CUSTOMER);
   const { t } = useI18n();
   const { tenant } = useWorkspace();
   const { apps, appsStatus, appsError, installApp, uninstallApp } = useAppContext();
@@ -292,6 +296,10 @@ export function DashboardPage() {
   };
 
   const handleCreateCustomer = async (payload) => {
+    if (!canCreateCustomer) {
+      return { ok: false, error: 'غير مصرح لك بإنشاء عملاء.' };
+    }
+
     if (!tenant?.id) {
       return { ok: false, error: 'لا توجد شركة نشطة.' };
     }
@@ -304,8 +312,8 @@ export function DashboardPage() {
         ...payload,
         isCustomer: true,
         customerRank: 1,
-        isSupplier: Boolean(payload.isSupplier),
-        supplierRank: payload.isSupplier ? 1 : 0,
+        isSupplier: false,
+        supplierRank: 0,
       });
       setIsCustomerSheetOpen(false);
       setToast({ tone: 'success', message: 'تم تسجيل العميل.' });
@@ -359,7 +367,7 @@ export function DashboardPage() {
               {tenant?.name ? `مساحة عمل ${tenant.name}` : 'اختر التطبيق الذي تريد العمل عليه.'}
             </p>
               <QuickCreateTools
-                onCreateCustomer={() => setIsCustomerSheetOpen(true)}
+                onCreateCustomer={canCreateCustomer ? () => setIsCustomerSheetOpen(true) : null}
                 onOpenImageUpload={() => setIsImageUploadSheetOpen(true)}
                 cashCustodyAccount={cashCustodyAccount}
                 onOpenCashCustody={() => setIsCashCustodySheetOpen(true)}
@@ -492,7 +500,7 @@ export function DashboardPage() {
           onConfirm={handleConfirmUninstall}
           isSubmitting={isUninstalling}
         />
-        {isCustomerSheetOpen ? <Suspense fallback={null}><LazyPartnerFormSheet
+        {canCreateCustomer && isCustomerSheetOpen ? <Suspense fallback={null}><LazyPartnerFormSheet
           open={isCustomerSheetOpen}
           onOpenChange={setIsCustomerSheetOpen}
           initialValues={NEW_CUSTOMER_INITIAL_VALUES}
@@ -552,12 +560,12 @@ function QuickCreateTools({ onCreateCustomer, onOpenImageUpload, cashCustodyAcco
       Icon: WalletCards,
       color: '#0f766e',
     }] : []),
-    {
+    ...(onCreateCustomer ? [{
       title: 'تسجيل عميل',
       onClick: onCreateCustomer,
       Icon: UserPlus,
       color: '#059669',
-    },
+    }] : []),
     {
       title: 'رفع صورة سريع',
       onClick: onOpenImageUpload,
