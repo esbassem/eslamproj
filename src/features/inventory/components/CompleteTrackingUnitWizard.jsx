@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Search } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetFooter, SheetHeader, SheetTitle } from '@/core/ui/sheet';
 import { inventoryService } from '@/features/inventory/api/inventory.api';
 import { posService } from '@/features/pos/api/pos.api';
 import { productCategoryAttributeService, productCategoryTrackingIdentifierService } from '@/features/products/api/products.api';
+import { createLocalProductSearch, ProductSearchField } from '@/shared/products';
 
 export function CompleteTrackingUnitWizard({ open, onOpenChange, tenantId, unit, onCompleted }) {
   const [context, setContext] = useState(null);
@@ -62,11 +63,7 @@ export function CompleteTrackingUnitWizard({ open, onOpenChange, tenantId, unit,
     }).catch((loadError) => setError(loadError.message || 'تعذر تحميل متطلبات المنتج.'));
   }, [selectedProduct, tenantId]);
 
-  const filteredProducts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return products;
-    return products.filter((product) => `${product.displayName || product.name || ''} ${product.code || product.barcode || ''}`.toLowerCase().includes(query));
-  }, [products, search]);
+  const searchProducts = useMemo(() => createLocalProductSearch(products), [products]);
 
   const missingIdentifier = definitions.find((definition) => {
     if (!definition.isRequired) return false;
@@ -126,10 +123,7 @@ export function CompleteTrackingUnitWizard({ open, onOpenChange, tenantId, unit,
           {!canComplete && status !== 'loading' ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-black text-red-700">لا تملك صلاحية استكمال بيانات القطعة.</div> : null}
           {canComplete && !selectedProduct ? (
             <div className="space-y-3">
-              <div className="relative"><Search className="absolute right-3 top-3.5 h-4 w-4 text-slate-400" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث عن المنتج الحقيقي" className="pr-9" /></div>
-              <div className="max-h-72 divide-y overflow-y-auto rounded-2xl border border-slate-200">
-                {filteredProducts.map((product) => <button key={product.id} type="button" onClick={() => setSelectedProduct(product)} className="block w-full px-4 py-3 text-right hover:bg-blue-50"><span className="block text-sm font-black">{product.displayName || product.name}</span><span className="text-xs font-bold text-slate-400">{product.code || product.barcode || 'بدون كود'}</span></button>)}
-              </div>
+              <ProductSearchField searchProducts={searchProducts} search={search} onSearchChange={setSearch} onSelect={setSelectedProduct} placeholder="ابحث عن المنتج الحقيقي" />
             </div>
           ) : null}
           {selectedProduct ? (

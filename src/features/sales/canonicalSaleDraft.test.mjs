@@ -18,6 +18,8 @@ const customerSelector = read('./create/SaleCustomerSelector.jsx');
 const sharedCustomerPicker = read('../../shared/partners/CustomerPicker.jsx');
 const productSelector = read('./create/ProductSelector.jsx');
 const trackingSelector = read('./create/TrackingUnitSelector.jsx');
+const sharedProductField = read('../../shared/products/ProductSearchField.jsx');
+const sharedTrackingField = read('../../shared/products/TrackingUnitSearchField.jsx');
 const itemRow = read('./create/SaleItemRow.jsx');
 const createPage = read('./pages/SaleCreatePage.jsx');
 const detailsPage = read('./components/SaleDetails.jsx');
@@ -118,7 +120,7 @@ test('editor is mobile-first and exposes all operational states', () => {
   assert.match(editor, /status === 'error'/);
   assert.match(editor, /لا يوجد فرع نشط/);
   assert.match(sharedCustomerPicker, /status === 'loading'[\s\S]*animate-pulse/);
-  assert.match(productSelector, /جاري البحث عن المنتجات/);
-  assert.match(trackingSelector, /لا توجد قطعة متاحة/);
+  assert.match(sharedProductField, /جاري تحميل المنتجات/);
+  assert.match(sharedTrackingField, /لا توجد وحدة متاحة/);
   assert.match(itemRow, /لا يتم الحجز أثناء المسودة/);
 });

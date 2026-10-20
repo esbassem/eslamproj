@@ -3,6 +3,7 @@ import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
 import { useAuthorization } from '@/core/authorization/useAuthorization';
+import { createLocalProductSearch, ProductSearchField, ProductSummary } from '@/shared/products';
 import {
   Sheet,
   SheetBody,
@@ -65,13 +66,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
   const allProducts = useMemo(() => [...products, ...localProducts], [localProducts, products]);
   const selectedProduct = useMemo(() => allProducts.find((product) => product.id === productId) ?? null, [allProducts, productId]);
   const stockProducts = useMemo(() => allProducts.filter((product) => product.productType !== 'service'), [allProducts]);
-  const productSuggestions = useMemo(() => {
-    const search = productSearch.trim().toLowerCase();
-    if (!search) return stockProducts.slice(0, 8);
-    return stockProducts
-      .filter((product) => String(product.name ?? '').toLowerCase().includes(search))
-      .slice(0, 8);
-  }, [productSearch, stockProducts]);
+  const searchProducts = useMemo(() => createLocalProductSearch(stockProducts), [stockProducts]);
   const hasExactProductMatch = useMemo(() => {
     const search = productSearch.trim().toLowerCase();
     return Boolean(search) && stockProducts.some((product) => String(product.name ?? '').trim().toLowerCase() === search);
@@ -462,11 +457,7 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                 <div className="w-full space-y-2">
                   <Label htmlFor="inventory-product">المنتج</Label>
                   {productId && selectedProduct ? (
-                    <div className="flex h-9 items-center justify-between gap-3 rounded-lg border border-border bg-white px-3">
-                      <div className="min-w-0 truncate text-[13px] font-semibold text-slate-950">{selectedProduct.name}</div>
-                      <button
-                        type="button"
-                        onClick={() => {
+                    <ProductSummary product={selectedProduct} onClear={() => {
                           const hasEnteredData = bulkRows.some((row) => Object.values(row.identities).some(Boolean) || Object.values(row.attributes).some(Boolean) || Object.values(row.documents).some(Boolean));
                           if (hasEnteredData && !window.confirm('تغيير المنتج سيمسح الوحدات غير المحفوظة. هل تريد المتابعة؟')) return;
                           setProductId('');
@@ -475,46 +466,24 @@ export function AddStockDialog({ open, onOpenChange, tenantId, userId, products,
                           setBulkRows([]);
                           setTrackingIdentifierDefinitions([]);
                           setError('');
-                        }}
-                        className="flex-shrink-0 text-xs font-extrabold text-[rgb(2,27,76)] underline-offset-4 hover:underline"
-                      >
-                        تغيير
-                      </button>
-                    </div>
+                        }} />
                   ) : (
                     <>
-                      <Input
-                        id="inventory-product"
-                        className="h-9 rounded-lg px-3 text-[13px]"
-                        value={productSearch}
-                        onChange={(event) => {
-                          setProductSearch(event.target.value);
+                      <ProductSearchField
+                        searchProducts={searchProducts}
+                        search={productSearch}
+                        onSearchChange={(value) => {
+                          setProductSearch(value);
                           setProductId('');
                           setVariantContext(null);
                           setBulkRows([]);
                           setTrackingIdentifierDefinitions([]);
                           setError('');
                         }}
+                        onSelect={handleSelectProduct}
                         placeholder="ابحث باسم المنتج"
+                        pageSize={8}
                       />
-                      {productSearch.trim() ? (
-                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                          {productSuggestions.length ? (
-                            productSuggestions.map((product) => (
-                              <button
-                                key={product.id}
-                                type="button"
-                                onClick={() => handleSelectProduct(product)}
-                                className="block w-full border-b border-slate-100 px-3 py-2 text-right text-sm font-semibold text-slate-700 transition last:border-b-0 hover:bg-slate-50 hover:text-slate-950"
-                              >
-                                {product.name}
-                              </button>
-                            ))
-                          ) : (
-                            <div className="px-3 py-2 text-sm font-semibold text-slate-500">لا توجد نتائج مشابهة.</div>
-                          )}
-                        </div>
-                      ) : null}
                       {canManageCatalog && productSearch.trim() && !hasExactProductMatch ? (
                         <div className="space-y-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3">
                           <div className="text-xs font-bold text-slate-500">إنشاء منتج سريع</div>

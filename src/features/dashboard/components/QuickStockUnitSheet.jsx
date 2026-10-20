@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, Loader2, PackagePlus, Search } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Loader2, PackagePlus } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import {
@@ -10,6 +10,7 @@ import {
 import { inventoryService } from '@/features/inventory/api/inventory.api';
 import { posService } from '@/features/pos/api/pos.api';
 import { productCategoryAttributeService, productCategoryTrackingIdentifierService } from '@/features/products/api/products.api';
+import { createLocalProductSearch, ProductSearchField } from '@/shared/products';
 
 function getProductTitle(product) {
   return product?.displayName || product?.name || 'منتج بدون اسم';
@@ -324,18 +325,7 @@ export function QuickStockUnitSheet({
     };
   }, [open, selectedProduct, tenantId]);
 
-  const filteredProducts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return products;
-
-    return products.filter((product) =>
-      [getProductTitle(product), getProductCode(product), product.barcode]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [products, search]);
+  const searchProducts = useMemo(() => createLocalProductSearch(products), [products]);
 
   const selectedAttributeFields = useMemo(() => {
     if (isTrackedProduct(selectedProduct)) {
@@ -702,55 +692,16 @@ export function QuickStockUnitSheet({
                 </button>
               ) : null}
 
-              <div className="relative">
-                <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="ابحث عن منتج"
-                  className={`h-11 pr-9 font-bold text-slate-950 shadow-[0_14px_30px_-28px_rgba(15,23,42,0.65)] placeholder:text-slate-500 ${
-                    isBottomSheet
-                      ? 'border-slate-200 bg-white focus:border-blue-300 focus:bg-white'
-                      : 'border-slate-400/20 bg-[#edf2f7]/70 backdrop-blur focus:border-slate-400/35 focus:bg-[#edf2f7]/90'
-                  }`}
-                />
-              </div>
-
-              <div className={`min-h-0 flex-1 overflow-y-auto rounded-2xl border shadow-[0_22px_48px_-42px_rgba(15,23,42,0.7)] ${
-                isBottomSheet ? 'border-slate-200 bg-white' : 'border-slate-400/15 bg-[#edf2f7]/55 backdrop-blur'
-              }`}>
-                {productsStatus === 'loading' ? (
+              {productsStatus === 'loading' ? (
                   <div className="flex items-center gap-2 px-4 py-5 text-sm font-black text-slate-500">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     جاري تحميل المنتجات
                   </div>
                 ) : productsStatus === 'error' ? (
                   <div className="px-4 py-4 text-sm font-black text-red-700">{productsError}</div>
-                ) : filteredProducts.length ? (
-                  filteredProducts.map((product) => (
-                    <button
-                      key={product.id}
-                      type="button"
-                      onClick={() => selectProduct(product)}
-                      className={`grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b px-4 py-3 text-right text-slate-700 transition last:border-b-0 hover:text-slate-950 ${
-                        isBottomSheet
-                          ? 'border-slate-100 bg-white hover:bg-blue-50/50'
-                          : 'border-slate-400/15 bg-[#edf2f7]/35 hover:bg-[#edf2f7]/85'
-                      }`}
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-black">{getProductTitle(product)}</span>
-                        <span className="mt-0.5 block truncate text-xs font-bold text-slate-500">{getProductCode(product) || 'بدون كود'}</span>
-                      </span>
-                      <span className={`rounded-lg border px-2.5 py-1 text-xs font-black ${product.tracking === 'serial' ? 'border-blue-100 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
-                        {product.tracking === 'serial' ? 'Serial' : 'كمية'}
-                      </span>
-                    </button>
-                  ))
                 ) : (
-                  <div className="px-4 py-5 text-center text-sm font-black text-slate-400">لا توجد منتجات مطابقة.</div>
+                  <ProductSearchField searchProducts={searchProducts} search={search} onSearchChange={setSearch} onSelect={selectProduct} pageSize={20} />
                 )}
-              </div>
             </div>
           ) : null}
 
