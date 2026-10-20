@@ -29,44 +29,37 @@ test('Contacts gates partner create, update, and archive through central authori
 
 test('Dashboard customer-only quick create uses the effective customer-create permission', async () => {
   const source = await readSource('../dashboard/pages/DashboardPage.jsx');
-
-  assert.match(source, /can\(PERMISSIONS\.PARTNERS_CREATE_CUSTOMER\)/);
+  const adapter = await readSource('../../shared/partners/useCustomerCreation.js');
+  assert.match(adapter, /PERMISSIONS\.PARTNERS_CREATE_CUSTOMER/);
+  assert.match(adapter, /PERMISSIONS\.PARTNERS_CREATE/);
+  assert.match(source, /useCustomerCreation/);
   assert.match(source, /onCreateCustomer=\{canCreateCustomer \?/);
   assert.match(source, /canCreateCustomer && isCustomerSheetOpen/);
-  assert.match(source, /\.\.\.\(onCreateCustomer \? \[\{/);
+  assert.match(source, /context="customer-create"/);
 });
 
 test('Accountant customer creation hides both trigger and sheet without permission', async () => {
   const source = await readSource('../accountant/pages/AccountantHomePage.jsx');
 
-  assert.match(source, /can\(PERMISSIONS\.PARTNERS_CREATE_CUSTOMER\)/);
-  assert.match(source, /\{canCreateCustomer \? <button/);
-  assert.match(source, /\{canCreateCustomer \? <PartnerFormSheet/);
-  assert.match(source, /if \(!canCreateCustomer\)/);
+  assert.match(source, /useCustomerCreation/);
+  assert.match(source, /<CustomerPicker/);
+  assert.match(source, /canCreateCustomer && isCustomerSheetOpen/);
 });
 
 test('Receivables keeps existing partner selection while gating new customer actions', async () => {
   const pageSource = await readSource('../receivables/pages/ReceivablesPage.jsx');
   const sheetSource = await readSource('../receivables/components/ReceivableManualCreateSheet.jsx');
 
-  assert.match(pageSource, /can\(PERMISSIONS\.PARTNERS_CREATE_CUSTOMER\)/);
-  assert.match(pageSource, /onCreateCustomer=\{canCreateCustomer \? handleCreateCustomer : null\}/);
-  assert.equal((sheetSource.match(/\{onCreateCustomer \? <button/g) || []).length, 2);
-  assert.match(sheetSource, /filteredCustomers\.map\(\(customer\) => \(\s*<button/);
-  assert.match(sheetSource, /\{onCreateCustomer \? <PartnerFormSheet/);
+  assert.match(pageSource, /useCustomerCreation/);
+  assert.match(pageSource, /onCreateCustomer=\{canCreateCustomer \? customerCreation\.createCustomer : null\}/);
+  assert.match(sheetSource, /<CustomerPicker/);
+  assert.match(sheetSource, /filteredGuarantors/);
 });
 
 test('customer-only entry points continue forcing the customer role', async () => {
-  const writerSources = await Promise.all([
-    readSource('../dashboard/pages/DashboardPage.jsx'),
-    readSource('../accountant/pages/AccountantHomePage.jsx'),
-    readSource('../receivables/pages/ReceivablesPage.jsx'),
-  ]);
-
-  for (const source of writerSources) {
-    assert.match(source, /isCustomer:\s*true/);
-    assert.match(source, /isSupplier:\s*false/);
-  }
+  const adapter = await readSource('../../shared/partners/useCustomerCreation.js');
+  assert.match(adapter, /isCustomer:\s*true/);
+  assert.match(adapter, /isSupplier:\s*false/);
 
   const formSources = await Promise.all([
     readSource('../dashboard/pages/DashboardPage.jsx'),
@@ -75,6 +68,6 @@ test('customer-only entry points continue forcing the customer role', async () =
   ]);
 
   for (const source of formSources) {
-    assert.match(source, /hideTypeFields/);
+    assert.match(source, /context="customer-create"/);
   }
 });

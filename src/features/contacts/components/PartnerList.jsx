@@ -6,7 +6,7 @@ import { Badge } from '@/core/ui/badge';
 import { LoadingSpinner } from '@/core/ui/loading-spinner';
 import { ContactsHeader } from '@/features/contacts/components/ContactsHeader';
 import { PartnerCard } from '@/features/contacts/components/PartnerCard';
-import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
+import { PartnerFormSheet } from '@/shared/partners';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 
@@ -213,7 +213,7 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
 
     try {
       setIsSubmitting(true);
-      await partnersService.createPartner({
+      const partner = await partnersService.createPartner({
         tenantId: tenant.id,
         ...payload,
         ...(!canCreateAnyPartner ? {
@@ -233,7 +233,7 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
       await loadPartners();
       setIsSheetOpen(false);
       setChildParentPartner(null);
-      return { ok: true };
+      return { ok: true, partnerId: partner.id, partner };
     } catch (error) {
       return { ok: false, error: error.message || 'تعذر إنشاء جهة الاتصال.' };
     } finally {
@@ -252,7 +252,7 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
 
     try {
       setIsSubmitting(true);
-      await partnersService.updatePartner({
+      const partner = await partnersService.updatePartner({
         id: editingPartner.id,
         tenantId: tenant.id,
         ...(childParentPartner ? {
@@ -268,7 +268,7 @@ export function PartnerList({ filterType = 'all', createInitialValues = null }) 
       setIsSheetOpen(false);
       setEditingPartner(null);
       setChildParentPartner(null);
-      return { ok: true };
+      return { ok: true, partnerId: partner.id, partner };
     } catch (error) {
       return { ok: false, error: error.message || 'تعذر تعديل جهة الاتصال.' };
     } finally {

@@ -15,6 +15,7 @@ const service = read('./services/sales.service.js');
 const hook = read('./hooks/useSaleDraft.js');
 const editor = read('./create/SaleDraftEditor.jsx');
 const customerSelector = read('./create/SaleCustomerSelector.jsx');
+const sharedCustomerPicker = read('../../shared/partners/CustomerPicker.jsx');
 const productSelector = read('./create/ProductSelector.jsx');
 const trackingSelector = read('./create/TrackingUnitSelector.jsx');
 const itemRow = read('./create/SaleItemRow.jsx');
@@ -116,7 +117,7 @@ test('editor is mobile-first and exposes all operational states', () => {
   assert.match(editor, /status === 'loading'/);
   assert.match(editor, /status === 'error'/);
   assert.match(editor, /لا يوجد فرع نشط/);
-  assert.match(customerSelector, /جاري البحث عن العملاء/);
+  assert.match(sharedCustomerPicker, /status === 'loading'[\s\S]*animate-pulse/);
   assert.match(productSelector, /جاري البحث عن المنتجات/);
   assert.match(trackingSelector, /لا توجد قطعة متاحة/);
   assert.match(itemRow, /لا يتم الحجز أثناء المسودة/);

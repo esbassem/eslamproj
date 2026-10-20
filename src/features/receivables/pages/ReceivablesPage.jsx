@@ -17,12 +17,10 @@ import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
 import { cn } from '@/core/utils/cn';
 import { useAuth } from '@/features/auth/hooks/useAuth';
-import { partnersService } from '@/features/contacts/services/partners.service';
 import { receivablesApi } from '@/features/receivables/api/receivables.api';
 import { ReceivableDetailsSheet } from '@/features/receivables/components/ReceivableDetailsSheet';
 import { ReceivableCreateSheet } from '@/features/receivables/components/ReceivableManualCreateSheet';
-import { PERMISSIONS } from '@/core/authorization/permissions';
-import { useAuthorization } from '@/core/authorization/useAuthorization';
+import { useCustomerCreation } from '@/shared/partners';
 
 const statusLabels = {
   draft: 'مسودة',
@@ -395,8 +393,6 @@ function InstallmentForm({ receivable, onSubmit, isSaving, error }) {
 }
 
 export function ReceivablesPage() {
-  const { can } = useAuthorization();
-  const canCreateCustomer = can(PERMISSIONS.PARTNERS_CREATE_CUSTOMER);
   const { tenant, tenant_user: tenantUser } = useAuth();
   const tenantId = tenant?.id ?? null;
   const currentTenantUserId = tenantUser?.id ?? null;
@@ -412,7 +408,14 @@ export function ReceivablesPage() {
   });
   const [selectedId, setSelectedId] = useState(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isCustomerSubmitting, setIsCustomerSubmitting] = useState(false);
+  const customerCreation = useCustomerCreation({
+    tenantId,
+    onCreated: (createdCustomer) => {
+      const normalizedCustomer = { ...createdCustomer, phone: createdCustomer.phone || createdCustomer.phone1 || createdCustomer.phone2 || '' };
+      setState((current) => ({ ...current, partners: [normalizedCustomer, ...current.partners.filter((partner) => partner.id !== normalizedCustomer.id)] }));
+    },
+  });
+  const canCreateCustomer = customerCreation.canCreateCustomer;
   const [isSavingInstallment, setIsSavingInstallment] = useState(false);
   const [isDeletingReceivable, setIsDeletingReceivable] = useState(false);
   const [installmentError, setInstallmentError] = useState('');
@@ -502,46 +505,6 @@ export function ReceivablesPage() {
     }
   };
 
-  const handleCreateCustomer = async (payload) => {
-    if (!canCreateCustomer) {
-      return { ok: false, error: 'غير مصرح لك بإنشاء عملاء.' };
-    }
-
-    if (!tenantId) {
-      return { ok: false, error: 'لا توجد شركة نشطة.' };
-    }
-
-    try {
-      setIsCustomerSubmitting(true);
-      const createdCustomer = await partnersService.createPartner({
-        tenantId,
-        ...payload,
-        isCustomer: true,
-        customerRank: 1,
-        isSupplier: false,
-        supplierRank: 0,
-      });
-      const normalizedCustomer = {
-        ...createdCustomer,
-        phone: createdCustomer.phone || createdCustomer.phone1 || createdCustomer.phone2 || '',
-      };
-
-      setState((current) => ({
-        ...current,
-        partners: [
-          normalizedCustomer,
-          ...current.partners.filter((partner) => partner.id !== normalizedCustomer.id),
-        ],
-      }));
-
-      return { ok: true, customer: normalizedCustomer };
-    } catch (err) {
-      return { ok: false, error: err.message || 'تعذر إضافة العميل.' };
-    } finally {
-      setIsCustomerSubmitting(false);
-    }
-  };
-
   const handleManualReceivableCreated = async () => {
     await loadData();
     setSuccessMessage('تم حفظ المديونية اليدوية بنجاح.');
@@ -604,8 +567,8 @@ export function ReceivablesPage() {
           branchId={currentBranchId}
           createdBy={currentTenantUserId}
           onCreated={handleManualReceivableCreated}
-          onCreateCustomer={canCreateCustomer ? handleCreateCustomer : null}
-          isCustomerSubmitting={isCustomerSubmitting}
+          onCreateCustomer={canCreateCustomer ? customerCreation.createCustomer : null}
+          isCustomerSubmitting={customerCreation.isCreatingCustomer}
         />
       ) : null}
 

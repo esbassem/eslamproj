@@ -7,8 +7,6 @@ import { recordAppOpen, scheduleLikelyAppPreloads } from '@/app/router/appPreloa
 import { markNavigationStart } from '@/app/router/navigationPerformance';
 import { uiExperiments } from '@/core/config/app.config';
 import { ROUTES } from '@/core/config/routes.config';
-import { PERMISSIONS } from '@/core/authorization/permissions';
-import { useAuthorization } from '@/core/authorization/useAuthorization';
 import { useI18n } from '@/core/i18n/useI18n';
 import { Button } from '@/core/ui/button';
 import {
@@ -31,15 +29,12 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import { resolveModuleIcon } from '@/features/modules/modules.navigation';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { appsService } from '@/services/apps.service';
+import { useCustomerCreation } from '@/shared/partners';
 
 const DEFAULT_APP_ICON_COLOR = '#64748B';
-const LazyPartnerFormSheet = lazy(() => import('@/features/contacts/components/PartnerFormSheet').then((module) => ({ default: module.PartnerFormSheet })));
+const LazyPartnerFormSheet = lazy(() => import('@/shared/partners').then((module) => ({ default: module.PartnerFormSheet })));
 const LazyCashLocationSheet = lazy(() => import('@/features/accountant/components/CashLocationSheet').then((module) => ({ default: module.CashLocationSheet })));
 const LazyQuickImageUploadSheet = lazy(() => import('@/features/dashboard/components/QuickImageUploadSheet').then((module) => ({ default: module.QuickImageUploadSheet })));
-const NEW_CUSTOMER_INITIAL_VALUES = {
-  isCustomer: true,
-  isSupplier: false,
-};
 
 function getReadableColor(hexColor) {
   const normalized = String(hexColor || '').replace('#', '');
@@ -57,8 +52,6 @@ function getReadableColor(hexColor) {
 }
 
 export function DashboardPage() {
-  const { can } = useAuthorization();
-  const canCreateCustomer = can(PERMISSIONS.PARTNERS_CREATE_CUSTOMER);
   const { t } = useI18n();
   const { tenant } = useWorkspace();
   const { apps, appsStatus, appsError, installApp, uninstallApp } = useAppContext();
@@ -77,7 +70,8 @@ export function DashboardPage() {
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [selectedCatalogApp, setSelectedCatalogApp] = useState(null);
   const [isCustomerSheetOpen, setIsCustomerSheetOpen] = useState(false);
-  const [isCustomerSubmitting, setIsCustomerSubmitting] = useState(false);
+  const customerCreation = useCustomerCreation({ tenantId: tenant?.id, onCreated: () => setToast({ tone: 'success', message: 'تم تسجيل العميل.' }) });
+  const canCreateCustomer = customerCreation.canCreateCustomer;
   const [isImageUploadSheetOpen, setIsImageUploadSheetOpen] = useState(false);
   const [cashCustodyAccount, setCashCustodyAccount] = useState(null);
   const [isCashCustodySheetOpen, setIsCashCustodySheetOpen] = useState(false);
@@ -295,36 +289,6 @@ export function DashboardPage() {
     }
   };
 
-  const handleCreateCustomer = async (payload) => {
-    if (!canCreateCustomer) {
-      return { ok: false, error: 'غير مصرح لك بإنشاء عملاء.' };
-    }
-
-    if (!tenant?.id) {
-      return { ok: false, error: 'لا توجد شركة نشطة.' };
-    }
-
-    try {
-      setIsCustomerSubmitting(true);
-      const { partnersService } = await import('@/features/contacts/services/partners.service');
-      await partnersService.createPartner({
-        tenantId: tenant.id,
-        ...payload,
-        isCustomer: true,
-        customerRank: 1,
-        isSupplier: false,
-        supplierRank: 0,
-      });
-      setIsCustomerSheetOpen(false);
-      setToast({ tone: 'success', message: 'تم تسجيل العميل.' });
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, error: error.message || 'تعذر إضافة العميل.' };
-    } finally {
-      setIsCustomerSubmitting(false);
-    }
-  };
-
   if (uiExperiments.homeLauncherNavigation) {
     return (
       <div className="relative flex min-h-[calc(100dvh-5.5rem)] w-full flex-col items-center overflow-hidden px-4 pb-6 pt-3 text-slate-700 sm:min-h-[calc(100vh-9rem)] sm:px-10 sm:pb-2 sm:pt-5 lg:px-16 lg:pt-6">
@@ -503,9 +467,9 @@ export function DashboardPage() {
         {canCreateCustomer && isCustomerSheetOpen ? <Suspense fallback={null}><LazyPartnerFormSheet
           open={isCustomerSheetOpen}
           onOpenChange={setIsCustomerSheetOpen}
-          initialValues={NEW_CUSTOMER_INITIAL_VALUES}
-          onSubmit={handleCreateCustomer}
-          isSubmitting={isCustomerSubmitting}
+          context="customer-create"
+          onSubmit={customerCreation.createCustomer}
+          isSubmitting={customerCreation.isCreatingCustomer}
           side="right"
           hideTypeFields
           hideAccountingFields

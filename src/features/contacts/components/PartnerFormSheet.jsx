@@ -265,6 +265,8 @@ export function PartnerFormSheet({
   overlayClassName,
   parentPartner = null,
   childContactMode = false,
+  context = null,
+  onResolved,
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState('');
@@ -276,7 +278,15 @@ export function PartnerFormSheet({
   }, [open, initialValues]);
 
   const isEditMode = Boolean(initialValues?.id);
-  const isChildContactMode = childContactMode || Boolean(parentPartner);
+  const contextDefaults = {
+    'customer-create': { hideTypeFields: true, hideCompanyFields: true, hideAccountingFields: true },
+    'child-contact': { hideTypeFields: true, hideAccountingFields: true, childContactMode: true },
+    'partner-manage': {}, 'supplier-create': {},
+  }[context] || {};
+  const resolvedHideTypeFields = hideTypeFields || contextDefaults.hideTypeFields;
+  const resolvedHideCompanyFields = hideCompanyFields || contextDefaults.hideCompanyFields;
+  const resolvedHideAccountingFields = hideAccountingFields || contextDefaults.hideAccountingFields;
+  const isChildContactMode = childContactMode || contextDefaults.childContactMode || Boolean(parentPartner);
   const shouldShowFooter = (!submitInHeader && !inlineSubmit) || !hideFooterNote || !hideCancelButton;
   const displayConfigParseResult = parseDisplayConfigText(form.displayConfigText);
   const hasDisplayConfigError = Boolean(form.displayConfigText.trim()) && !displayConfigParseResult.ok;
@@ -323,8 +333,8 @@ export function PartnerFormSheet({
       return;
     }
 
-    const isCustomer = isChildContactMode ? false : hideTypeFields ? true : form.isCustomer;
-    const isSupplier = isChildContactMode ? false : hideTypeFields ? false : form.isSupplier;
+    const isCustomer = isChildContactMode ? false : resolvedHideTypeFields ? true : form.isCustomer;
+    const isSupplier = isChildContactMode ? false : resolvedHideTypeFields ? false : form.isSupplier;
     const parentId = parentPartner?.id || form.parentId || null;
     const isFinancer = !isChildContactMode && form.isFinancer;
     const isCompany = isChildContactMode ? false : isFinancer ? true : form.isCompany;
@@ -349,6 +359,8 @@ export function PartnerFormSheet({
       setError(result?.error || 'تعذر حفظ جهة الاتصال.');
       return;
     }
+    const partner = result.partner || result.customer || result.data || null;
+    onResolved?.({ partnerId: result.partnerId || partner?.id || initialValues?.id || null, partner, source: isEditMode ? 'updated' : 'created' });
 
     onOpenChange(false);
   };
@@ -373,7 +385,7 @@ export function PartnerFormSheet({
               {isSubmitting ? 'جار الحفظ...' : isEditMode ? 'حفظ' : 'إضافة'}
             </Button>
           ) : null}
-          {!hideDismissButton && <SheetDismissButton className={accentHeader ? 'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white' : undefined} />}
+          {hideDismissButton ? <SheetDismissButton aria-label="إغلاق نافذة العميل" className={cn('sm:hidden', accentHeader && 'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white')} /> : <SheetDismissButton aria-label="إغلاق نافذة العميل" className={accentHeader ? 'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white' : undefined} />}
         </SheetHeader>
 
         <SheetBody className={accentHeader ? 'bg-slate-50 px-7 py-6' : undefined}>
@@ -407,7 +419,7 @@ export function PartnerFormSheet({
                     placeholder="مسؤول أوراق، محاسب، مبيعات، مدير"
                   />
                 </div>
-              ) : hideCompanyFields ? null : (
+              ) : resolvedHideCompanyFields ? null : (
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="partner-company-type">طبيعة الجهة</Label>
@@ -467,7 +479,7 @@ export function PartnerFormSheet({
               )}
             </div>
 
-            {!hideTypeFields && !isChildContactMode && (
+            {!resolvedHideTypeFields && !isChildContactMode && (
               <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input type="checkbox" checked={form.isCustomer} onChange={handleChange('isCustomer')} />
@@ -480,7 +492,7 @@ export function PartnerFormSheet({
               </div>
             )}
 
-            {!hideAccountingFields && !isChildContactMode && (
+            {!resolvedHideAccountingFields && !isChildContactMode && (
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="partner-receivable">حساب العملاء (محاسبي)</Label>
@@ -553,7 +565,7 @@ export function PartnerFormSheet({
           <SheetFooter>
             {hideFooterNote ? null : (
               <div className="text-xs text-slate-500">
-                {hideAccountingFields ? 'يمكنك تعديل بيانات العميل لاحقاً من صفحة العملاء.' : 'يمكنك تعديل الحسابات المحاسبية لاحقاً من صفحة القيود.'}
+                {resolvedHideAccountingFields ? 'يمكنك تعديل بيانات العميل لاحقاً من صفحة العملاء.' : 'يمكنك تعديل الحسابات المحاسبية لاحقاً من صفحة القيود.'}
               </div>
             )}
             {!submitInHeader && !inlineSubmit && (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -20,8 +20,6 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/core/ui/button';
-import { PERMISSIONS } from '@/core/authorization/permissions';
-import { useAuthorization } from '@/core/authorization/useAuthorization';
 import { Input } from '@/core/ui/input';
 import { Label } from '@/core/ui/label';
 import {
@@ -32,18 +30,15 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/core/ui/sheet';
-import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
 import { partnersService } from '@/features/contacts/services/partners.service';
 import { CashLocationSheet } from '@/features/accountant/components/CashLocationSheet';
 import { LedgerAccountOperationsSheet } from '@/features/accountant/components/LedgerAccountOperationsSheet';
 import { accountantService } from '@/features/accountant/services/accountant.service';
 import { SettlementDialog } from '@/features/settlement';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
+import { CustomerPicker, useCustomerCreation } from '@/shared/partners';
 
-const NEW_CUSTOMER_INITIAL_VALUES = {
-  isCustomer: true,
-  isSupplier: false,
-};
+const LazyPartnerFormSheet = lazy(() => import('@/shared/partners').then((module) => ({ default: module.PartnerFormSheet })));
 
 const partnerAvatarIconMap = {
   Building2,
@@ -170,18 +165,11 @@ function PaymentApprovalForm({
   resetSignal = 0,
   entityResetSignal = 0,
 }) {
-  const { can } = useAuthorization();
-  const canCreateCustomer = can(PERMISSIONS.PARTNERS_CREATE_CUSTOMER);
-  const [customers, setCustomers] = useState([]);
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
-  const [customersError, setCustomersError] = useState('');
   const [paymentEntities, setPaymentEntities] = useState([]);
   const [selectedPaymentEntityId, setSelectedPaymentEntityId] = useState('');
   const [isLoadingPaymentEntities, setIsLoadingPaymentEntities] = useState(false);
   const [paymentEntitiesError, setPaymentEntitiesError] = useState('');
   const [isCustomerSheetOpen, setIsCustomerSheetOpen] = useState(false);
-  const [isCustomerSubmitting, setIsCustomerSubmitting] = useState(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [attachmentFile, setAttachmentFile] = useState(null);
@@ -190,7 +178,6 @@ function PaymentApprovalForm({
   const transitionTimerRef = useRef(null);
 
   useEffect(() => {
-    setCustomerSearch('');
     setSelectedPaymentEntityId('');
     setAmount('');
     setNote('');
@@ -218,33 +205,6 @@ function PaymentApprovalForm({
     window.clearTimeout(transitionTimerRef.current);
     transitionTimerRef.current = null;
   }, [step]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    setIsLoadingCustomers(true);
-    setCustomersError('');
-
-    partnersService
-      .getPartners({ tenantId, filterType: 'customer', status: 'active' })
-      .then((loadedCustomers) => {
-        if (!mounted) return;
-        setCustomers(loadedCustomers);
-      })
-      .catch((error) => {
-        if (!mounted) return;
-        setCustomers([]);
-        setCustomersError(error?.message || 'تعذر تحميل العملاء.');
-      })
-      .finally(() => {
-        if (!mounted) return;
-        setIsLoadingCustomers(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, [tenantId]);
 
   useEffect(() => {
     if (step !== 1) return undefined;
@@ -275,20 +235,13 @@ function PaymentApprovalForm({
     };
   }, [tenantId, step]);
 
-  const normalizedSearch = customerSearch.trim().toLowerCase();
-  const filteredCustomers = normalizedSearch
-    ? customers.filter((customer) => {
-      const name = String(customer?.name ?? '').toLowerCase();
-      const phone = String(customer?.phone ?? customer?.phone1 ?? '').toLowerCase();
-      return name.includes(normalizedSearch) || phone.includes(normalizedSearch);
-    })
-    : customers.slice(0, 8);
-
   const selectCustomer = (customer) => {
     onSelectCustomer(customer);
-    setCustomerSearch(customer?.name || '');
     setStep(1);
   };
+  const customerCreation = useCustomerCreation({ tenantId, onCreated: selectCustomer });
+  const canCreateCustomer = customerCreation.canCreateCustomer;
+  const searchCustomers = useCallback(({ search, page, pageSize }) => partnersService.searchCustomers({ tenantId, search, page, pageSize }), [tenantId]);
 
   const selectPaymentEntity = (entity) => {
     if (transitionTimerRef.current) {
@@ -302,36 +255,6 @@ function PaymentApprovalForm({
       setStep(3);
       transitionTimerRef.current = null;
     }, 750);
-  };
-
-  const handleCreateCustomer = async (payload) => {
-    if (!canCreateCustomer) {
-      return { ok: false, error: 'غير مصرح لك بإنشاء عملاء.' };
-    }
-
-    setIsCustomerSubmitting(true);
-
-    try {
-      const customer = await partnersService.createPartner({
-        ...payload,
-        tenantId,
-        isCustomer: true,
-        isSupplier: false,
-      });
-
-      setCustomers((current) => [
-        customer,
-        ...current.filter((item) => item.id !== customer.id),
-      ]);
-      selectCustomer(customer);
-      setIsCustomerSheetOpen(false);
-
-      return { ok: true, customer };
-    } catch (error) {
-      return { ok: false, error: error?.message || 'تعذر إضافة العميل.' };
-    } finally {
-      setIsCustomerSubmitting(false);
-    }
   };
 
   const handleSubmitApproval = async () => {
@@ -376,54 +299,7 @@ function PaymentApprovalForm({
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {step === 0 ? (
             <div className="space-y-5">
-              <div className="flex gap-2">
-                <div className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    id="payment-approval-customer"
-                    value={customerSearch}
-                    onChange={(event) => setCustomerSearch(event.target.value)}
-                    placeholder="ابحث باسم العميل أو رقم الهاتف"
-                    className="pr-10"
-                  />
-                </div>
-                {canCreateCustomer ? <button
-                  type="button"
-                  onClick={() => setIsCustomerSheetOpen(true)}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
-                  aria-label="إضافة عميل جديد"
-                  title="إضافة عميل جديد"
-                >
-                  <UserPlus className="h-5 w-5" />
-                </button> : null}
-              </div>
-
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                {isLoadingCustomers ? (
-                  <div className="px-4 py-8 text-center text-sm font-bold text-slate-500">جاري تحميل العملاء...</div>
-                ) : customersError ? (
-                  <div className="px-4 py-8 text-center text-sm font-bold text-red-600">{customersError}</div>
-                ) : filteredCustomers.length ? (
-                  <div className="divide-y divide-slate-100">
-                    {filteredCustomers.map((customer) => (
-                      <button
-                        key={customer.id}
-                        type="button"
-                        onClick={() => selectCustomer(customer)}
-                        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-right transition hover:bg-slate-50"
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-black text-slate-950">{customer.name || 'عميل بدون اسم'}</span>
-                          <span className="mt-0.5 block truncate text-xs font-bold text-slate-500">{customer.phone || customer.phone1 || 'بدون رقم هاتف'}</span>
-                        </span>
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">اختيار</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="px-4 py-8 text-center text-sm font-bold text-slate-500">لا توجد نتائج مطابقة.</div>
-                )}
-              </div>
+              <CustomerPicker value={selectedCustomer} onChange={selectCustomer} searchCustomers={searchCustomers} onCreateCustomer={canCreateCustomer ? () => setIsCustomerSheetOpen(true) : null} />
             </div>
           ) : step === 1 ? (
             <div className="flex min-h-full flex-col gap-4">
@@ -571,12 +447,12 @@ function PaymentApprovalForm({
         ) : null}
       </form>
 
-      {canCreateCustomer ? <PartnerFormSheet
+      {canCreateCustomer && isCustomerSheetOpen ? <Suspense fallback={null}><LazyPartnerFormSheet
         open={isCustomerSheetOpen}
         onOpenChange={setIsCustomerSheetOpen}
-        initialValues={NEW_CUSTOMER_INITIAL_VALUES}
-        onSubmit={handleCreateCustomer}
-        isSubmitting={isCustomerSubmitting}
+        context="customer-create"
+        onSubmit={customerCreation.createCustomer}
+        isSubmitting={customerCreation.isCreatingCustomer}
         side="right"
         hideTypeFields
         hideCompanyFields
@@ -586,7 +462,7 @@ function PaymentApprovalForm({
         accentHeader
         hideDismissButton
         inlineSubmit
-      /> : null}
+      /></Suspense> : null}
     </>
   );
 }

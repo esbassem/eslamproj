@@ -359,6 +359,27 @@ export const partnersService = {
     }));
   },
 
+  async searchCustomers({ tenantId, search = '', page = 1, pageSize = 20 } = {}) {
+    const client = requireSupabase();
+    const safePage = Math.max(1, Number(page) || 1);
+    const safePageSize = Math.min(50, Math.max(1, Number(pageSize) || 20));
+    const from = (safePage - 1) * safePageSize;
+    const normalizedSearch = escapeSearchTerm(String(search).trim());
+    let query = client.from('partners')
+      .select('id,name,mobile,phone1,phone2', { count: 'exact' })
+      .eq('tenant_id', tenantId).eq('active', true).gt('customer_rank', 0).is('parent_id', null)
+      .order('name', { ascending: true }).order('id', { ascending: true })
+      .range(from, from + safePageSize - 1);
+    if (normalizedSearch) query = query.or(`name.ilike.%${normalizedSearch}%,mobile.ilike.%${normalizedSearch}%,phone1.ilike.%${normalizedSearch}%,phone2.ilike.%${normalizedSearch}%`);
+    const { data, error, count } = await query;
+    if (error) throw new Error(error.message || 'تعذر البحث عن العملاء.');
+    return {
+      items: (data || []).map((record) => ({ ...normalizePartner(record), phone: record.mobile || record.phone1 || record.phone2 || '' })),
+      page: safePage, pageSize: safePageSize,
+      hasMore: from + (data?.length || 0) < (count || 0),
+    };
+  },
+
   async getFinancerPartners({ tenantId } = {}) {
     const client = requireSupabase();
     let query = client

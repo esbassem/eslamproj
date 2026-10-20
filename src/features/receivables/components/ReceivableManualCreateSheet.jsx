@@ -1,17 +1,15 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { CalendarDays, ChevronLeft, ChevronRight, Minus, Plus, Search, UserPlus, X } from 'lucide-react';
 import { Button } from '@/core/ui/button';
 import { Input } from '@/core/ui/input';
 import { Sheet, SheetBody, SheetContent, SheetDismissButton, SheetHeader, SheetTitle } from '@/core/ui/sheet';
-import { PartnerFormSheet } from '@/features/contacts/components/PartnerFormSheet';
+import { partnersService } from '@/features/contacts/services/partners.service';
 import { createManualReceivable } from '@/features/receivables/api/createManualReceivable';
 import { cn } from '@/core/utils/cn';
+import { CustomerPicker } from '@/shared/partners';
 
-const NEW_CUSTOMER_INITIAL_VALUES = {
-  isCustomer: true,
-  isSupplier: false,
-};
+const LazyPartnerFormSheet = lazy(() => import('@/shared/partners').then((module) => ({ default: module.PartnerFormSheet })));
 
 const GUARANTOR_PLAN_OPTIONS = [
   { value: 0, label: 'بدون' },
@@ -181,7 +179,6 @@ export function ReceivableCreateSheet({
   isCustomerSubmitting = false,
 }) {
   const [step, setStep] = useState(0);
-  const [customerName, setCustomerName] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [receivableName, setReceivableName] = useState('');
   const [amount, setAmount] = useState('');
@@ -209,7 +206,6 @@ export function ReceivableCreateSheet({
   useEffect(() => {
     if (!open) return;
     setStep(0);
-    setCustomerName('');
     setSelectedCustomer(null);
     setReceivableName('');
     setAmount('');
@@ -259,14 +255,7 @@ export function ReceivableCreateSheet({
         ? ''
         : '';
 
-  const normalizedSearch = customerName.trim().toLowerCase();
-  const filteredCustomers = normalizedSearch
-    ? partners.filter((partner) => {
-      const name = String(partner?.name ?? '').toLowerCase();
-      const phone = String(partner?.phone ?? '').toLowerCase();
-      return name.includes(normalizedSearch) || phone.includes(normalizedSearch);
-    })
-    : partners.slice(0, 8);
+  const searchCustomers = useCallback(({ search, page, pageSize }) => partnersService.searchCustomers({ tenantId, search, page, pageSize }), [tenantId]);
 
   const normalizedGuarantorSearch = guarantorSearch.trim().toLowerCase();
   const filteredGuarantors = partners
@@ -282,7 +271,6 @@ export function ReceivableCreateSheet({
 
   const selectCustomer = (customer) => {
     setSelectedCustomer(customer);
-    setCustomerName(customer?.name || '');
     setGuarantorPlan(null);
     setSelectedGuarantors([]);
     setSelectedInstallmentCount(null);
@@ -697,65 +685,7 @@ export function ReceivableCreateSheet({
           <SheetBody className={cn('min-h-0 bg-white px-7 pb-6', step === 3 || step === 5 ? 'overflow-hidden pt-2' : 'pt-6')}>
             {step === 0 ? (
               <div className="mx-auto w-full max-w-[520px]">
-                <div className="flex gap-2">
-                  <div className="relative min-w-0 flex-1">
-                    <Search className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#668097]" />
-                    <Input
-                      value={customerName}
-                      onChange={(event) => {
-                        setCustomerName(event.target.value);
-                        setSelectedCustomer(null);
-                      }}
-                      placeholder="ابحث عن عميل"
-                      className="h-[52px] rounded-xl border border-slate-200 bg-white px-5 pr-11 text-base font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-200"
-                    />
-                  </div>
-                  {onCreateCustomer ? <button
-                    type="button"
-                    onClick={() => {
-                      setCustomerSheetMode('customer');
-                      setIsCustomerSheetOpen(true);
-                    }}
-                    className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
-                    aria-label="إضافة عميل جديد"
-                    title="إضافة عميل جديد"
-                  >
-                    <UserPlus className="h-5 w-5" />
-                  </button> : null}
-                </div>
-
-                {filteredCustomers.length > 0 ? (
-                  <div className="mt-4 max-h-[320px] overflow-y-auto rounded-xl border border-[#e6c8cf] bg-white shadow-[0_18px_34px_-30px_rgba(78,24,35,0.28)]">
-                    {filteredCustomers.map((customer) => (
-                      <button
-                        key={customer.id}
-                        type="button"
-                        onClick={() => selectCustomer(customer)}
-                        className={cn(
-                          'block w-full border-b border-[#f1dde1] px-4 py-3 text-right transition last:border-b-0 hover:bg-[#fcf6f7]',
-                          selectedCustomer?.id === customer.id ? 'bg-slate-100 text-slate-900' : 'text-slate-900',
-                        )}
-                      >
-                        <span className="min-w-0">
-                          <span className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-sm font-black">{customer.name}</span>
-                            {selectedCustomer?.id === customer.id ? (
-                              <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black text-white">مختار</span>
-                            ) : null}
-                          </span>
-                          <span className="mt-1 grid grid-cols-[76px_1fr] gap-2 text-xs font-bold text-[#668097]">
-                            <span className="text-[#8aa0b3]">الهاتف</span>
-                            <span className="truncate">{customer.phone || 'بدون رقم هاتف'}</span>
-                          </span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-xl border border-[#c5ddef] bg-[#f7fbff] px-5 py-4 text-sm font-bold text-[#668097]">
-                    لا يوجد عملاء مطابقون.
-                  </div>
-                )}
+                <CustomerPicker value={selectedCustomer} onChange={selectCustomer} searchCustomers={searchCustomers} onCreateCustomer={onCreateCustomer ? () => { setCustomerSheetMode('customer'); setIsCustomerSheetOpen(true); } : null} />
               </div>
             ) : step === 1 ? (
               <div className="w-full">
@@ -1244,10 +1174,10 @@ export function ReceivableCreateSheet({
         </SheetContent>
       </Sheet>
 
-      {onCreateCustomer ? <PartnerFormSheet
+      {onCreateCustomer && isCustomerSheetOpen ? <Suspense fallback={null}><LazyPartnerFormSheet
         open={isCustomerSheetOpen}
         onOpenChange={setIsCustomerSheetOpen}
-        initialValues={NEW_CUSTOMER_INITIAL_VALUES}
+        context="customer-create"
         onSubmit={handleCustomerCreate}
         isSubmitting={isCustomerSubmitting}
         side="right"
@@ -1259,7 +1189,7 @@ export function ReceivableCreateSheet({
         accentHeader
         hideDismissButton
         inlineSubmit
-      /> : null}
+      /></Suspense> : null}
 
       <Dialog.Root open={isAmountConfirmOpen} onOpenChange={setIsAmountConfirmOpen}>
         <Dialog.Portal>
